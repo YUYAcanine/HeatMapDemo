@@ -1,0 +1,33 @@
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Ll]ogs/
+UserSettings/
+
+# IDE
+.vs/
+.vscode/
+*.csproj
+*.sln
+
+# Data
+Assets/Data/
+
+# Kinect / ONNX
+Assets/Plugins/
+Packages/Microsoft.Azure.Kinect*
+*.onnx
+*.dll
+*.nupkg
+
+# Build
+Build/
+Builds/
+
+Assets/NotoSansJP-Regular SDF.asset
+
+Recordings/
+obj/
+.vsconfig
+*.json
+*.config
