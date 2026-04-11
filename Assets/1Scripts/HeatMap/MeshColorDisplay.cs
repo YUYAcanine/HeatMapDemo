@@ -11,21 +11,21 @@ public class MeshColorDisplay : MonoBehaviour
     public HeatMeshData heatDataAsset;
 
     [Header("Back Button (Optional)")]
-    public Button backButton; // © Unity‚Ìƒ{ƒ^ƒ“UI
+    public Button backButton; // ï¿½ï¿½ Unityï¿½Ìƒ{ï¿½^ï¿½ï¿½UI
 
     void Start()
     {
-        // ’¸“_ƒJƒ‰[‚ğ“Ç‚İ‚ñ‚Å”½‰f
+        // ï¿½ï¿½ï¿½_ï¿½Jï¿½ï¿½ï¿½[ï¿½ï¿½Ç‚İï¿½ï¿½ï¿½Å”ï¿½ï¿½f
         if (meshObject == null || heatDataAsset == null)
         {
-            Debug.LogError("MeshColorDisplay: •K—v‚Èİ’è‚ª•s‘«‚µ‚Ä‚¢‚Ü‚·");
+            Debug.LogError("MeshColorDisplay: ï¿½Kï¿½vï¿½Èİ’è‚ªï¿½sï¿½ï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½Ü‚ï¿½");
             return;
         }
 
         MeshFilter mf = meshObject.GetComponent<MeshFilter>();
         if (mf == null)
         {
-            Debug.LogError("MeshColorDisplay: meshObject ‚É MeshFilter ‚ª‚ ‚è‚Ü‚¹‚ñ");
+            Debug.LogError("MeshColorDisplay: meshObject ï¿½ï¿½ MeshFilter ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½");
             return;
         }
 
@@ -33,13 +33,13 @@ public class MeshColorDisplay : MonoBehaviour
 
         if (mesh.vertexCount != heatDataAsset.vertexColors.Length)
         {
-            Debug.LogWarning($"’¸“_”‚ªˆê’v‚µ‚Ü‚¹‚ñ: Mesh={mesh.vertexCount}, ColorData={heatDataAsset.vertexColors.Length}");
+            Debug.LogWarning($"ï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½vï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½: Mesh={mesh.vertexCount}, ColorData={heatDataAsset.vertexColors.Length}");
             return;
         }
 
         mesh.colors = heatDataAsset.vertexColors;
 
-        // –ß‚éƒ{ƒ^ƒ“‚ªw’è‚³‚ê‚Ä‚¢‚ê‚ÎAƒNƒŠƒbƒNƒCƒxƒ“ƒg‚ğ’Ç‰Á
+        // ï¿½ß‚ï¿½{ï¿½^ï¿½ï¿½ï¿½ï¿½ï¿½wï¿½è‚³ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ÎAï¿½Nï¿½ï¿½ï¿½bï¿½Nï¿½Cï¿½xï¿½ï¿½ï¿½gï¿½ï¿½Ç‰ï¿½
         if (backButton != null)
         {
             backButton.onClick.AddListener(OnBackToSceneA);
@@ -48,6 +48,6 @@ public class MeshColorDisplay : MonoBehaviour
 
     public void OnBackToSceneA()
     {
-        SceneManager.LoadScene("5HeadDirection");
+        SceneManager.LoadScene("0RealTimeGaze");
     }
 }
