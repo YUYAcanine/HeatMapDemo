@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Collections.Generic;
 using System.IO;
+using System.Collections;
 
 public class LightControl : MonoBehaviour
 {
@@ -12,6 +13,8 @@ public class LightControl : MonoBehaviour
     bool light1 = false;
     bool light2 = false;
     bool light3 = false;
+
+    bool sequenceRunning = false;
 
     List<LightFrame> frames = new List<LightFrame>();
 
@@ -25,12 +28,57 @@ public class LightControl : MonoBehaviour
         if (!Directory.Exists(outputDir))
             Directory.CreateDirectory(outputDir);
 
-        Debug.Log("LightControl started");
+        Debug.Log("LightControl started (logging enabled)");
     }
 
     void Update()
     {
-        // 状態ログ保存
+        // ---------- Light 1 ----------
+        if (Input.GetKeyDown(KeyCode.Alpha1))
+        {
+            light1 = !light1;
+
+            if (light1)
+                SendCommand("L1_ON");
+            else
+                SendCommand("L1_OFF");
+
+            Debug.Log("Light1: " + light1);
+        }
+
+        // ---------- Light 2 ----------
+        if (Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            light2 = !light2;
+
+            if (light2)
+                SendCommand("L2_ON");
+            else
+                SendCommand("L2_OFF");
+
+            Debug.Log("Light2: " + light2);
+        }
+
+        // ---------- Light 3 ----------
+        if (Input.GetKeyDown(KeyCode.Alpha3))
+        {
+            light3 = !light3;
+
+            if (light3)
+                SendCommand("L3_ON");
+            else
+                SendCommand("L3_OFF");
+
+            Debug.Log("Light3: " + light3);
+        }
+
+        // ---------- Sequence (0キー) ----------
+        if (Input.GetKeyDown(KeyCode.Alpha0) && !sequenceRunning)
+        {
+            StartCoroutine(LightSequence());
+        }
+
+        // ---------- ログ保存 ----------
         frames.Add(new LightFrame
         {
             unityTime = Time.time,
@@ -40,63 +88,44 @@ public class LightControl : MonoBehaviour
         });
     }
 
-    // =========================
-    // Light1
-    // =========================
-    public void SetLight1(bool state)
+    IEnumerator LightSequence()
     {
-        if (light1 == state)
-            return;
+        sequenceRunning = true;
 
-        light1 = state;
+        Debug.Log("Light sequence start");
 
-        if (state)
-            SendCommand("L1_ON");
-        else
-            SendCommand("L1_OFF");
+        // ---------- Light1 ----------
+        SendCommand("L1_ON");
+        light1 = true;
+        yield return new WaitForSeconds(5);
 
-        Debug.Log("Light1: " + state);
+        SendCommand("L1_OFF");
+        light1 = false;
+        yield return new WaitForSeconds(5);
+
+        // ---------- Light2 ----------
+        SendCommand("L2_ON");
+        light2 = true;
+        yield return new WaitForSeconds(5);
+
+        SendCommand("L2_OFF");
+        light2 = false;
+        yield return new WaitForSeconds(5);
+
+        // ---------- Light3 ----------
+        SendCommand("L3_ON");
+        light3 = true;
+        yield return new WaitForSeconds(5);
+
+        SendCommand("L3_OFF");
+        light3 = false;
+        yield return new WaitForSeconds(5);
+
+        Debug.Log("Light sequence end");
+
+        sequenceRunning = false;
     }
 
-    // =========================
-    // Light2
-    // =========================
-    public void SetLight2(bool state)
-    {
-        if (light2 == state)
-            return;
-
-        light2 = state;
-
-        if (state)
-            SendCommand("L2_ON");
-        else
-            SendCommand("L2_OFF");
-
-        Debug.Log("Light2: " + state);
-    }
-
-    // =========================
-    // Light3
-    // =========================
-    public void SetLight3(bool state)
-    {
-        if (light3 == state)
-            return;
-
-        light3 = state;
-
-        if (state)
-            SendCommand("L3_ON");
-        else
-            SendCommand("L3_OFF");
-
-        Debug.Log("Light3: " + state);
-    }
-
-    // =========================
-    // Python通信
-    // =========================
     void SendCommand(string msg)
     {
         try
@@ -118,9 +147,6 @@ public class LightControl : MonoBehaviour
         }
     }
 
-    // =========================
-    // JSON保存
-    // =========================
     void OnDestroy()
     {
         SaveJson();
@@ -139,9 +165,9 @@ public class LightControl : MonoBehaviour
         Debug.Log("Saved Light JSON: " + path);
     }
 
-    // =========================
+    // ========================
     // Serializable
-    // =========================
+    // ========================
 
     [System.Serializable]
     public class LightFrame
