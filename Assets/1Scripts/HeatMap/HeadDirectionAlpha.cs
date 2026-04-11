@@ -479,7 +479,7 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
                 colors;
 
         SceneManager.LoadScene(
-            "6Preview"
+            "1RealTimePreview"
         );
     }
 }
