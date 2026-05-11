@@ -134,13 +134,14 @@ GameObject:
   - component: {fileID: 431353222}
   - component: {fileID: 431353221}
   - component: {fileID: 431353220}
+  - component: {fileID: 431353224}
   m_Layer: 0
   m_Name: KinectB
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!65 &431353220
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -229,6 +230,19 @@ Transform:
   - {fileID: 1992478807}
   m_Father: {fileID: 1069761942}
   m_LocalEulerAnglesHint: {x: 38.318, y: 91.661, z: -1.105}
+--- !u!114 &431353224
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 431353219}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7182b2315e8f12245906468d5bae78f9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fileName: KinectA_Transform.json
 --- !u!1001 &620448246
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -347,13 +361,14 @@ GameObject:
   - component: {fileID: 754533278}
   - component: {fileID: 754533277}
   - component: {fileID: 754533276}
+  - component: {fileID: 754533280}
   m_Layer: 0
   m_Name: KinectA
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!65 &754533276
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -442,6 +457,19 @@ Transform:
   - {fileID: 1735705230}
   m_Father: {fileID: 1069761942}
   m_LocalEulerAnglesHint: {x: 39.265, y: -94.549, z: -2.389}
+--- !u!114 &754533280
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 754533275}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7182b2315e8f12245906468d5bae78f9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fileName: KinectA_Transform.json
 --- !u!1 &824463867
 GameObject:
   m_ObjectHideFlags: 0
@@ -857,13 +885,14 @@ GameObject:
   - component: {fileID: 1723817905}
   - component: {fileID: 1723817904}
   - component: {fileID: 1723817903}
+  - component: {fileID: 1723817907}
   m_Layer: 0
   m_Name: KinectD
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!65 &1723817903
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -952,6 +981,19 @@ Transform:
   - {fileID: 1294535563}
   m_Father: {fileID: 1069761942}
   m_LocalEulerAnglesHint: {x: 30.792, y: -182.596, z: -0.099}
+--- !u!114 &1723817907
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1723817902}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7182b2315e8f12245906468d5bae78f9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fileName: KinectA_Transform.json
 --- !u!1 &1735705229
 GameObject:
   m_ObjectHideFlags: 0
@@ -1107,13 +1149,14 @@ GameObject:
   - component: {fileID: 1865616045}
   - component: {fileID: 1865616044}
   - component: {fileID: 1865616043}
+  - component: {fileID: 1865616047}
   m_Layer: 0
   m_Name: KinectC
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!65 &1865616043
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1202,6 +1245,19 @@ Transform:
   - {fileID: 687142606}
   m_Father: {fileID: 1069761942}
   m_LocalEulerAnglesHint: {x: 40.286, y: 0.48, z: 0.053}
+--- !u!114 &1865616047
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1865616042}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7182b2315e8f12245906468d5bae78f9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fileName: KinectA_Transform.json
 --- !u!1 &1915713702
 GameObject:
   m_ObjectHideFlags: 0

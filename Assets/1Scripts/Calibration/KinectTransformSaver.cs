@@ -16,18 +16,21 @@ public class KinectTransformSaver : MonoBehaviour
     public string fileName = "KinectA_Transform.json";
 
 #if UNITY_EDITOR
-    string GetScriptFolderPath()
+    string FilePath
     {
-        // このスクリプト自身のパスを取得
-        MonoScript ms = MonoScript.FromMonoBehaviour(this);
-        string scriptPath = AssetDatabase.GetAssetPath(ms);
+        get
+        {
+            string folderPath = Path.Combine(Application.dataPath, "Data/Calibration");
 
-        // フォルダ部分だけ取り出す
-        return Path.GetDirectoryName(scriptPath);
+            // 繝輔か繝ｫ繝縺後↑縺代ｌ縺ｰ菴懈��
+            if (!Directory.Exists(folderPath))
+            {
+                Directory.CreateDirectory(folderPath);
+            }
+
+            return Path.Combine(folderPath, fileName);
+        }
     }
-
-    string FilePath =>
-        Path.Combine(GetScriptFolderPath(), fileName);
 #else
     string FilePath => "";
 #endif
@@ -84,4 +87,3 @@ public class KinectTransformSaver : MonoBehaviour
 #endif
     }
 }
-
