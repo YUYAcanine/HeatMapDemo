@@ -1354,7 +1354,9 @@ MonoBehaviour:
   kinectBTransform: {fileID: 431353223}
   kinectCTransform: {fileID: 1865616046}
   kinectDTransform: {fileID: 1723817906}
-  maxBodyHeight: 0.35
+  minHeadPelvisDistance: 0.1
+  maxHeadPelvisDistance: 0.3
+  saveOnlyChild: 1
 --- !u!1 &1992478806
 GameObject:
   m_ObjectHideFlags: 0
