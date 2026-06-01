@@ -24,8 +24,9 @@ public class SkeletonRecorderSingle : MonoBehaviour
     private List<FrameData> frames = new List<FrameData>();
 
     private bool isRecording = true;
-
+    private bool syncInitialized = false;
     private long startTimestamp = -1;
+
 
     private string outputDir;
 
@@ -44,6 +45,29 @@ public class SkeletonRecorderSingle : MonoBehaviour
 
             dev.StartCameras(CreateConfig());
 
+            Debug.Log(
+                $"Camera started. Device={deviceIndex} Sync={syncMode}"
+            );
+
+            if (syncMode == WiredSyncMode.Subordinate)
+            {
+                Debug.Log(
+                    "Waiting first sync pulse from master..."
+                );
+
+                using (Capture warmup = dev.GetCapture())
+                {
+                    startTimestamp =
+                        warmup.Depth.DeviceTimestamp.Ticks;
+
+                    syncInitialized = true;
+
+                    Debug.Log(
+                        $"Sync acquired. Timestamp={startTimestamp}"
+                    );
+                }
+            }
+
             tracker = Tracker.Create(
                 dev.GetCalibration(),
                 TrackerConfiguration.Default
@@ -60,7 +84,6 @@ public class SkeletonRecorderSingle : MonoBehaviour
             );
         }
     }
-
     DeviceConfiguration CreateConfig()
     {
         return new DeviceConfiguration
@@ -114,8 +137,14 @@ public class SkeletonRecorderSingle : MonoBehaviour
             long rawTimestamp =
                 cap.Depth.DeviceTimestamp.Ticks;
 
-            if (startTimestamp < 0)
-                startTimestamp = rawTimestamp;
+            if (
+                startTimestamp < 0 &&
+                !syncInitialized
+            )
+            {
+                startTimestamp =
+                    rawTimestamp;
+            }
 
             long normalizedTimestamp =
                 rawTimestamp - startTimestamp;

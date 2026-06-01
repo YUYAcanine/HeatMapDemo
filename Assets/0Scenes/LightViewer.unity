@@ -151,7 +151,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a3319053657a1ae449178aa552586dbd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  jsonFileName: D_snyc.json
+  jsonFileName: D_skeleton.json
   jointPrefab: {fileID: 4066487136742516831, guid: bd71afa962ed61c48a054cb67b8520ae, type: 3}
   lineMaterial: {fileID: 2100000, guid: 3190b8688c2fe5048989384b8fa7ed85, type: 2}
   playbackSpeed: 1
@@ -201,7 +201,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a3319053657a1ae449178aa552586dbd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  jsonFileName: B_sync.json
+  jsonFileName: B_skeleton.json
   jointPrefab: {fileID: 4066487136742516831, guid: bd71afa962ed61c48a054cb67b8520ae, type: 3}
   lineMaterial: {fileID: 2100000, guid: 074c99a2c0700e545a6f01c7dd0c65f2, type: 2}
   playbackSpeed: 1
@@ -358,7 +358,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a3319053657a1ae449178aa552586dbd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  jsonFileName: C_sync.json
+  jsonFileName: C_skeleton.json
   jointPrefab: {fileID: 4066487136742516831, guid: bd71afa962ed61c48a054cb67b8520ae, type: 3}
   lineMaterial: {fileID: 0}
   playbackSpeed: 1
@@ -1125,7 +1125,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a3319053657a1ae449178aa552586dbd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  jsonFileName: A_sync.json
+  jsonFileName: A_skeleton.json
   jointPrefab: {fileID: 4066487136742516831, guid: bd71afa962ed61c48a054cb67b8520ae, type: 3}
   lineMaterial: {fileID: 2100000, guid: 209d92faaf65eae418fabfc8a58da8a5, type: 2}
   playbackSpeed: 1
@@ -1539,7 +1539,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1885839194
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1552,7 +1552,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a3319053657a1ae449178aa552586dbd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  jsonFileName: M_skeleton.json
+  jsonFileName: E_skeleton.json
   jointPrefab: {fileID: 4066487136742516831, guid: bd71afa962ed61c48a054cb67b8520ae, type: 3}
   lineMaterial: {fileID: 2100000, guid: a2d589d678e816246977a9699b2bdde1, type: 2}
   playbackSpeed: 1
