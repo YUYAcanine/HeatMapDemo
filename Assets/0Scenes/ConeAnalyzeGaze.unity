@@ -247,7 +247,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Preview
+  m_text: SaveHeatMap
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -426,6 +426,53 @@ Canvas:
   m_SortingLayerID: 0
   m_SortingOrder: 0
   m_TargetDisplay: 0
+--- !u!1 &643330562
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 643330563}
+  - component: {fileID: 643330564}
+  m_Layer: 0
+  m_Name: HeatMapSaver
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &643330563
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 643330562}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.24449874, y: 0.0579045, z: -0.65603596}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &643330564
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 643330562}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1bbadcc3a4bc7054ca516af466b8a6d6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  heatMapSource: {fileID: 1579866737}
+  saveFolderName: Data/HeatMap
+  customFileName: 8minPlay2
 --- !u!1 &705507993
 GameObject:
   m_ObjectHideFlags: 0
@@ -926,39 +973,14 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1579866736}
-  - component: {fileID: 1579866735}
+  - component: {fileID: 1579866737}
   m_Layer: 0
-  m_Name: HeatMapShowObject
+  m_Name: ConeHeatMapShowObject
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1579866735
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1579866734}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9fd80a8ef7310e243950b5dc93524b5d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  skeletonJson: M_skeleton_head_10minRandom1.json
-  lightJson: Light_log.json
-  meshObject: {fileID: 1496933864}
-  playbackSpeed: 2
-  downwardAngle: 35
-  paintRadius: 0.3
-  heatPerHit: 0.2
-  maxHeatDisplay: 5
-  showAll: 1
-  useLight1: 0
-  useLight2: 0
-  useLight3: 0
-  timeTolerance: 0.1
 --- !u!4 &1579866736
 Transform:
   m_ObjectHideFlags: 0
@@ -974,6 +996,32 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1579866737
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1579866734}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ed152639a1c51694a8cf78513ce584eb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skeletonJson: M_skeleton_head_8minPlay2.json
+  lightJson: Light_log.json
+  meshObject: {fileID: 1496933864}
+  playbackSpeed: 2
+  downwardAngle: 35
+  coneAngle: 15
+  coneDistance: 5
+  heatPerHit: 0.2
+  maxHeatDisplay: 15
+  showAll: 1
+  useLight1: 0
+  useLight2: 0
+  useLight3: 0
+  timeTolerance: 0.1
 --- !u!1 &2072137339
 GameObject:
   m_ObjectHideFlags: 0
@@ -987,7 +1035,7 @@ GameObject:
   - component: {fileID: 2072137342}
   - component: {fileID: 2072137341}
   m_Layer: 5
-  m_Name: Button
+  m_Name: SaveHeatMap
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1057,9 +1105,9 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: HeadDirectionAlpha_Absolute, Assembly-CSharp
-        m_MethodName: OnExportAndSwitchScene
+      - m_Target: {fileID: 643330564}
+        m_TargetAssemblyTypeName: HeatMapSave, Assembly-CSharp
+        m_MethodName: SaveHeatMap
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -1225,3 +1273,4 @@ SceneRoots:
   - {fileID: 725760609}
   - {fileID: 130153925}
   - {fileID: 1579866736}
+  - {fileID: 643330563}

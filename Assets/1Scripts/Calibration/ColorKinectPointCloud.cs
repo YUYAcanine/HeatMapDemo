@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using UnityEngine;
 using Microsoft.Azure.Kinect.Sensor;
 
@@ -10,6 +12,37 @@ public class ColorKinectPointCloudOnce : MonoBehaviour
     [Header("Point Skip")]
     public int stride = 4;
 
+    [Header("Save Settings")]
+    public string saveFileName = "pointcloud.pcd";
+
+    // 保存先
+    private string saveFolderPath;
+
+    // 保存用
+    private List<Vector3> savedVertices =
+        new List<Vector3>();
+
+    private List<Color32> savedColors =
+        new List<Color32>();
+
+    void Awake()
+    {
+        // Assets/3DObject/KinectPCD
+        saveFolderPath = Path.Combine(
+            Application.dataPath,
+            "3DObject",
+            "KinectPCD");
+
+        // フォルダ自動生成
+        if (!Directory.Exists(saveFolderPath))
+        {
+            Directory.CreateDirectory(saveFolderPath);
+        }
+    }
+
+    // =========================
+    // 点群取得
+    // =========================
     public void CaptureOnce()
     {
         Device dev = Device.Open(deviceIndex);
@@ -31,15 +64,9 @@ public class ColorKinectPointCloudOnce : MonoBehaviour
             Calibration calib = dev.GetCalibration();
             Transformation trans = calib.CreateTransformation();
 
-            // =========================
-            // 点群生成
-            // =========================
             using (Image pointCloudImage =
                    trans.DepthImageToPointCloud(depth))
             {
-                // =========================
-                // ColorをDepth座標へ変換
-                // =========================
                 using (Image transformedColor =
                     new Image(
                         ImageFormat.ColorBGRA32,
@@ -73,11 +100,13 @@ public class ColorKinectPointCloudOnce : MonoBehaviour
                         if (p.Z <= 0)
                             continue;
 
-                        vertices.Add(new Vector3(
+                        Vector3 v = new Vector3(
                             p.X / 1000f,
                             -p.Y / 1000f,
                             p.Z / 1000f
-                        ));
+                        );
+
+                        vertices.Add(v);
 
                         int ci = i * 4;
 
@@ -97,7 +126,14 @@ public class ColorKinectPointCloudOnce : MonoBehaviour
                         }
                     }
 
+                    // 保存用に保持
+                    savedVertices = vertices;
+                    savedColors = colors;
+
                     CreateMesh(vertices, colors);
+
+                    Debug.Log(
+                        $"PointCloud Captured : {vertices.Count} points");
                 }
             }
         }
@@ -106,6 +142,66 @@ public class ColorKinectPointCloudOnce : MonoBehaviour
         dev.Dispose();
     }
 
+    // =========================
+    // PCD保存
+    // =========================
+    public void SavePCD()
+    {
+        if (savedVertices == null ||
+            savedVertices.Count == 0)
+        {
+            Debug.LogWarning(
+                "保存する点群がありません。先にCaptureOnceしてください。");
+            return;
+        }
+
+        string path =
+            Path.Combine(
+                saveFolderPath,
+                saveFileName);
+
+        StringBuilder sb = new StringBuilder();
+
+        // =========================
+        // PCD Header
+        // =========================
+        sb.AppendLine("# .PCD v0.7 - Point Cloud Data file format");
+        sb.AppendLine("VERSION 0.7");
+        sb.AppendLine("FIELDS x y z rgb");
+        sb.AppendLine("SIZE 4 4 4 4");
+        sb.AppendLine("TYPE F F F U");
+        sb.AppendLine("COUNT 1 1 1 1");
+        sb.AppendLine($"WIDTH {savedVertices.Count}");
+        sb.AppendLine("HEIGHT 1");
+        sb.AppendLine("VIEWPOINT 0 0 0 1 0 0 0");
+        sb.AppendLine($"POINTS {savedVertices.Count}");
+        sb.AppendLine("DATA ascii");
+
+        // =========================
+        // Point Data
+        // =========================
+        for (int i = 0; i < savedVertices.Count; i++)
+        {
+            Vector3 p = savedVertices[i];
+            Color32 c = savedColors[i];
+
+            uint rgb =
+                ((uint)c.r << 16) |
+                ((uint)c.g << 8) |
+                c.b;
+
+            sb.AppendLine(
+                $"{p.x} {p.y} {p.z} {rgb}");
+        }
+
+        File.WriteAllText(path, sb.ToString());
+
+        Debug.Log($"PCD Saved : {path}");
+    }
+
+    // =========================
+    // Mesh生成
+    // =========================
     void CreateMesh(
         List<Vector3> pts,
         List<Color32> cols)
@@ -126,13 +222,13 @@ public class ColorKinectPointCloudOnce : MonoBehaviour
             indices[i] = i;
         }
 
-        mesh.SetIndices(indices,
+        mesh.SetIndices(
+            indices,
             MeshTopology.Points,
             0);
 
         GetComponent<MeshFilter>().mesh = mesh;
 
-        // 頂点カラー対応マテリアル
         Material mat = new Material(
             Shader.Find("Sprites/Default"));
 

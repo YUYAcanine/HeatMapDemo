@@ -1,4 +1,5 @@
-﻿using Microsoft.Azure.Kinect.Sensor;
+﻿
+using Microsoft.Azure.Kinect.Sensor;
 using Microsoft.Azure.Kinect.BodyTracking;
 using System.Linq;
 using System.Threading.Tasks;
@@ -24,6 +25,10 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
     [Header("Ray Settings")]
     public float rayDistance = 100f;
     public float rayInterval = 0.05f;
+
+    [Header("Gaze Angle Correction")]
+    [Tooltip("Downward angle correction in degrees")]
+    public float downwardAngle = 15f;
 
     [Header("Camera Follow (optional)")]
     public bool enableSmoothCamera = true;
@@ -60,10 +65,14 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
 
     Texture2D previewTex;
 
-    Dictionary<string, float> gazeTimes = new Dictionary<string, float>();
+    Dictionary<string, float> gazeTimes =
+        new Dictionary<string, float>();
+
     string currentTarget = null;
+
     float gazeStartTime = 0f;
 
+    // =========================================================
     async void Start()
     {
         if (!InitMesh())
@@ -91,6 +100,7 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
                     .ConfigureAwait(true);
 
                 ShowPreview(cap);
+
                 UpdateSkeleton(cap);
             }
             catch
@@ -107,6 +117,7 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         }
     }
 
+    // =========================================================
     void OnDestroy()
     {
         kinect?.StopCameras();
@@ -114,12 +125,14 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         tracker?.Dispose();
     }
 
+    // =========================================================
     bool InitMesh()
     {
         if (!meshObject)
             return false;
 
-        MeshFilter mf = meshObject.GetComponent<MeshFilter>();
+        MeshFilter mf =
+            meshObject.GetComponent<MeshFilter>();
 
         if (!mf)
             return false;
@@ -129,10 +142,13 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         verts = targetMesh.vertices;
 
         colors =
-            Enumerable.Repeat(new Color(0, 0, 0, 0), verts.Length)
-            .ToArray();
+            Enumerable.Repeat(
+                new Color(0, 0, 0, 0),
+                verts.Length
+            ).ToArray();
 
-        vertHeat = new float[verts.Length];
+        vertHeat =
+            new float[verts.Length];
 
         targetMesh.colors = colors;
 
@@ -145,20 +161,31 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         return true;
     }
 
+    // =========================================================
     void InitKinect()
     {
         kinect = Device.Open(0);
 
-        kinect.StartCameras(new DeviceConfiguration
-        {
-            ColorFormat = ImageFormat.ColorBGRA32,
-            ColorResolution = ColorResolution.R1080p,
-            DepthMode = DepthMode.NFOV_2x2Binned,
-            SynchronizedImagesOnly = true,
-            CameraFPS = FPS.FPS15
-        });
+        kinect.StartCameras(
+            new DeviceConfiguration
+            {
+                ColorFormat =
+                    ImageFormat.ColorBGRA32,
+
+                ColorResolution =
+                    ColorResolution.R1080p,
+
+                DepthMode =
+                    DepthMode.NFOV_2x2Binned,
+
+                SynchronizedImagesOnly = true,
+
+                CameraFPS = FPS.FPS15
+            }
+        );
     }
 
+    // =========================================================
     void ShowPreview(Capture cap)
     {
         if (!viewerRawImage)
@@ -169,30 +196,42 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         int w = img.WidthPixels;
         int h = img.HeightPixels;
 
-        var src = img.GetPixels<BGRA>().ToArray();
+        var src =
+            img.GetPixels<BGRA>().ToArray();
 
-        if (previewTex == null
+        if (
+            previewTex == null
             || previewTex.width != w
-            || previewTex.height != h)
+            || previewTex.height != h
+        )
         {
-            previewTex = new Texture2D(
-                w,
-                h,
-                TextureFormat.BGRA32,
-                false
-            );
+            previewTex =
+                new Texture2D(
+                    w,
+                    h,
+                    TextureFormat.BGRA32,
+                    false
+                );
 
-            viewerRawImage.texture = previewTex;
+            viewerRawImage.texture =
+                previewTex;
         }
 
-        Color32[] dst = new Color32[src.Length];
+        Color32[] dst =
+            new Color32[src.Length];
 
         for (int i = 0; i < src.Length; ++i)
         {
-            var p = src[src.Length - 1 - i];
+            var p =
+                src[src.Length - 1 - i];
 
             dst[i] =
-                new Color32(p.R, p.G, p.B, p.A);
+                new Color32(
+                    p.R,
+                    p.G,
+                    p.B,
+                    p.A
+                );
         }
 
         previewTex.SetPixels32(dst);
@@ -200,53 +239,102 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         previewTex.Apply();
     }
 
-    // ==============================
-    // Kinect Local → Room Coordinate
-    // ==============================
-
-    Vector3 ConvertToRoomCoordinate(Vector3 local)
+    // =========================================================
+    Vector3 ConvertToRoomCoordinate(
+        Vector3 local
+    )
     {
         if (kinectTransform == null)
             return local;
 
-        return kinectTransform.TransformPoint(local);
+        return
+            kinectTransform.TransformPoint(local);
     }
 
+    // =========================================================
     void UpdateSkeleton(Capture cap)
     {
         tracker.EnqueueCapture(cap);
 
-        using var fr = tracker.PopResult();
+        using var fr =
+            tracker.PopResult();
 
-        if (fr == null || fr.NumberOfBodies == 0)
+        if (
+            fr == null
+            || fr.NumberOfBodies == 0
+        )
             return;
 
-        var sk = fr.GetBodySkeleton(0);
+        var sk =
+            fr.GetBodySkeleton(0);
 
         Vector3 headLocal =
             new Vector3(
-                sk.GetJoint(JointId.Head).Position.X / 1000f,
-                -sk.GetJoint(JointId.Head).Position.Y / 1000f,
-                sk.GetJoint(JointId.Head).Position.Z / 1000f
+                sk.GetJoint(JointId.Head)
+                    .Position.X / 1000f,
+
+                -sk.GetJoint(JointId.Head)
+                    .Position.Y / 1000f,
+
+                sk.GetJoint(JointId.Head)
+                    .Position.Z / 1000f
             );
 
         Vector3 noseLocal =
             new Vector3(
-                sk.GetJoint(JointId.Nose).Position.X / 1000f,
-                -sk.GetJoint(JointId.Nose).Position.Y / 1000f,
-                sk.GetJoint(JointId.Nose).Position.Z / 1000f
+                sk.GetJoint(JointId.Nose)
+                    .Position.X / 1000f,
+
+                -sk.GetJoint(JointId.Nose)
+                    .Position.Y / 1000f,
+
+                sk.GetJoint(JointId.Nose)
+                    .Position.Z / 1000f
             );
 
         headPos =
-            ConvertToRoomCoordinate(headLocal);
+            ConvertToRoomCoordinate(
+                headLocal
+            );
 
         Vector3 nose =
-            ConvertToRoomCoordinate(noseLocal);
+            ConvertToRoomCoordinate(
+                noseLocal
+            );
+
+        // =========================
+        // Raw Direction
+        // =========================
+
+        Vector3 rawDir =
+            (nose - headPos).normalized;
+
+        // =========================
+        // Face-local downward correction
+        // =========================
+
+        Vector3 rightAxis =
+            Vector3.Cross(
+                Vector3.up,
+                rawDir
+            ).normalized;
+
+        // 真上や真下向き対策
+        if (rightAxis.sqrMagnitude < 0.0001f)
+        {
+            rightAxis = Vector3.right;
+        }
+
+        Quaternion correction =
+            Quaternion.AngleAxis(
+                downwardAngle,
+                rightAxis
+            );
 
         viewDir =
-            (nose - headPos
-            + new Vector3(0, -0.05f, 0))
-            .normalized;
+            (correction * rawDir).normalized;
+
+        // =========================
 
         headRot =
             Quaternion.LookRotation(
@@ -255,6 +343,7 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
             );
     }
 
+    // =========================================================
     void SmoothCamera()
     {
         var cam = Camera.main;
@@ -263,17 +352,20 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
             Vector3.Lerp(
                 cam.transform.position,
                 headPos,
-                Time.deltaTime * cameraLerpSpeed
+                Time.deltaTime
+                * cameraLerpSpeed
             );
 
         cam.transform.rotation =
             Quaternion.Slerp(
                 cam.transform.rotation,
                 headRot,
-                Time.deltaTime * cameraLerpSpeed
+                Time.deltaTime
+                * cameraLerpSpeed
             );
     }
 
+    // =========================================================
     void HeatAndGazeLogic()
     {
         if (Time.time >= nextRayT)
@@ -292,10 +384,13 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
 
             bool hitSomething = false;
 
-            if (Physics.Raycast(
-                ray,
-                out var hit,
-                rayDistance))
+            if (
+                Physics.Raycast(
+                    ray,
+                    out var hit,
+                    rayDistance
+                )
+            )
             {
                 hitSomething = true;
 
@@ -309,14 +404,21 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
                 }
 
                 string targetName =
-                    hit.collider.gameObject.name.Trim();
+                    hit.collider
+                        .gameObject.name
+                        .Trim();
 
                 if (
                     gazeTargetNames.Any(
-                        n => n.Trim() == targetName
-                    ))
+                        n => n.Trim()
+                        == targetName
+                    )
+                )
                 {
-                    if (currentTarget != targetName)
+                    if (
+                        currentTarget
+                        != targetName
+                    )
                     {
                         if (
                             !string.IsNullOrEmpty(
@@ -344,8 +446,10 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
                                 currentTarget
                             )
                         )
+                        {
                             gazeTimes[currentTarget]
                                 = 0f;
+                        }
                     }
                 }
             }
@@ -386,7 +490,8 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         if (Time.time >= nextClrT)
         {
             nextClrT =
-                Time.time + colorUpdateInterval;
+                Time.time
+                + colorUpdateInterval;
 
             DecayHeat();
 
@@ -395,19 +500,24 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
 
         if (gazeText)
         {
-            gazeText.text = "Gaze Time\n";
+            gazeText.text =
+                "Gaze Time\n";
 
             foreach (var kv in gazeTimes)
             {
-                float total = kv.Value;
+                float total =
+                    kv.Value;
 
                 bool tracking =
-                    currentTarget == kv.Key;
+                    currentTarget
+                    == kv.Key;
 
                 if (tracking)
+                {
                     total +=
                         Time.time
                         - gazeStartTime;
+                }
 
                 gazeText.text +=
                     $"{kv.Key}: {total:F1}s";
@@ -421,6 +531,7 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         }
     }
 
+    // =========================================================
     void AddHeat(Vector3 hitW)
     {
         float r2 =
@@ -430,56 +541,86 @@ public class HeadDirectionAlpha_Absolute : MonoBehaviour
         {
             Vector3 w =
                 meshObject.transform
-                .TransformPoint(verts[i]);
+                    .TransformPoint(
+                        verts[i]
+                    );
 
             if (
-                (w - hitW).sqrMagnitude <= r2
+                (w - hitW).sqrMagnitude
+                <= r2
             )
-                vertHeat[i] += heatPerHit;
+            {
+                vertHeat[i]
+                    += heatPerHit;
+            }
         }
     }
 
+    // =========================================================
     void DecayHeat()
     {
         float dec =
             heatDecayPerSec
             * colorUpdateInterval;
 
-        for (int i = 0; i < vertHeat.Length; ++i)
+        for (
+            int i = 0;
+            i < vertHeat.Length;
+            ++i
+        )
+        {
             vertHeat[i] =
                 Mathf.Max(
                     0,
                     vertHeat[i] - dec
                 );
+        }
     }
 
+    // =========================================================
     void ApplyHeatColors()
     {
-        for (int i = 0; i < verts.Length; ++i)
+        for (
+            int i = 0;
+            i < verts.Length;
+            ++i
+        )
+        {
             colors[i].a =
                 Mathf.Clamp01(
                     vertHeat[i]
                     / maxHeatDisplay
                 );
+        }
 
         targetMesh.colors = colors;
     }
 
+    // =========================================================
     public void OnExportAndSwitchScene()
     {
-        for (int i = 0; i < colors.Length; ++i)
+        for (
+            int i = 0;
+            i < colors.Length;
+            ++i
+        )
+        {
             colors[i].a =
                 Mathf.Clamp01(
                     vertHeat[i]
                     / maxHeatDisplay
                 );
+        }
 
         if (heatDataAsset != null)
+        {
             heatDataAsset.vertexColors =
                 colors;
+        }
 
         SceneManager.LoadScene(
             "1RealTimePreview"
         );
     }
 }
+

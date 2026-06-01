@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
-public class HeatMapShow : MonoBehaviour
+public class ConeHeatMapShow : MonoBehaviour
 {
     [Header("JSON")]
     [SerializeField] private string skeletonJson = "skeleton.json";
@@ -19,8 +19,14 @@ public class HeatMapShow : MonoBehaviour
     [Tooltip("Downward angle correction in degrees")]
     public float downwardAngle = 15f;
 
+    [Header("Cone Settings")]
+    [Tooltip("Cone angle in degrees")]
+    public float coneAngle = 15f;
+
+    [Tooltip("Maximum cone distance")]
+    public float coneDistance = 5f;
+
     [Header("Heat")]
-    public float paintRadius = 0.3f;
     public float heatPerHit = 0.2f;
     public float maxHeatDisplay = 5f;
 
@@ -72,7 +78,7 @@ public class HeatMapShow : MonoBehaviour
 
         if (updated)
         {
-            ProcessGaze();
+            ProcessConeGaze();
 
             ApplyColor();
         }
@@ -126,7 +132,7 @@ public class HeatMapShow : MonoBehaviour
     }
 
     // =========================================================
-    void ProcessGaze()
+    void ProcessConeGaze()
     {
         if (
             !joints.ContainsKey(JointId.Head)
@@ -159,7 +165,6 @@ public class HeatMapShow : MonoBehaviour
                 rawDir
             ).normalized;
 
-        // 真上・真下向き対策
         if (rightAxis.sqrMagnitude < 0.0001f)
         {
             rightAxis = Vector3.right;
@@ -176,44 +181,118 @@ public class HeatMapShow : MonoBehaviour
 
         // =========================
 
-        Ray ray =
-            new Ray(head, dir);
-
         Debug.DrawRay(
             head,
-            dir * 5f,
+            dir * coneDistance,
             Color.red
         );
 
-        if (
-            Physics.Raycast(
-                ray,
-                out var hit,
-                100f
-            )
+        // =====================================================
+        // showAll の場合は
+        // Light同期を完全スキップ
+        // =====================================================
+
+        if (showAll)
+        {
+            AddConeHeat(head, dir);
+            return;
+        }
+
+        // =====================================================
+        // Light filtering
+        // =====================================================
+
+        LightFrame lf =
+            GetClosestLight(
+                playbackTime
+            );
+
+        if (lf == null)
+            return;
+
+        if (!MatchLightCondition(lf))
+            return;
+
+        AddConeHeat(head, dir);
+    }
+
+    // =========================================================
+    void AddConeHeat(
+        Vector3 origin,
+        Vector3 dir
+    )
+    {
+        float maxAngleRad =
+            coneAngle * Mathf.Deg2Rad;
+
+        float cosThreshold =
+            Mathf.Cos(maxAngleRad);
+
+        for (
+            int i = 0;
+            i < verts.Length;
+            i++
         )
         {
-            if (
-                hit.collider.transform
-                != meshObject.transform
-            )
-            {
-                return;
-            }
-
-            LightFrame lf =
-                GetClosestLight(
-                    playbackTime
+            Vector3 worldPos =
+                meshObject.transform
+                .TransformPoint(
+                    verts[i]
                 );
 
-            if (lf == null)
-                return;
+            Vector3 toVertex =
+                worldPos - origin;
 
-            // 🔥 Filter
-            if (MatchLightCondition(lf))
-            {
-                AddHeat(hit.point);
-            }
+            float distance =
+                toVertex.magnitude;
+
+            // 距離制限
+            if (
+                distance > coneDistance
+            )
+                continue;
+
+            Vector3 toVertexDir =
+                toVertex.normalized;
+
+            float dot =
+                Vector3.Dot(
+                    dir,
+                    toVertexDir
+                );
+
+            // 円錐外
+            if (dot < cosThreshold)
+                continue;
+
+            // =========================
+            // 角度計算
+            // =========================
+
+            float angle =
+                Mathf.Acos(
+                    Mathf.Clamp(dot, -1f, 1f)
+                );
+
+            // 0=center
+            // 1=edge
+            float normalized =
+                angle / maxAngleRad;
+
+            // =========================
+            // 中央強調ウェイト
+            // =========================
+
+            float weight =
+                1f - normalized;
+
+            // 中央を強く
+            weight *= weight;
+
+            // =========================
+
+            heat[i] +=
+                heatPerHit * weight;
         }
     }
 
@@ -222,7 +301,6 @@ public class HeatMapShow : MonoBehaviour
         LightFrame lf
     )
     {
-        // 最優先
         if (showAll)
             return true;
 
@@ -260,34 +338,6 @@ public class HeatMapShow : MonoBehaviour
             return null;
 
         return closest;
-    }
-
-    // =========================================================
-    void AddHeat(Vector3 hit)
-    {
-        float r2 =
-            paintRadius * paintRadius;
-
-        for (
-            int i = 0;
-            i < verts.Length;
-            i++
-        )
-        {
-            Vector3 w =
-                meshObject.transform
-                .TransformPoint(
-                    verts[i]
-                );
-
-            if (
-                (w - hit).sqrMagnitude
-                <= r2
-            )
-            {
-                heat[i] += heatPerHit;
-            }
-        }
     }
 
     // =========================================================
@@ -377,13 +427,6 @@ public class HeatMapShow : MonoBehaviour
             new float[verts.Length];
 
         targetMesh.colors = colors;
-
-        var col =
-            meshObject.GetComponent<MeshCollider>()
-            ??
-            meshObject.AddComponent<MeshCollider>();
-
-        col.sharedMesh = targetMesh;
     }
 
     // =========================================================
@@ -427,5 +470,19 @@ public class HeatMapShow : MonoBehaviour
         public bool light1;
         public bool light2;
         public bool light3;
+    }
+// =========================================================
+    public float[] GetHeatData()
+    {
+        return heat;
+    }
+
+    // =========================================================
+    public string GetMeshName()
+    {
+        if (meshObject == null)
+            return "UnknownMesh";
+
+        return meshObject.name;
     }
 }

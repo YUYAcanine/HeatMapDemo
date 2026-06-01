@@ -563,6 +563,7 @@ MonoBehaviour:
   kinectTransform: {fileID: 1193239466}
   rayDistance: 10
   rayInterval: 0.05
+  downwardAngle: 16
   enableSmoothCamera: 1
   cameraLerpSpeed: 15
   paintRadius: 0.2
