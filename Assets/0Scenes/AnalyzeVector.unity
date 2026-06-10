@@ -1008,8 +1008,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d361ff946ed7ddc4d8aa627f2f4feb5b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skeletonJson: M_skeleton.json
-  lightJson: Light_log.json
+  skeletonJson: sou1.json
+  lightJson: sou1_light.json
   lineMaterial: {fileID: 2100000, guid: a2d589d678e816246977a9699b2bdde1, type: 2}
   lineWidth: 0.008
   headLength: 0.08

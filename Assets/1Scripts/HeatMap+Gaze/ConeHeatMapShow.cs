@@ -17,7 +17,7 @@ public class ConeHeatMapShow : MonoBehaviour
 
     [Header("Gaze Angle Correction")]
     [Tooltip("Downward angle correction in degrees")]
-    public float downwardAngle = 15f;
+    public float downwardAngle = 35f;
 
     [Header("Cone Settings")]
     [Tooltip("Cone angle in degrees")]

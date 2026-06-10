@@ -15,6 +15,12 @@ public class GazeTuning : MonoBehaviour
     public Transform pointA;
     public Transform pointB;
     public Transform pointC;
+    public Transform pointD;
+    public Transform pointE;
+    public Transform pointF;
+    public Transform pointG;
+    public Transform pointH;
+    public Transform pointI;
 
     [Header("UI")]
     public TMP_Text resultText;
@@ -23,9 +29,20 @@ public class GazeTuning : MonoBehaviour
     public Button pointAButton;
     public Button pointBButton;
     public Button pointCButton;
+    public Button pointDButton;
+    public Button pointEButton;
+    public Button pointFButton;
+    public Button pointGButton;
+    public Button pointHButton;
+    public Button pointIButton;
 
     [Header("Raycast")]
     public float rayDistance = 10f;
+
+    [Header("Gaze Angle Correction")]
+    [Tooltip("Positive values move the plotted gaze direction downward.")]
+    [Range(0f, 90f)]
+    public float downwardCorrectionAngle = 0f;
 
     [Header("Visualization")]
     public GameObject hitSpherePrefab;
@@ -66,9 +83,15 @@ public class GazeTuning : MonoBehaviour
         );
 
         // ボタン登録
-        pointAButton.onClick.AddListener(() => CapturePoint(pointA, "A"));
-        pointBButton.onClick.AddListener(() => CapturePoint(pointB, "B"));
-        pointCButton.onClick.AddListener(() => CapturePoint(pointC, "C"));
+        RegisterPointButton(pointAButton, pointA, "A");
+        RegisterPointButton(pointBButton, pointB, "B");
+        RegisterPointButton(pointCButton, pointC, "C");
+        RegisterPointButton(pointDButton, pointD, "D");
+        RegisterPointButton(pointEButton, pointE, "E");
+        RegisterPointButton(pointFButton, pointF, "F");
+        RegisterPointButton(pointGButton, pointG, "G");
+        RegisterPointButton(pointHButton, pointH, "H");
+        RegisterPointButton(pointIButton, pointI, "I");
 
         // Kinect Loop
         while (true)
@@ -89,6 +112,16 @@ public class GazeTuning : MonoBehaviour
 
             await Task.Yield();
         }
+    }
+
+    // =========================
+
+    void RegisterPointButton(Button button, Transform target, string label)
+    {
+        if (button == null)
+            return;
+
+        button.onClick.AddListener(() => CapturePoint(target, label));
     }
 
     // =========================
@@ -166,12 +199,40 @@ public class GazeTuning : MonoBehaviour
         rawDir =
             (nosePos - headPos).normalized;
 
+        Vector3 correctedDir =
+            ApplyDownwardCorrection(rawDir);
+
         // Debug表示
         Debug.DrawRay(
             headPos,
-            rawDir * rayDistance,
+            correctedDir * rayDistance,
             Color.red
         );
+    }
+
+    // =========================
+
+    Vector3 ApplyDownwardCorrection(Vector3 direction)
+    {
+        if (direction.sqrMagnitude < Mathf.Epsilon)
+            return direction;
+
+        direction.Normalize();
+
+        Vector3 rightAxis =
+            Vector3.Cross(Vector3.up, direction);
+
+        if (rightAxis.sqrMagnitude < Mathf.Epsilon)
+            rightAxis = Vector3.right;
+        else
+            rightAxis.Normalize();
+
+        return (
+            Quaternion.AngleAxis(
+                downwardCorrectionAngle,
+                rightAxis
+            ) * direction
+        ).normalized;
     }
 
     // =========================
@@ -190,15 +251,24 @@ public class GazeTuning : MonoBehaviour
         Vector3 targetDir =
             (target.position - headPos).normalized;
 
+        Vector3 correctedDir =
+            ApplyDownwardCorrection(rawDir);
+
         // =========================
         // Pitch角
         // =========================
 
         float measuredPitch =
-            Mathf.Asin(rawDir.y) * Mathf.Rad2Deg;
+            Mathf.Asin(correctedDir.y) * Mathf.Rad2Deg;
 
         float targetPitch =
             Mathf.Asin(targetDir.y) * Mathf.Rad2Deg;
+
+        float measuredYaw =
+            Mathf.Atan2(correctedDir.x, correctedDir.z) * Mathf.Rad2Deg;
+
+        float targetYaw =
+            Mathf.Atan2(targetDir.x, targetDir.z) * Mathf.Rad2Deg;
 
         // =========================
         // 誤差
@@ -206,6 +276,9 @@ public class GazeTuning : MonoBehaviour
 
         float pitchError =
             targetPitch - measuredPitch;
+
+        float yawError =
+            Mathf.DeltaAngle(measuredYaw, targetYaw);
 
         totalPitchOffset += pitchError;
 
@@ -219,7 +292,7 @@ public class GazeTuning : MonoBehaviour
         // =========================
 
         Ray ray =
-            new Ray(headPos, rawDir);
+            new Ray(headPos, correctedDir);
 
         bool hitDetected = false;
 
@@ -291,6 +364,16 @@ public class GazeTuning : MonoBehaviour
             $"DistanceError={distanceError:F3}m"
         );
 
+        Debug.Log(
+            $"[{label}] MeasuredYaw={measuredYaw:F2}deg, " +
+            $"TargetYaw={targetYaw:F2}deg, " +
+            $"YawError={yawError:F2}deg"
+        );
+
+        Debug.Log(
+            $"[{label}] DownwardCorrection={downwardCorrectionAngle:F2}deg"
+        );
+
         // =========================
         // UI
         // =========================
@@ -308,6 +391,12 @@ public class GazeTuning : MonoBehaviour
                 $"Average Offset : {averageOffset:F2}°\n\n" +
 
                 $"Distance Error : {distanceError:F3} m";
+
+            resultText.text +=
+                $"\n\nMeasured Yaw : {measuredYaw:F2} deg\n" +
+                $"Target Yaw : {targetYaw:F2} deg\n" +
+                $"Yaw Error : {yawError:F2} deg\n\n" +
+                $"Downward Correction : {downwardCorrectionAngle:F2} deg";
         }
     }
 
@@ -335,6 +424,6 @@ public class GazeTuning : MonoBehaviour
         Quaternion correction =
             Quaternion.Euler(avg, 0, 0);
 
-        return correction * rawDir;
+        return ApplyDownwardCorrection(correction * rawDir);
     }
 }

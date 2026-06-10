@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
+using System.Linq;
 
-public class JointPositionLoader : MonoBehaviour
+public class CalculateRisk : MonoBehaviour
 {
     [Header("JSON")]
     [SerializeField] private string jsonFileName = "skeleton.json";
@@ -20,6 +22,10 @@ public class JointPositionLoader : MonoBehaviour
     [SerializeField] private Button playButton;
     [SerializeField] private Button stopButton;
 
+    [Header("Risk")]
+    [SerializeField] private Transform[] factors;
+    [SerializeField] private TMP_Text riskText;
+
     // =========================
     // Internal data
     // =========================
@@ -32,12 +38,29 @@ public class JointPositionLoader : MonoBehaviour
 
     private int frameIndex = 0;
     private FrameData lastValidFrame = null;
+    private Vector3 previousPelvis;
+    private bool firstPelvisFrame = true;
+
+    private Dictionary<Transform, Queue<float>> gazeHistories = new();
+    private Dictionary<Transform, float> gazeSums = new();
 
     // =========================
     // Start
     // =========================
     void Start()
     {
+        if (factors != null)
+        {
+            foreach (Transform factor in factors)
+            {
+                if (factor == null)
+                    continue;
+
+                gazeHistories[factor] = new Queue<float>();
+                gazeSums[factor] = 0f;
+            }
+        }
+
         LoadFrames();
         CreateJointObjects();
         CreateLines();
@@ -233,6 +256,7 @@ public class JointPositionLoader : MonoBehaviour
 
             line.line.enabled = valid;
         }
+        UpdateRisk();
     }
 
     private void HideSkeleton()
@@ -242,6 +266,227 @@ public class JointPositionLoader : MonoBehaviour
 
         foreach (var line in lines)
             line.line.enabled = false;
+    }
+
+    private void UpdateRisk()
+    {
+        if (factors == null || factors.Length == 0)
+            return;
+
+        if (!jointObjects.ContainsKey(JointId.Pelvis))
+            return;
+
+        if (!jointObjects.ContainsKey(JointId.Head))
+            return;
+
+        if (!jointObjects.ContainsKey(JointId.Nose))
+            return;
+
+        Vector3 pelvis =
+            jointObjects[JointId.Pelvis]
+            .transform.position;
+
+        Vector3 head =
+            jointObjects[JointId.Head]
+            .transform.position;
+
+        Vector3 nose =
+            jointObjects[JointId.Nose]
+            .transform.position;
+
+        //--------------------------------
+        // Velocity
+        //--------------------------------
+
+        Vector3 velocity =
+            Vector3.zero;
+
+        if (!firstPelvisFrame)
+        {
+            velocity =
+                (
+                    pelvis
+                    - previousPelvis
+                )
+                /
+                Time.deltaTime;
+        }
+
+        previousPelvis =
+            pelvis;
+
+        firstPelvisFrame = false;
+
+        //--------------------------------
+        // Attention (Cone)
+        //--------------------------------
+
+        Vector3 rawDir =
+            (nose - head).normalized;
+
+        // HeatMapと同じ補正
+        Vector3 rightAxis =
+            Vector3.Cross(
+                Vector3.up,
+                rawDir
+            ).normalized;
+
+        if (rightAxis.sqrMagnitude < 0.0001f)
+        {
+            rightAxis = Vector3.right;
+        }
+
+        Quaternion correction =
+            Quaternion.AngleAxis(
+                15f, // downwardAngle
+                rightAxis
+            );
+
+        Vector3 dir =
+            (correction * rawDir)
+            .normalized;
+
+        // Head to each factor
+        string displayText = "";
+
+        for (int i = 0; i < factors.Length; i++)
+        {
+            Transform factor = factors[i];
+
+            if (factor == null)
+                continue;
+
+            if (!gazeHistories.ContainsKey(factor))
+            {
+                gazeHistories[factor] = new Queue<float>();
+                gazeSums[factor] = 0f;
+            }
+
+            float distance =
+                Vector3.Distance(
+                    pelvis,
+                    factor.position
+                );
+
+            float distanceScore =
+                Mathf.Clamp01(
+                    1f - distance / 1.5f
+                );
+
+            Vector3 toObject =
+                (
+                    factor.position
+                    - pelvis
+                ).normalized;
+
+            float approachSpeed =
+                Vector3.Dot(
+                    velocity,
+                    toObject
+                );
+
+            float velocityScore =
+                Mathf.Clamp01(
+                    approachSpeed / 0.3f
+                );
+
+            Vector3 toFactor =
+                (
+                    factor.position
+                    - head
+                ).normalized;
+
+        // 角度計算
+            float angle =
+                Vector3.Angle(
+                    dir,
+                    toFactor
+                );
+
+        // 円錐内なら見ている
+            bool lookingAtFactor =
+                angle < 20f;
+        
+            float sample =
+                lookingAtFactor ? 1f : 0f;
+
+            gazeHistories[factor].Enqueue(sample);
+
+            gazeSums[factor] += sample;
+
+            int maxSamples =
+                Mathf.RoundToInt(
+                    3f /
+                    Mathf.Max(
+                        Time.deltaTime,
+                        0.0001f
+                    )
+                );
+
+            while (
+                gazeHistories[factor].Count >
+                maxSamples
+            )
+            {
+                gazeSums[factor] -=
+                    gazeHistories[factor].Dequeue();
+            }
+
+            float attentionScore = 0f;
+
+            if (gazeHistories[factor].Count > 0)
+            {
+                attentionScore =
+                    gazeSums[factor] /
+                    gazeHistories[factor].Count;
+            }
+
+        // デバッグ表示
+            Debug.DrawRay(
+                head,
+                dir * 3f,
+                Color.red
+            );
+
+            Debug.DrawLine(
+                head,
+                factor.position,
+                Color.green
+            );
+
+        //--------------------------------
+        // Risk
+        //--------------------------------
+
+            float risk =
+                (
+                    distanceScore +
+                    velocityScore +
+                    attentionScore
+                ) / 3f;
+
+        //--------------------------------
+        // UI
+        //--------------------------------
+
+            displayText +=
+                $@"Factor{i + 1}
+
+Risk : {risk:F2}
+
+DistanceScore : {distanceScore:F2}
+
+VelocityScore : {velocityScore:F2}
+
+AttentionScore : {attentionScore:F2}
+
+";
+        }
+
+        if (riskText != null)
+        {
+            riskText.text = displayText;
+        }
     }
 
     // =========================

@@ -946,18 +946,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9fd80a8ef7310e243950b5dc93524b5d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skeletonJson: M_skeleton_head_10minRandom1.json
-  lightJson: Light_log.json
+  skeletonJson: naoto2.json
+  lightJson: naoto2_light.json
   meshObject: {fileID: 1496933864}
-  playbackSpeed: 2
+  playbackSpeed: 3
   downwardAngle: 35
   paintRadius: 0.3
   heatPerHit: 0.2
-  maxHeatDisplay: 5
-  showAll: 1
+  maxHeatDisplay: 20
+  showAll: 0
   useLight1: 0
   useLight2: 0
-  useLight3: 0
+  useLight3: 1
   timeTolerance: 0.1
 --- !u!4 &1579866736
 Transform:

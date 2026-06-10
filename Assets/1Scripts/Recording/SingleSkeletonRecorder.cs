@@ -24,8 +24,11 @@ public class SkeletonRecorderSingle : MonoBehaviour
     private List<FrameData> frames = new List<FrameData>();
 
     private bool isRecording = true;
-    private bool syncInitialized = false;
     private long startTimestamp = -1;
+    private bool firstFrameReceived = false;
+    private bool recordingStarted = false;
+    private const long GLOBAL_START_TIMESTAMP =
+    50000000;   
 
 
     private string outputDir;
@@ -44,29 +47,6 @@ public class SkeletonRecorderSingle : MonoBehaviour
             dev = Device.Open(deviceIndex);
 
             dev.StartCameras(CreateConfig());
-
-            Debug.Log(
-                $"Camera started. Device={deviceIndex} Sync={syncMode}"
-            );
-
-            if (syncMode == WiredSyncMode.Subordinate)
-            {
-                Debug.Log(
-                    "Waiting first sync pulse from master..."
-                );
-
-                using (Capture warmup = dev.GetCapture())
-                {
-                    startTimestamp =
-                        warmup.Depth.DeviceTimestamp.Ticks;
-
-                    syncInitialized = true;
-
-                    Debug.Log(
-                        $"Sync acquired. Timestamp={startTimestamp}"
-                    );
-                }
-            }
 
             tracker = Tracker.Create(
                 dev.GetCalibration(),
@@ -136,18 +116,45 @@ public class SkeletonRecorderSingle : MonoBehaviour
         {
             long rawTimestamp =
                 cap.Depth.DeviceTimestamp.Ticks;
-
-            if (
-                startTimestamp < 0 &&
-                !syncInitialized
-            )
+            
+            if (!recordingStarted)
             {
+                if (
+                    rawTimestamp <
+                    GLOBAL_START_TIMESTAMP
+                )
+                {
+                    return null;
+                }
+
+                recordingStarted = true;
+
                 startTimestamp =
                     rawTimestamp;
+
+                Debug.Log(
+                    $"Recording Start! Device={deviceIndex} Timestamp={rawTimestamp}"
+                );
+            }
+            
+            if (frames.Count < 30)
+            {
+                Debug.Log(
+                    $"Device={deviceIndex} " +
+                    $"Frame={frames.Count} " +
+                    $"Raw={rawTimestamp}"
+                );
             }
 
             long normalizedTimestamp =
                 rawTimestamp - startTimestamp;
+            
+            if (frames.Count == 0)
+            {
+                Debug.Log(
+                    $"Device={deviceIndex} FirstNormalized={normalizedTimestamp}"
+                );
+            }
 
             tracker.EnqueueCapture(cap);
 
