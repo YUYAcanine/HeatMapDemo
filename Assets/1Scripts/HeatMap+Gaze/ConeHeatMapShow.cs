@@ -26,6 +26,9 @@ public class ConeHeatMapShow : MonoBehaviour
     [Tooltip("Maximum cone distance")]
     public float coneDistance = 5f;
 
+    [Tooltip("Apply more heat near the center of the cone")]
+    public bool useCenterWeightedHeat = true;
+
     [Header("Heat")]
     public float heatPerHit = 0.2f;
     public float maxHeatDisplay = 5f;
@@ -265,29 +268,25 @@ public class ConeHeatMapShow : MonoBehaviour
             if (dot < cosThreshold)
                 continue;
 
-            // =========================
-            // 角度計算
-            // =========================
+            float weight = 1f;
 
-            float angle =
-                Mathf.Acos(
-                    Mathf.Clamp(dot, -1f, 1f)
-                );
+            if (useCenterWeightedHeat)
+            {
+                // 0=center, 1=edge
+                float angle =
+                    Mathf.Acos(
+                        Mathf.Clamp(dot, -1f, 1f)
+                    );
 
-            // 0=center
-            // 1=edge
-            float normalized =
-                angle / maxAngleRad;
+                float normalized =
+                    angle / maxAngleRad;
 
-            // =========================
-            // 中央強調ウェイト
-            // =========================
+                weight =
+                    1f - normalized;
 
-            float weight =
-                1f - normalized;
-
-            // 中央を強く
-            weight *= weight;
+                // Emphasize the center of the cone.
+                weight *= weight;
+            }
 
             // =========================
 

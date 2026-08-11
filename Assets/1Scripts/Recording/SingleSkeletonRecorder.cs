@@ -18,20 +18,35 @@ public class SkeletonRecorderSingle : MonoBehaviour
     [Header("Room Coordinate")]
     public Transform kinectTransform;
 
+    [Header("Start Trigger (fallback for testing without a UI Button)")]
+    public KeyCode startRecordingKey = KeyCode.Space;
+
     private Device dev;
     private Tracker tracker;
 
     private List<FrameData> frames = new List<FrameData>();
 
-    private bool isRecording = true;
+    private bool isReady = false;
+    private bool isRecording = false;
     private long startTimestamp = -1;
-    private bool firstFrameReceived = false;
     private bool recordingStarted = false;
-    private const long GLOBAL_START_TIMESTAMP =
-    50000000;   
 
+    // 全レコーダー共通の開始トリガー。RequestStartAll() を一度呼ぶと
+    // 購読中の全インスタンスが同じフレームで isRecording=true になる。
+    private static event System.Action OnStartAllRequested;
+    private static bool triggerFired = false;
 
     private string outputDir;
+
+    void OnEnable()
+    {
+        OnStartAllRequested += HandleStartRequested;
+    }
+
+    void OnDisable()
+    {
+        OnStartAllRequested -= HandleStartRequested;
+    }
 
     void Start()
     {
@@ -53,8 +68,10 @@ public class SkeletonRecorderSingle : MonoBehaviour
                 TrackerConfiguration.Default
             );
 
+            isReady = true;
+
             Debug.Log(
-                $"SkeletonRecorder started. Device={deviceIndex} Sync={syncMode}"
+                $"SkeletonRecorder ready (standby). Device={deviceIndex} Sync={syncMode}"
             );
         }
         catch (System.Exception e)
@@ -63,6 +80,33 @@ public class SkeletonRecorderSingle : MonoBehaviour
                 $"Failed to start Kinect {deviceIndex}\n{e}"
             );
         }
+    }
+
+    // UIボタンの OnClick や外部スクリプトから呼び出し、待機中の全レコーダーの記録を同時に開始する。
+    public static void RequestStartAll()
+    {
+        if (triggerFired)
+            return;
+
+        triggerFired = true;
+        OnStartAllRequested?.Invoke();
+    }
+
+    private void HandleStartRequested()
+    {
+        if (!isReady)
+        {
+            Debug.LogWarning(
+                $"Kinect {deviceIndex} is not ready yet; cannot start recording."
+            );
+            return;
+        }
+
+        recordingStarted = false;
+        startTimestamp = -1;
+        isRecording = true;
+
+        Debug.Log($"Recording triggered for device {deviceIndex}");
     }
     DeviceConfiguration CreateConfig()
     {
@@ -78,6 +122,9 @@ public class SkeletonRecorderSingle : MonoBehaviour
 
     void Update()
     {
+        if (!triggerFired && Input.GetKeyDown(startRecordingKey))
+            RequestStartAll();
+
         if (!isRecording)
             return;
 
@@ -116,17 +163,9 @@ public class SkeletonRecorderSingle : MonoBehaviour
         {
             long rawTimestamp =
                 cap.Depth.DeviceTimestamp.Ticks;
-            
+
             if (!recordingStarted)
             {
-                if (
-                    rawTimestamp <
-                    GLOBAL_START_TIMESTAMP
-                )
-                {
-                    return null;
-                }
-
                 recordingStarted = true;
 
                 startTimestamp =

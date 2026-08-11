@@ -37,6 +37,24 @@ public class RealtimePointCloudDifference : MonoBehaviour
     // Mesh
     private Mesh mesh;
 
+    private readonly List<Vector3> latestDifferencePoints =
+        new List<Vector3>();
+
+    public IReadOnlyList<Vector3> LatestDifferencePoints
+    {
+        get { return latestDifferencePoints; }
+    }
+
+    public int LatestDifferenceCount
+    {
+        get { return latestDifferencePoints.Count; }
+    }
+
+    public bool HasDifference
+    {
+        get { return latestDifferencePoints.Count > 0; }
+    }
+
     // 状態管理
     private bool initialized = false;
     private Coroutine realtimeCoroutine;
@@ -144,6 +162,7 @@ public class RealtimePointCloudDifference : MonoBehaviour
             $"Capture Background : {deviceIndex}");
 
         backgroundVoxels.Clear();
+        latestDifferencePoints.Clear();
 
         List<Vector3> points =
             GetPointCloud();
@@ -212,7 +231,10 @@ public class RealtimePointCloudDifference : MonoBehaviour
     void UpdateDifference()
     {
         if (backgroundVoxels.Count == 0)
+        {
+            latestDifferencePoints.Clear();
             return;
+        }
 
         List<Vector3> vertices =
             new List<Vector3>();
@@ -242,10 +264,38 @@ public class RealtimePointCloudDifference : MonoBehaviour
             }
         }
 
+        latestDifferencePoints.Clear();
+        latestDifferencePoints.AddRange(vertices);
+
         UpdateMesh(vertices, colors);
 
         Debug.Log(
             $"Diff : {diffCount}");
+    }
+
+    public bool TryGetLatestDifferenceBounds(
+        out Bounds bounds)
+    {
+        if (latestDifferencePoints.Count == 0)
+        {
+            bounds = new Bounds();
+            return false;
+        }
+
+        bounds =
+            new Bounds(
+                latestDifferencePoints[0],
+                Vector3.zero);
+
+        for (int i = 1;
+             i < latestDifferencePoints.Count;
+             i++)
+        {
+            bounds.Encapsulate(
+                latestDifferencePoints[i]);
+        }
+
+        return true;
     }
 
     // =========================

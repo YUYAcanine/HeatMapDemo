@@ -1,6 +1,7 @@
 using Microsoft.Azure.Kinect.BodyTracking;
 using System.Collections.Generic;
 using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -19,6 +20,8 @@ public class JointPositionLoader : MonoBehaviour
     [Header("UI")]
     [SerializeField] private Button playButton;
     [SerializeField] private Button stopButton;
+    [SerializeField] private bool showFrameNumber = true;
+    [SerializeField] private TMP_Text frameText;
 
     // =========================
     // Internal data
@@ -42,10 +45,13 @@ public class JointPositionLoader : MonoBehaviour
         CreateJointObjects();
         CreateLines();
         SetupUI();
+        UpdateFrameText();
     }
 
     void Update()
     {
+        UpdateFrameText();
+
         if (!isPlaying) return;
 
         playbackTime += Time.deltaTime * playbackSpeed;
@@ -71,6 +77,7 @@ public class JointPositionLoader : MonoBehaviour
         lastValidFrame = null;
         isPlaying = true;
         HideSkeleton();
+        UpdateFrameText();
         Debug.Log("Playback started");
     }
 
@@ -79,6 +86,7 @@ public class JointPositionLoader : MonoBehaviour
         isPlaying = false;
         lastValidFrame = null;
         HideSkeleton();
+        UpdateFrameText();
         Debug.Log("Playback stopped");
     }
 
@@ -196,6 +204,25 @@ public class JointPositionLoader : MonoBehaviour
         }
 
         frameIndex++;
+        UpdateFrameText();
+    }
+
+    private void UpdateFrameText()
+    {
+        if (frameText == null)
+            return;
+
+        if (frameText.gameObject.activeSelf != showFrameNumber)
+            frameText.gameObject.SetActive(showFrameNumber);
+
+        if (!showFrameNumber)
+            return;
+
+        int displayedFrame =
+            Mathf.Clamp(frameIndex, 0, frames.Count);
+
+        frameText.text =
+            $"Frame : {displayedFrame} / {frames.Count}";
     }
 
     private void ApplyFrame(FrameData frame)
