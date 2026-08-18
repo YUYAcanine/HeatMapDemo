@@ -16,8 +16,8 @@ public class DefineStart : MonoBehaviour
     [SerializeField] private SkeletonRealtimeSubscriber skeletonSubscriber;
 
     [Header("Floor Snapping")]
-    [Tooltip("PelvisのX/Z座標はそのまま使い、Y座標はPelvis直下にある一番近い平面(床のCollider)の高さに置き換える。オフの場合はPelvis位置のY座標をそのまま使う。")]
-    [SerializeField] private bool snapToNearestFloor = false;
+    [Tooltip("PelvisのX/Z座標はそのまま使い、Y座標はPelvis直下にある一番近い平面(床のCollider)の高さに置き換える。オフの場合はPelvis位置のY座標(姿勢により上下する)をそのまま使う。")]
+    [SerializeField] private bool snapToNearestFloor = true;
     [Tooltip("床として判定するCollider(PlaneFinderが生成した歩行可能サーフェス等)のレイヤー。")]
     [SerializeField] private LayerMask floorLayerMask = ~0;
     [Tooltip("Raycastの開始点をPelvisからこの高さ(m)だけ上げる。Pelvisが床より僅かに低く計測された場合でも真下の床を検出できるようにするため。")]
