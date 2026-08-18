@@ -239,6 +239,14 @@ public class NavSub : MonoBehaviour
         {
             navMeshSourceObject = new GameObject("NavSubSourceMesh");
             navMeshSourceObject.transform.SetParent(transform, false);
+
+            // 受信した頂点はワールド座標の絶対値なので、このオブジェクト自身は
+            // 必ずワールド原点・無回転・無スケールに固定する。SetParent(parent, false)は
+            // ローカル座標を維持するだけでワールド座標をゼロにはしてくれないため、
+            // NavSubを置いた場所の分だけ二重にオフセットしてしまうのを防ぐ。
+            navMeshSourceObject.transform.position = Vector3.zero;
+            navMeshSourceObject.transform.rotation = Quaternion.identity;
+            navMeshSourceObject.transform.localScale = Vector3.one;
         }
 
         MeshFilter meshFilter = navMeshSourceObject.GetComponent<MeshFilter>();
@@ -311,6 +319,8 @@ public class NavSub : MonoBehaviour
 
             GameObject linkObject = new GameObject($"NavSubLink_{i}");
             linkObject.transform.SetParent(transform, false);
+            linkObject.transform.rotation = Quaternion.identity;
+            linkObject.transform.localScale = Vector3.one;
             linkObject.transform.position = linkMessage.start;
 
             NavMeshLink link = linkObject.AddComponent<NavMeshLink>();

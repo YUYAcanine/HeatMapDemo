@@ -1729,6 +1729,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 300f66ae07e5c664c8276be1d7d226fe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  mqttHost: 192.168.50.231
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/navmesh
+  connectOnStart: 1
+  logReceivedMessage: 1
+  agentTypeId: 0
+  agentRadius: 0.01
+  agentHeight: 0.05
+  voxelSize: 0.03
+  minRegionArea: 0
+  boundsMargin: 2
+  showSourceMesh: 1
+  sourceMeshColor: {r: 0.15, g: 0.9, b: 0.25, a: 0.35}
+  linkWidth: 0.18
 --- !u!1 &967257173
 GameObject:
   m_ObjectHideFlags: 0
