@@ -38,6 +38,24 @@ public class SkeletonRealtimeMulti : MonoBehaviour
 
     private string outputDir;
 
+    public enum DebugLogMode
+    {
+        JsonRecordLog,
+        PelvisHeadDistanceLog
+    }
+
+    [Header("Debug Log")]
+    public DebugLogMode debugLogMode = DebugLogMode.PelvisHeadDistanceLog;
+    public float pelvisHeadLogInterval = 1f;
+    private float nextPelvisHeadLogTime = 0f;
+
+    // このカメラが直近のフレームで検出したBodyの一覧（他スクリプトからの参照用）。
+    // BodyId はカメラをまたいで同一人物を保証しないため、複数カメラを統合する側では
+    // Pelvis位置などの空間情報で同一人物かどうかを判定すること。
+    public IReadOnlyList<BodyData> LatestBodies => latestBodies;
+    public int DeviceIndex => deviceIndex;
+    private List<BodyData> latestBodies = new List<BodyData>();
+
     void OnEnable()
     {
         OnStartAllRequested += HandleStartRequested;
@@ -176,7 +194,7 @@ public class SkeletonRealtimeMulti : MonoBehaviour
                 );
             }
             
-            if (frames.Count < 30)
+            if (debugLogMode == DebugLogMode.JsonRecordLog && frames.Count < 30)
             {
                 Debug.Log(
                     $"Device={deviceIndex} " +
@@ -187,8 +205,8 @@ public class SkeletonRealtimeMulti : MonoBehaviour
 
             long normalizedTimestamp =
                 rawTimestamp - startTimestamp;
-            
-            if (frames.Count == 0)
+
+            if (debugLogMode == DebugLogMode.JsonRecordLog && frames.Count == 0)
             {
                 Debug.Log(
                     $"Device={deviceIndex} FirstNormalized={normalizedTimestamp}"
@@ -267,6 +285,39 @@ public class SkeletonRealtimeMulti : MonoBehaviour
                         );
                     }
                 }
+
+                if (debugLogMode == DebugLogMode.PelvisHeadDistanceLog && Time.time >= nextPelvisHeadLogTime)
+                {
+                    nextPelvisHeadLogTime = Time.time + pelvisHeadLogInterval;
+
+                    foreach (BodyData body in bodies)
+                    {
+                        Vector3? pelvisPos = null;
+                        Vector3? headPos = null;
+
+                        foreach (JointPosition joint in body.joints)
+                        {
+                            if (joint.jointId == JointId.Pelvis.ToString())
+                                pelvisPos = joint.position;
+                            else if (joint.jointId == JointId.Head.ToString())
+                                headPos = joint.position;
+                        }
+
+                        if (pelvisPos.HasValue && headPos.HasValue)
+                        {
+                            float headPelvisDistance =
+                                Vector3.Distance(headPos.Value, pelvisPos.Value);
+
+                            Debug.Log(
+                                $"Device={deviceIndex} BodyId={body.bodyId} " +
+                                $"PelvisPos={pelvisPos.Value} " +
+                                $"HeadPelvisDistance={headPelvisDistance:F3}"
+                            );
+                        }
+                    }
+                }
+
+                latestBodies = bodies;
             }
 
             return new FrameData
@@ -343,6 +394,36 @@ public class SkeletonRealtimeMulti : MonoBehaviour
         public uint bodyId;
 
         public List<JointPosition> joints;
+
+        public bool TryGetJointPosition(JointId jointId, out Vector3 position)
+        {
+            string name = jointId.ToString();
+
+            for (int i = 0; i < joints.Count; i++)
+            {
+                if (joints[i].jointId == name)
+                {
+                    position = joints[i].position;
+                    return true;
+                }
+            }
+
+            position = Vector3.zero;
+            return false;
+        }
+
+        public float GetAverageConfidence()
+        {
+            if (joints == null || joints.Count == 0)
+                return 0f;
+
+            int sum = 0;
+
+            for (int i = 0; i < joints.Count; i++)
+                sum += joints[i].confidence;
+
+            return (float)sum / joints.Count;
+        }
     }
 
     [System.Serializable]

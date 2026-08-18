@@ -1514,7 +1514,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: b1cf8ee7425a53c47aff7ee16e6f6520, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -1885,6 +1885,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1231161390}
+  - {fileID: 1062986566}
   - {fileID: 2056744163}
   - {fileID: 413497489}
   - {fileID: 409491274}
@@ -2146,6 +2147,65 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 967257173}
   m_CullTransparentMesh: 1
+--- !u!1 &1062986565
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1062986566}
+  - component: {fileID: 1062986567}
+  m_Layer: 0
+  m_Name: StartSub
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1062986566
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1062986565}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.70961165, y: -0.014226461, z: -0.006653791, w: 0.70441794}
+  m_LocalPosition: {x: -0.5733525, y: -0.3575853, z: 1.2824308}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 866067530}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1062986567
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1062986565}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 327e1f0739f02f9409d1ddd634ca0da1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mqttHost: 192.168.50.231
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/person_coordinate
+  connectOnStart: 1
+  logReceivedMessage: 1
+  personTimeout: 1.5
+  minValidHeadPelvisDistance: 0.05
+  snapToNearestFloor: 1
+  floorLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  raycastStartHeight: 1.5
+  floorSearchDistance: 5
 --- !u!1 &1151578253
 GameObject:
   m_ObjectHideFlags: 0

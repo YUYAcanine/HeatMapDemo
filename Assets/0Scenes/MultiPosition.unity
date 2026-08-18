@@ -131,7 +131,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 267494148}
-  - component: {fileID: 267494149}
   - component: {fileID: 267494150}
   m_Layer: 0
   m_Name: D_SingleSkeletonRealtime
@@ -155,23 +154,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &267494149
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 267494146}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2e41227268072c64f90137e7dcce3c3a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  deviceIndex: 3
-  syncMode: 0
-  outputFile: D_skeleton.json
-  kinectTransform: {fileID: 1723817906}
-  startRecordingKey: 32
 --- !u!114 &267494150
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -189,6 +171,64 @@ MonoBehaviour:
   outputFile: D_skeleton.json
   kinectTransform: {fileID: 1723817906}
   startRecordingKey: 32
+  debugLogMode: 1
+  pelvisHeadLogInterval: 1
+--- !u!1 &268171228
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 268171230}
+  - component: {fileID: 268171229}
+  m_Layer: 0
+  m_Name: SkeletonRealtimePublisher
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &268171229
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 268171228}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2d002a902a2614746bc5140869c3df7d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skeletonSources: []
+  sameBodyDistance: 0.5
+  trackMatchDistance: 1
+  trackTimeout: 2
+  publishInterval: 1
+  mqttHost: 192.168.50.231
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/person_coordinate
+  connectOnStart: 1
+  logPublishedMessage: 1
+--- !u!4 &268171230
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 268171228}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.17230588, y: 1.1910939, z: 0.44098642}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &431353219
 GameObject:
   m_ObjectHideFlags: 0
@@ -310,6 +350,64 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fileName: KinectB_Transform.json
+--- !u!1 &447456294
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 447456295}
+  - component: {fileID: 447456296}
+  m_Layer: 0
+  m_Name: SkeletonRealtimeSublisher
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &447456295
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 447456294}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.17230588, y: 1.1910939, z: 0.44098642}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &447456296
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 447456294}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 30d1bb06228e431439386dc6bb694779, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mqttHost: 192.168.50.231
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/person_coordinate
+  connectOnStart: 1
+  logReceivedMessage: 1
+  markerRoot: {fileID: 0}
+  markerScale: 0.2
+  markerLifetime: 2
+  markerColor: {r: 0, g: 1, b: 1, a: 1}
+  labelColor: {r: 1, g: 1, b: 1, a: 1}
+  showLabel: 1
+  labelCharacterSize: 0.08
 --- !u!1 &501052259
 GameObject:
   m_ObjectHideFlags: 0
@@ -319,7 +417,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 501052261}
-  - component: {fileID: 501052262}
   - component: {fileID: 501052263}
   m_Layer: 0
   m_Name: B_SingleSkeletonRealtime
@@ -343,23 +440,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &501052262
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 501052259}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2e41227268072c64f90137e7dcce3c3a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  deviceIndex: 1
-  syncMode: 0
-  outputFile: B_skeleton.json
-  kinectTransform: {fileID: 431353223}
-  startRecordingKey: 32
 --- !u!114 &501052263
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -377,6 +457,8 @@ MonoBehaviour:
   outputFile: B_skeleton.json
   kinectTransform: {fileID: 431353223}
   startRecordingKey: 32
+  debugLogMode: 1
+  pelvisHeadLogInterval: 1
 --- !u!1001 &620448246
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -724,7 +806,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1015763787}
-  - component: {fileID: 1015763788}
   - component: {fileID: 1015763789}
   m_Layer: 0
   m_Name: A_SingleSkeletonRealtime
@@ -748,23 +829,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1015763788
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1015763785}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2e41227268072c64f90137e7dcce3c3a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  deviceIndex: 0
-  syncMode: 0
-  outputFile: A_skeleton.json
-  kinectTransform: {fileID: 754533279}
-  startRecordingKey: 32
 --- !u!114 &1015763789
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -782,6 +846,8 @@ MonoBehaviour:
   outputFile: A_skeleton.json
   kinectTransform: {fileID: 754533279}
   startRecordingKey: 32
+  debugLogMode: 1
+  pelvisHeadLogInterval: 1
 --- !u!1001 &1069761941
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1072,7 +1138,7 @@ Transform:
   m_GameObject: {fileID: 1422476024}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
+  m_LocalPosition: {x: 0.22, y: 1.52, z: -4.56}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1131,7 +1197,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1497384955}
-  - component: {fileID: 1497384956}
   - component: {fileID: 1497384957}
   m_Layer: 0
   m_Name: C_SingleSkeletonRealtime
@@ -1155,23 +1220,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1497384956
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1497384953}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2e41227268072c64f90137e7dcce3c3a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  deviceIndex: 2
-  syncMode: 0
-  outputFile: C_skeleton.json
-  kinectTransform: {fileID: 1865616046}
-  startRecordingKey: 32
 --- !u!114 &1497384957
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1184,11 +1232,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d3f41fc08446c6b458025b05562b4392, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  deviceIndex: 3
+  deviceIndex: 2
   syncMode: 0
   outputFile: C_skeleton.json
   kinectTransform: {fileID: 1865616046}
   startRecordingKey: 32
+  debugLogMode: 1
+  pelvisHeadLogInterval: 1
 --- !u!1 &1723817902
 GameObject:
   m_ObjectHideFlags: 0
@@ -1828,3 +1878,5 @@ SceneRoots:
   - {fileID: 501052261}
   - {fileID: 1497384955}
   - {fileID: 267494148}
+  - {fileID: 268171230}
+  - {fileID: 447456295}
