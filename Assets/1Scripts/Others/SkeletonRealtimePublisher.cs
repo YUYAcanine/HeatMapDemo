@@ -159,8 +159,16 @@ public class SkeletonRealtimePublisher : MonoBehaviour
                     continue;
 
                 float headPelvisDistance = -1f;
-                if (body.TryGetJointPosition(JointId.Head, out Vector3 headPosition))
+                Vector3 headPosition = Vector3.zero;
+                Vector3 headToNose = Vector3.zero;
+
+                if (body.TryGetJointPosition(JointId.Head, out headPosition))
+                {
                     headPelvisDistance = Vector3.Distance(headPosition, pelvisPosition);
+
+                    if (body.TryGetJointPosition(JointId.Nose, out Vector3 nosePosition))
+                        headToNose = nosePosition - headPosition;
+                }
 
                 candidates.Add(new Candidate
                 {
@@ -168,7 +176,9 @@ public class SkeletonRealtimePublisher : MonoBehaviour
                     bodyId = body.bodyId,
                     pelvisPosition = pelvisPosition,
                     confidence = body.GetAverageConfidence(),
-                    headPelvisDistance = headPelvisDistance
+                    headPelvisDistance = headPelvisDistance,
+                    headPosition = headPosition,
+                    headToNose = headToNose
                 });
             }
         }
@@ -217,7 +227,9 @@ public class SkeletonRealtimePublisher : MonoBehaviour
             confidence = candidate.confidence,
             deviceIndex = candidate.deviceIndex,
             bodyId = candidate.bodyId,
-            headPelvisDistance = candidate.headPelvisDistance
+            headPelvisDistance = candidate.headPelvisDistance,
+            head = candidate.headPosition,
+            headToNose = candidate.headToNose
         };
 
         string json = JsonUtility.ToJson(message);
@@ -324,6 +336,8 @@ public class SkeletonRealtimePublisher : MonoBehaviour
         public Vector3 pelvisPosition;
         public float confidence;
         public float headPelvisDistance;
+        public Vector3 headPosition;
+        public Vector3 headToNose;
     }
 
     private class PersonTrack
@@ -344,5 +358,7 @@ public class SkeletonRealtimePublisher : MonoBehaviour
         public int deviceIndex;
         public uint bodyId;
         public float headPelvisDistance;
+        public Vector3 head;
+        public Vector3 headToNose;
     }
 }

@@ -408,6 +408,11 @@ MonoBehaviour:
   labelColor: {r: 1, g: 1, b: 1, a: 1}
   showLabel: 1
   labelCharacterSize: 0.08
+  shortestHeadPelvisColor: {r: 1, g: 0, b: 0, a: 1}
+  minValidHeadPelvisDistance: 0.05
+  showHeadToNoseVector: 1
+  headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  headToNoseVectorWidth: 0.03
 --- !u!1 &501052259
 GameObject:
   m_ObjectHideFlags: 0
@@ -1258,7 +1263,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!65 &1723817903
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -1522,7 +1527,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!65 &1865616043
 BoxCollider:
   m_ObjectHideFlags: 0

@@ -2422,15 +2422,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 327e1f0739f02f9409d1ddd634ca0da1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mqttHost: 192.168.50.231
-  mqttPort: 1883
-  mqttUsername: mqtt-user
-  mqttPassword: 401402
-  topic: pathfinder/person_coordinate
-  connectOnStart: 1
-  logReceivedMessage: 1
-  personTimeout: 1.5
-  minValidHeadPelvisDistance: 0.05
+  skeletonSubscriber: {fileID: 0}
   snapToNearestFloor: 1
   floorLayerMask:
     serializedVersion: 2

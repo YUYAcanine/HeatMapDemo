@@ -294,6 +294,7 @@ public class SkeletonRealtimeMulti : MonoBehaviour
                     {
                         Vector3? pelvisPos = null;
                         Vector3? headPos = null;
+                        Vector3? nosePos = null;
 
                         foreach (JointPosition joint in body.joints)
                         {
@@ -301,6 +302,8 @@ public class SkeletonRealtimeMulti : MonoBehaviour
                                 pelvisPos = joint.position;
                             else if (joint.jointId == JointId.Head.ToString())
                                 headPos = joint.position;
+                            else if (joint.jointId == JointId.Nose.ToString())
+                                nosePos = joint.position;
                         }
 
                         if (pelvisPos.HasValue && headPos.HasValue)
@@ -308,10 +311,22 @@ public class SkeletonRealtimeMulti : MonoBehaviour
                             float headPelvisDistance =
                                 Vector3.Distance(headPos.Value, pelvisPos.Value);
 
+                            string headNoseLog = "";
+
+                            if (nosePos.HasValue)
+                            {
+                                Vector3 headToNose =
+                                    nosePos.Value - headPos.Value;
+
+                                headNoseLog =
+                                    $" HeadToNose={headToNose}";
+                            }
+
                             Debug.Log(
                                 $"Device={deviceIndex} BodyId={body.bodyId} " +
                                 $"PelvisPos={pelvisPos.Value} " +
-                                $"HeadPelvisDistance={headPelvisDistance:F3}"
+                                $"HeadPelvisDistance={headPelvisDistance:F3}" +
+                                headNoseLog
                             );
                         }
                     }

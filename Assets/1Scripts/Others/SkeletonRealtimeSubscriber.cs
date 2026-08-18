@@ -29,6 +29,17 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
     [SerializeField] private bool showLabel = true;
     [SerializeField] private float labelCharacterSize = 0.08f;
 
+    [Header("Head-Pelvis Highlight")]
+    [Tooltip("複数人いる場合、headPelvisDistanceが最も短い人物のPelvisマーカーをこの色にする。")]
+    [SerializeField] private Color shortestHeadPelvisColor = Color.red;
+    [Tooltip("headPelvisDistanceがこの値未満の場合はトラッキング異常とみなし、色分け対象から除外する。")]
+    [SerializeField] private float minValidHeadPelvisDistance = 0.05f;
+
+    [Header("Head-to-Nose Vector")]
+    [SerializeField] private bool showHeadToNoseVector = true;
+    [SerializeField] private Color headToNoseVectorColor = Color.yellow;
+    [SerializeField] private float headToNoseVectorWidth = 0.015f;
+
     private TcpClient client;
     private NetworkStream stream;
     private readonly byte[] receiveBuffer = new byte[4096];
@@ -38,6 +49,12 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
 
     public bool IsConnected =>
         client != null && client.Connected;
+
+    // headPelvisDistanceが最も短い(=ハイライトされている)人物。DefineStart等の外部スクリプトが
+    // 経路生成のスタート位置を決めるために参照する。
+    public string ShortestLabel { get; private set; }
+    public Transform ShortestPersonTransform { get; private set; }
+    public bool HasShortestPerson => ShortestPersonTransform != null;
 
     private void Start()
     {
@@ -199,9 +216,67 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
 
         marker.root.position = position;
         marker.lastReceivedTime = Time.unscaledTime;
+        marker.headPelvisDistance = message.headPelvisDistance;
 
         if (marker.labelText != null)
             marker.labelText.text = $"{message.label}\nconf={message.confidence:F1}";
+
+        UpdateHeadToNoseVector(marker, message);
+        UpdateHighlight();
+    }
+
+    private void UpdateHeadToNoseVector(PersonMarker marker, PersonPositionMessage message)
+    {
+        if (marker.vectorLine == null)
+            return;
+
+        bool hasVector = showHeadToNoseVector && message.headToNose.sqrMagnitude > 0f;
+
+        marker.vectorLine.enabled = hasVector;
+
+        if (!hasVector)
+            return;
+
+        Vector3 headPosition = message.head;
+        Vector3 nosePosition = headPosition + message.headToNose;
+
+        marker.vectorLine.SetPosition(0, headPosition);
+        marker.vectorLine.SetPosition(1, nosePosition);
+    }
+
+    private void UpdateHighlight()
+    {
+        string shortestLabel = null;
+        float shortestDistance = float.MaxValue;
+
+        foreach (KeyValuePair<string, PersonMarker> entry in markersByLabel)
+        {
+            float distance = entry.Value.headPelvisDistance;
+
+            if (distance < minValidHeadPelvisDistance)
+                continue;
+
+            if (distance < shortestDistance)
+            {
+                shortestDistance = distance;
+                shortestLabel = entry.Key;
+            }
+        }
+
+        foreach (KeyValuePair<string, PersonMarker> entry in markersByLabel)
+        {
+            if (entry.Value.sphereRenderer == null)
+                continue;
+
+            entry.Value.sphereRenderer.material.color =
+                entry.Key == shortestLabel ? shortestHeadPelvisColor : markerColor;
+        }
+
+        ShortestLabel = shortestLabel;
+        ShortestPersonTransform =
+            shortestLabel != null && markersByLabel.TryGetValue(shortestLabel, out PersonMarker shortestMarker)
+                ? shortestMarker.root
+                : null;
     }
 
     private PersonMarker CreateMarker(string label)
@@ -239,11 +314,23 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
             labelText.color = labelColor;
         }
 
+        LineRenderer vectorLine = root.AddComponent<LineRenderer>();
+        vectorLine.useWorldSpace = true;
+        vectorLine.positionCount = 2;
+        vectorLine.startWidth = headToNoseVectorWidth;
+        vectorLine.endWidth = headToNoseVectorWidth;
+        vectorLine.material = new Material(Shader.Find("Sprites/Default"));
+        vectorLine.startColor = headToNoseVectorColor;
+        vectorLine.endColor = headToNoseVectorColor;
+        vectorLine.enabled = false;
+
         return new PersonMarker
         {
             root = root.transform,
             labelText = labelText,
-            lastReceivedTime = Time.unscaledTime
+            lastReceivedTime = Time.unscaledTime,
+            sphereRenderer = sphereRenderer,
+            vectorLine = vectorLine
         };
     }
 
@@ -273,6 +360,8 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
 
             markersByLabel.Remove(label);
         }
+
+        UpdateHighlight();
     }
 
     private void SendConnectPacket()
@@ -353,6 +442,9 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
         public Transform root;
         public TextMesh labelText;
         public float lastReceivedTime;
+        public Renderer sphereRenderer;
+        public LineRenderer vectorLine;
+        public float headPelvisDistance;
     }
 
 #pragma warning disable 0649
@@ -366,6 +458,9 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
         public float confidence;
         public int deviceIndex;
         public uint bodyId;
+        public float headPelvisDistance;
+        public Vector3 head;
+        public Vector3 headToNose;
     }
 #pragma warning restore 0649
 
