@@ -323,6 +323,10 @@ public class PlaneFinder : MonoBehaviour
             savePcdButton.onClick.RemoveListener(SavePCD);
     }
 
+    // NavMesh/NavMeshLinkの生成が完了したタイミングで発火する。NavPub等の
+    // MQTTパブリッシュ側はこのイベントを購読して最新のNavMeshを送信する。
+    public static event System.Action OnNavMeshPipelineFinished;
+
     public void CaptureBuildNavMeshAndLinks()
     {
         if (isCapturing)
@@ -361,6 +365,7 @@ public class PlaneFinder : MonoBehaviour
         if (linkGenerator == null)
         {
             Debug.LogWarning("PlaneFinder: pipeline finished without NavMeshLinks. PointNavLink is not assigned and was not found in the scene.");
+            OnNavMeshPipelineFinished?.Invoke();
             return;
         }
 
@@ -369,6 +374,8 @@ public class PlaneFinder : MonoBehaviour
 
         Debug.Log(
             $"PlaneFinder: pipeline finished. points={savedVertices.Count}, navLinkSourceItems={linkGenerator.LastSourceCellCount}, clusters={linkGenerator.LastClusterCount}, generatedLinks={linkGenerator.LastGeneratedLinkCount}");
+
+        OnNavMeshPipelineFinished?.Invoke();
     }
 
     private void ClearPreviousPipelineOutput()

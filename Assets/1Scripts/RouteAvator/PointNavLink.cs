@@ -7,7 +7,7 @@ using Button = UnityEngine.UI.Button;
 [DefaultExecutionOrder(-250)]
 public class PointNavLink : MonoBehaviour
 {
-    private const string GeneratedLinkPrefix = "AutoPointNavLink_";
+    public const string GeneratedLinkPrefix = "AutoPointNavLink_";
 
     [Header("Build")]
     [SerializeField] private Button generateLinksButton;

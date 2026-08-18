@@ -29,8 +29,8 @@ public class StartSub : MonoBehaviour
     [SerializeField] private float minValidHeadPelvisDistance = 0.05f;
 
     [Header("Floor Snapping")]
-    [Tooltip("PelvisのX/Z座標はそのまま使い、Y座標はPelvis直下にある一番近い平面(床のCollider)の高さに置き換える。")]
-    [SerializeField] private bool snapToNearestFloor = true;
+    [Tooltip("PelvisのX/Z座標はそのまま使い、Y座標はPelvis直下にある一番近い平面(床のCollider)の高さに置き換える。オフの場合はsubscribeした位置(Pelvis位置)をそのまま使う。")]
+    [SerializeField] private bool snapToNearestFloor = false;
     [Tooltip("床として判定するCollider(PlaneFinderが生成した歩行可能サーフェス等)のレイヤー。")]
     [SerializeField] private LayerMask floorLayerMask = ~0;
     [Tooltip("Raycastの開始点をPelvisからこの高さ(m)だけ上げる。Pelvisが床より僅かに低く計測された場合でも真下の床を検出できるようにするため。")]
