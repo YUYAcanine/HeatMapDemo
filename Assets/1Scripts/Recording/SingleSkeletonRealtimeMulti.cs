@@ -239,7 +239,7 @@ public class SkeletonRealtimeMulti : MonoBehaviour
 
                         for (
                             JointId jointId = JointId.Pelvis;
-                            jointId <= JointId.Nose;
+                            jointId < JointId.Count;
                             jointId++
                         )
                         {

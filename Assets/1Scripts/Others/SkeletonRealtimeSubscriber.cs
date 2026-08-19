@@ -47,6 +47,10 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
     private readonly Dictionary<string, PersonMarker> markersByLabel = new Dictionary<string, PersonMarker>();
     private float lastMqttSendTime;
 
+    // ロギング用: 受信したトピック名と生JSONペイロードをそのまま流す。
+    // MultiIntegrationLoggerシーンのLogger.csはこれを購読してタイムライン付きログに落とす。
+    public event Action<string, string> OnMessageReceived;
+
     public bool IsConnected =>
         client != null && client.Connected;
 
@@ -183,8 +187,13 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
         if (logReceivedMessage)
             Debug.Log($"SkeletonRealtimeSubscriber: received payload={json}");
 
+        OnMessageReceived?.Invoke(topic, json);
         TryCreateOrUpdateMarker(json);
     }
+
+    // ライブMQTT受信を経由せず、記録済みログのJSONを直接適用するための公開エントリポイント。
+    // MultiIntegrationViewerシーンのSessionPlayer.csが再生時に呼び出す。
+    public void ApplyMessage(string json) => TryCreateOrUpdateMarker(json);
 
     private void TryCreateOrUpdateMarker(string json)
     {

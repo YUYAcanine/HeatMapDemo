@@ -41,6 +41,10 @@ public class Subscriber : MonoBehaviour
     private readonly Dictionary<string, GameObject> markersByLabel = new Dictionary<string, GameObject>();
     private float lastMqttSendTime;
 
+    // ロギング用: 受信したトピック名と生JSONペイロードをそのまま流す。
+    // MultiIntegrationLoggerシーンのLogger.csはこれを購読してタイムライン付きログに落とす。
+    public event Action<string, string> OnMessageReceived;
+
     public string LastMessage { get; private set; }
     public string LatestLabel { get; private set; }
     public Transform LatestMarkerTransform { get; private set; }
@@ -187,6 +191,7 @@ public class Subscriber : MonoBehaviour
         LastMessage = json;
         if (logReceivedMessage)
             Debug.Log($"Subscriber: received topic={topic}, payload={json}");
+        OnMessageReceived?.Invoke(topic, json);
         if (createObjectMarkers)
             TryCreateOrUpdateMarker(json);
     }
@@ -259,6 +264,10 @@ public class Subscriber : MonoBehaviour
         }
         return false;
     }
+
+    // ライブMQTT受信を経由せず、記録済みログのJSONを直接適用するための公開エントリポイント。
+    // MultiIntegrationViewerシーンのSessionPlayer.csが再生時に呼び出す。
+    public void ApplyMessage(string json) => TryCreateOrUpdateMarker(json);
 
     private void TryCreateOrUpdateMarker(
         string json)

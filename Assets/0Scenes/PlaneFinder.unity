@@ -186,7 +186,7 @@ MonoBehaviour:
   captureBuildNavMeshAndLinksButton: {fileID: 1271077895}
   savePcdButton: {fileID: 166432937}
   pointNavLink: {fileID: 0}
-  autoUpdateCaptureBuildNavMeshAndLinks: 0
+  autoUpdateCaptureBuildNavMeshAndLinks: 1
   autoUpdateIntervalSeconds: 30
   ransacIterations: 300
   planeDistanceThreshold: 0.025

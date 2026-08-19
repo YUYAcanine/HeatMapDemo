@@ -46,6 +46,10 @@ public class NavSub : MonoBehaviour
     private NavMeshDataInstance navMeshDataInstance;
     private readonly List<GameObject> linkObjects = new List<GameObject>();
 
+    // ロギング用: 受信したトピック名と生JSONペイロードをそのまま流す。
+    // MultiIntegrationLoggerシーンのLogger.csはこれを購読してタイムライン付きログに落とす。
+    public event Action<string, string> OnMessageReceived;
+
     public bool IsConnected =>
         client != null && client.Connected;
 
@@ -182,8 +186,13 @@ public class NavSub : MonoBehaviour
                 $"NavSub: received payload. bytes={Encoding.UTF8.GetByteCount(json)}");
         }
 
+        OnMessageReceived?.Invoke(topic, json);
         TryRebuildNavMesh(json);
     }
+
+    // ライブMQTT受信を経由せず、記録済みログのJSONを直接適用するための公開エントリポイント。
+    // MultiIntegrationViewerシーンのSessionPlayer.csが再生時に呼び出す。
+    public void ApplyNavMeshJson(string json) => TryRebuildNavMesh(json);
 
     private void TryRebuildNavMesh(string json)
     {
