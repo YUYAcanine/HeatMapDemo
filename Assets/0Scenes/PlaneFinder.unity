@@ -565,7 +565,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 044cdabe21e20e5469ab947239d64deb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mqttHost: 192.168.50.231
+  mqttHost: 192.168.236.211
   mqttPort: 1883
   mqttUsername: mqtt-user
   mqttPassword: 401402
@@ -1188,7 +1188,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff436bd580b86bc419a749cd6a489ed1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mqttHost: 192.168.50.231
+  mqttHost: 192.168.236.211
   mqttPort: 1883
   mqttUsername: mqtt-user
   mqttPassword: 401402
@@ -1249,7 +1249,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aac1e417db1ce8d4cb49f327d5286e3d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mqttHost: 192.168.50.231
+  mqttHost: 192.168.236.211
   mqttPort: 1883
   mqttUsername: mqtt-user
   mqttPassword: 401402
@@ -2636,7 +2636,7 @@ Transform:
   m_GameObject: {fileID: 1422476024}
   serializedVersion: 2
   m_LocalRotation: {x: -0.014588657, y: -0.90257734, z: 0.43024108, w: 0.005834572}
-  m_LocalPosition: {x: 0.13, y: 3.89, z: 2.65}
+  m_LocalPosition: {x: 0.12, y: 3.56, z: 3.45}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3413,7 +3413,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 0acdf060a24104640a7e1957ce2394bf, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

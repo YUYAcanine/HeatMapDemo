@@ -7,7 +7,7 @@ using UnityEngine;
 public class Publisher : MonoBehaviour
 {
     [Header("MQTT")]
-    [SerializeField] private string mqttHost = "192.168.50.231";
+    [SerializeField] private string mqttHost = "192.168.236.211";
     [SerializeField] private int mqttPort = 1883;
     [SerializeField] private string mqttUsername = "mqtt-user";
     [SerializeField] private string mqttPassword = "401402";
