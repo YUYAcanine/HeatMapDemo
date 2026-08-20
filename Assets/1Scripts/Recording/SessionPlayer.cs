@@ -97,11 +97,7 @@ public class SessionPlayer : MonoBehaviour
 
         float elapsed = Time.unscaledTime - playbackStartTime;
 
-        while (nextEntryIndex < entries.Count && entries[nextEntryIndex].t <= elapsed)
-        {
-            Dispatch(entries[nextEntryIndex]);
-            nextEntryIndex++;
-        }
+        DispatchDueEntries(elapsed);
 
         if (nextEntryIndex >= entries.Count)
         {
@@ -187,6 +183,38 @@ public class SessionPlayer : MonoBehaviour
 
         Array.Sort(files, (a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
         return files[0];
+    }
+
+    // 追いつき再生で複数行が同一フレームで期限到来した場合にまとめて処理する。
+    // navmeshだけは特別扱いし、同一フレーム内に複数溜まっていたら最新の1件だけ適用する。
+    // NavSub.RebuildLinks()はDestroy()で古いNavMeshLinkを破棄してから新規生成するが、
+    // Destroy()はフレーム終端まで実際の破棄が遅延されるため、同一フレーム内で
+    // navmesh適用を連続実行すると「NavMeshLinkが破棄済みなのにアクセスしようとした」
+    // というエラーになる。ライブMQTT受信時はメッセージが1通ずつ間隔を空けて届くため
+    // 起きないが、ログ再生は記録時の間隔をそのまま再現するので、記録時に短時間で
+    // 連続していたnavmeshがまとめて1フレームに来ると発生し得る。
+    private void DispatchDueEntries(float elapsed)
+    {
+        int dueEnd = nextEntryIndex;
+        while (dueEnd < entries.Count && entries[dueEnd].t <= elapsed)
+            dueEnd++;
+
+        int lastNavMeshIndex = -1;
+        for (int i = nextEntryIndex; i < dueEnd; i++)
+        {
+            if (entries[i].type == "navmesh")
+                lastNavMeshIndex = i;
+        }
+
+        for (int i = nextEntryIndex; i < dueEnd; i++)
+        {
+            if (entries[i].type == "navmesh" && i != lastNavMeshIndex)
+                continue;
+
+            Dispatch(entries[i]);
+        }
+
+        nextEntryIndex = dueEnd;
     }
 
     private void Dispatch(LogEntry entry)
