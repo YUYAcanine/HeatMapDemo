@@ -168,6 +168,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   deviceIndex: 3
   syncMode: 0
+  saveSkeletonJson: 1
   outputFile: D_skeleton.json
   kinectTransform: {fileID: 1723817906}
   startRecordingKey: 32
@@ -459,6 +460,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   deviceIndex: 1
   syncMode: 0
+  saveSkeletonJson: 0
   outputFile: B_skeleton.json
   kinectTransform: {fileID: 431353223}
   startRecordingKey: 32
@@ -1004,6 +1006,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   deviceIndex: 0
   syncMode: 0
+  saveSkeletonJson: 0
   outputFile: A_skeleton.json
   kinectTransform: {fileID: 754533279}
   startRecordingKey: 32
@@ -1395,6 +1398,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   deviceIndex: 2
   syncMode: 0
+  saveSkeletonJson: 1
   outputFile: C_skeleton.json
   kinectTransform: {fileID: 1865616046}
   startRecordingKey: 32

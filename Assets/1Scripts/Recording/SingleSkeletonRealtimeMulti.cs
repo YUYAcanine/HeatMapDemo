@@ -13,6 +13,8 @@ public class SkeletonRealtimeMulti : MonoBehaviour
     public WiredSyncMode syncMode = WiredSyncMode.Standalone;
 
     [Header("Output JSON")]
+    [Tooltip("OFFにするとフレームをメモリに溜めず、終了時のJSON保存も行わない(LatestBodiesによるライブパブリッシュには影響しない)。")]
+    public bool saveSkeletonJson = true;
     public string outputFile = "A_skeleton.json";
 
     [Header("Room Coordinate")]
@@ -149,22 +151,28 @@ public class SkeletonRealtimeMulti : MonoBehaviour
         if (dev == null || tracker == null)
             return;
 
+        // CaptureSkeleton()はlatestBodies(ライブパブリッシュ用)の更新も兼ねているため、
+        // saveSkeletonJsonがOFFでも必ず呼ぶ。溜めない/保存しないのはframesへの追加だけ。
         FrameData frame = CaptureSkeleton();
 
-        if (frame != null)
+        if (saveSkeletonJson && frame != null)
             frames.Add(frame);
     }
 
     void OnDestroy()
     {
-        SaveJson();
+        if (saveSkeletonJson)
+        {
+            SaveJson();
+            Debug.Log($"Saved {frames.Count} frames : {outputFile}");
+        }
+        else
+        {
+            Debug.Log($"Skeleton JSON saving is disabled; skipped saving for device {deviceIndex}.");
+        }
 
         tracker?.Dispose();
         dev?.Dispose();
-
-        Debug.Log(
-            $"Saved {frames.Count} frames : {outputFile}"
-        );
     }
 
     FrameData CaptureSkeleton()

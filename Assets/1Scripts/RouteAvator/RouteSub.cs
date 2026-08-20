@@ -18,6 +18,8 @@ public class RouteSub : MonoBehaviour
     [Header("Route")]
     [SerializeField] private Material routeLineMaterial;
     [SerializeField] private float startSearchRadius = 2.0f;
+    [Tooltip("startSearchRadius以内にNavMeshが見つからない場合、この半径まで広げて最寄りの点を探す(スタート地点の真下にNavMeshが無いケースの救済用)。")]
+    [SerializeField] private float startFallbackSearchRadius = 1000f;
     [SerializeField] private float goalSearchRadius = 0.8f;
     [SerializeField] private float routeLineWidth = 0.05f;
     [SerializeField] private float routeLineYOffset = 0.05f;
@@ -86,7 +88,8 @@ public class RouteSub : MonoBehaviour
             start != null
                 ? start.position
                 : transform.position;
-        if (!TrySamplePoint(requestedStart, startSearchRadius, "start", out Vector3 startPoint))
+        if (!TrySamplePoint(requestedStart, startSearchRadius, "start", out Vector3 startPoint) &&
+            !TrySamplePoint(requestedStart, startFallbackSearchRadius, "start (fallback)", out startPoint))
         {
             MarkAllMarkersUnreachable(currentSubscriber);
             RouteVersion++;
