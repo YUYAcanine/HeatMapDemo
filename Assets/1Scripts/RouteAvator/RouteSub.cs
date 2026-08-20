@@ -26,9 +26,16 @@ public class RouteSub : MonoBehaviour
     [SerializeField] private float routeSampleInterval = 0.2f;
     [SerializeField] private bool logRouteSearch = true;
 
+    [Header("Start Marker")]
+    [Tooltip("NavMesh上にスナップされたスタート地点に球マーカーを表示する。")]
+    [SerializeField] private bool showStartMarker = true;
+    [SerializeField] private float startMarkerScale = 0.15f;
+    [SerializeField] private Color startMarkerColor = Color.green;
+
     private readonly Dictionary<string, RouteEntry> routesByLabel =
         new Dictionary<string, RouteEntry>();
     private int lastMarkerVersion = -1;
+    private GameObject startMarker;
     public int RouteVersion { get; private set; }
 
     private void OnEnable()
@@ -91,10 +98,13 @@ public class RouteSub : MonoBehaviour
         if (!TrySamplePoint(requestedStart, startSearchRadius, "start", out Vector3 startPoint) &&
             !TrySamplePoint(requestedStart, startFallbackSearchRadius, "start (fallback)", out startPoint))
         {
+            SetStartMarkerVisible(false);
             MarkAllMarkersUnreachable(currentSubscriber);
             RouteVersion++;
             return;
         }
+
+        UpdateStartMarker(startPoint);
 
         HashSet<string> activeLabels = new HashSet<string>();
         foreach (KeyValuePair<string, GameObject> markerPair in currentSubscriber.MarkersByLabel)
@@ -135,7 +145,38 @@ public class RouteSub : MonoBehaviour
                 Destroy(route.Line.gameObject);
         }
         routesByLabel.Clear();
+        SetStartMarkerVisible(false);
         RouteVersion++;
+    }
+
+    private void UpdateStartMarker(Vector3 navMeshPosition)
+    {
+        if (!showStartMarker)
+        {
+            SetStartMarkerVisible(false);
+            return;
+        }
+
+        if (startMarker == null)
+        {
+            startMarker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            startMarker.name = "RouteSub_StartMarker";
+
+            Renderer markerRenderer = startMarker.GetComponent<Renderer>();
+            if (markerRenderer != null)
+                markerRenderer.material.color = startMarkerColor;
+        }
+
+        startMarker.transform.SetParent(null, true);
+        startMarker.transform.position = navMeshPosition;
+        startMarker.transform.localScale = Vector3.one * Mathf.Max(startMarkerScale, 0.01f);
+        startMarker.SetActive(true);
+    }
+
+    private void SetStartMarkerVisible(bool visible)
+    {
+        if (startMarker != null)
+            startMarker.SetActive(visible);
     }
 
     public void GetRouteLengths(Dictionary<string, float> destination)
@@ -341,6 +382,12 @@ public class RouteSub : MonoBehaviour
         }
         foreach (string label in removedLabels)
             routesByLabel.Remove(label);
+    }
+
+    private void OnDestroy()
+    {
+        if (startMarker != null)
+            Destroy(startMarker);
     }
 
     private void OnDrawGizmos()
