@@ -222,7 +222,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 409491273}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ff436bd580b86bc419a749cd6a489ed1, type: 3}
   m_Name: 
@@ -718,12 +718,11 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1231161390}
   - {fileID: 942113969}
   - {fileID: 2056744163}
   - {fileID: 413497489}
-  - {fileID: 409491274}
   - {fileID: 2029327484}
+  - {fileID: 409491274}
   - {fileID: 958918281}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: -89.256, y: -234.70999, z: 236.40201}
@@ -766,7 +765,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 942113968}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 30d1bb06228e431439386dc6bb694779, type: 3}
   m_Name: 
@@ -829,7 +828,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 958918280}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 300f66ae07e5c664c8276be1d7d226fe, type: 3}
   m_Name: 
@@ -894,16 +893,42 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8798a6d0e2a843cdab72aa929455a8ad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  navSub: {fileID: 958918282}
-  skeletonSubscriber: {fileID: 942113970}
-  objectSubscriber: {fileID: 409491275}
   logFilePath: Assets/Data/Logs
   toggleKey: 32
+  navAgentTypeId: 0
+  navAgentRadius: 0.01
+  navAgentHeight: 0.05
+  navVoxelSize: 0.03
+  navMinRegionArea: 0
+  navBoundsMargin: 2
+  showNavSourceMesh: 1
+  navSourceMeshColor: {r: 0.15, g: 0.9, b: 0.25, a: 0.35}
+  navLinkWidth: 0.18
+  skeletonMarkerRoot: {fileID: 0}
+  skeletonMarkerScale: 0.1
+  skeletonMarkerLifetime: 2
+  skeletonMarkerColor: {r: 0, g: 1, b: 1, a: 1}
+  skeletonLabelColor: {r: 1, g: 1, b: 1, a: 1}
+  skeletonShowLabel: 1
+  skeletonLabelCharacterSize: 0.08
+  shortestHeadPelvisColor: {r: 1, g: 0, b: 0, a: 1}
+  minValidHeadPelvisDistance: 0.05
+  showHeadToNoseVector: 1
+  headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  headToNoseVectorWidth: 0.015
+  objectMarkerRoot: {fileID: 0}
+  objectMarkerScale: 0.12
+  objectLabelVerticalPadding: 0.015
+  objectLabelCharacterSize: 0.08
+  objectCoordinateScale: 1
+  objectCoordinateOffset: {x: 0, y: 0, z: 0}
+  objectMarkerColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  objectLabelColor: {r: 1, g: 1, b: 1, a: 1}
   jointPrefab: {fileID: 4066487136742516831, guid: bd71afa962ed61c48a054cb67b8520ae, type: 3}
   lineMaterial: {fileID: 2100000, guid: 209d92faaf65eae418fabfc8a58da8a5, type: 2}
   jointScale: 0.06
   lineWidth: 0.02
-  skeletonLifetime: 2
+  skeletonFullLifetime: 2
 --- !u!1 &1151578253
 GameObject:
   m_ObjectHideFlags: 0
@@ -1034,12 +1059,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1231161389}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0.0032911375, z: -0.019584786, w: 0.99980277}
-  m_LocalPosition: {x: 0.639, y: 0.4, z: 0.209}
-  m_LocalScale: {x: -0.050000004, y: 0.049999997, z: 0.050000004}
+  m_LocalRotation: {x: -0.7097284, y: -0.0019922731, z: -0.0048079668, w: 0.70445615}
+  m_LocalPosition: {x: 1.3502847, y: 0.099196434, z: -0.34394252}
+  m_LocalScale: {x: -0.050000004, y: 0.049999993, z: 0.050000004}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 866067530}
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!135 &1231161391
 SphereCollider:
@@ -1811,7 +1836,7 @@ Transform:
   m_GameObject: {fileID: 2029327483}
   serializedVersion: 2
   m_LocalRotation: {x: 0.70961165, y: -0.014226461, z: -0.006653791, w: 0.70441794}
-  m_LocalPosition: {x: 632.63385, y: -22.313751, z: 496.64233}
+  m_LocalPosition: {x: 632.63385, y: -22.31372, z: 496.6423}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1908,3 +1933,4 @@ SceneRoots:
   - {fileID: 310874647}
   - {fileID: 990050002}
   - {fileID: 1845637910}
+  - {fileID: 1231161390}
