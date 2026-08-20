@@ -149,16 +149,20 @@ public class PlaneFinder : MonoBehaviour
     public float maxHorizontalSurfaceNormalAngle = 15f;
     [HideInInspector]
     public float maxNavMeshNeighborHeightStep = 0.08f;
-    [HideInInspector]
+    [Tooltip("小さい穴を埋める処理を何回繰り返すか。")]
     public int navMeshHoleFillIterations = 2;
-    [HideInInspector]
+    [Tooltip("穴埋め対象のセルについて、これ以上の数の隣接セル(8方向)が既に埋まっていないと埋めない。小さくするほど積極的に穴を埋める。")]
     public int minNavMeshHoleNeighborCount = 6;
-    [HideInInspector]
+    [Tooltip("向かい合う2セルの間に1セル分の隙間がある場合、その間を埋める。")]
     public bool mergeOneCellNavMeshGaps = true;
-    [HideInInspector]
+    [Tooltip("隙間埋め処理を何回繰り返すか。")]
     public int navMeshGapMergeIterations = 1;
-    [HideInInspector]
+    [Tooltip("穴埋め/隙間埋め/拡張で、隣接セルの高さ差がこれを超える場合は埋めない(段差を誤って埋めないため)。")]
     public float maxNavMeshMergeHeightDifference = 0.06f;
+    [Tooltip("生成された平面の外周をさらに何セル分外側に広げるか。実際の点群より少し大きめに平面を取りたい場合に増やす。")]
+    public int navMeshSurfaceExpansionIterations = 1;
+    [Tooltip("拡張先のセルについて、これ以上の数の隣接セル(8方向)が既に埋まっていないと拡張しない。小さくするほど積極的に広げる。")]
+    public int minNavMeshExpansionNeighborCount = 1;
     [HideInInspector]
     public int pointCloudNavMeshAgentTypeId = 0;
     [HideInInspector]
@@ -2294,6 +2298,10 @@ public class PlaneFinder : MonoBehaviour
             if (rawDenoisedHeights.Count < minHorizontalSurfaceClusterCells)
                 continue;
 
+            // ここまでのノイズ除去/穴埋めが終わった最終形の輪郭を、外側にさらに広げる。
+            // 点群が実際の床/机の縁より内側にしか取れていない場合の取りこぼしを補う。
+            ExpandNavMeshSurface(rawDenoisedHeights);
+
             AppendHorizontalSurfaceQuads(
                 rawDenoisedHeights,
                 vertices,
@@ -2462,6 +2470,74 @@ public class PlaneFinder : MonoBehaviour
             foreach (KeyValuePair<Vector2Int, float> addition in additions)
                 heights[addition.Key] = addition.Value;
         }
+    }
+
+    private void ExpandNavMeshSurface(
+        Dictionary<Vector2Int, float> heights)
+    {
+        int iterations =
+            Mathf.Max(navMeshSurfaceExpansionIterations, 0);
+
+        for (int i = 0; i < iterations; i++)
+        {
+            Dictionary<Vector2Int, float> additions =
+                new Dictionary<Vector2Int, float>();
+            HashSet<Vector2Int> candidates =
+                new HashSet<Vector2Int>();
+
+            foreach (Vector2Int key in heights.Keys)
+            {
+                foreach (Vector2Int neighbor in GetAllNeighbors(key))
+                {
+                    if (!heights.ContainsKey(neighbor))
+                        candidates.Add(neighbor);
+                }
+            }
+
+            foreach (Vector2Int candidate in candidates)
+            {
+                if (TryEstimateNavMeshExpansionHeight(heights, candidate, out float height))
+                    additions.Add(candidate, height);
+            }
+
+            if (additions.Count == 0)
+                break;
+
+            foreach (KeyValuePair<Vector2Int, float> addition in additions)
+                heights[addition.Key] = addition.Value;
+        }
+    }
+
+    private bool TryEstimateNavMeshExpansionHeight(
+        Dictionary<Vector2Int, float> heights,
+        Vector2Int candidate,
+        out float height)
+    {
+        height = 0f;
+        float sum = 0f;
+        int count = 0;
+        float minHeight = float.PositiveInfinity;
+        float maxHeight = float.NegativeInfinity;
+
+        foreach (Vector2Int neighbor in GetAllNeighbors(candidate))
+        {
+            if (!heights.TryGetValue(neighbor, out float neighborHeight))
+                continue;
+
+            sum += neighborHeight;
+            count++;
+            minHeight = Mathf.Min(minHeight, neighborHeight);
+            maxHeight = Mathf.Max(maxHeight, neighborHeight);
+        }
+
+        if (count < Mathf.Max(minNavMeshExpansionNeighborCount, 1))
+            return false;
+
+        if (maxHeight - minHeight > GetNavMeshMergeHeightLimit())
+            return false;
+
+        height = sum / count;
+        return true;
     }
 
     private bool TryEstimateConservativeNavMeshFillHeight(
