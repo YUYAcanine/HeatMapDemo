@@ -98,30 +98,59 @@ public class EtasPublisher : MonoBehaviour
         if (!IsConnected || string.IsNullOrWhiteSpace(topic))
             return;
 
+        Dictionary<string, (string Type, float Length)> closest =
+            new Dictionary<string, (string Type, float Length)>();
+
         foreach (KeyValuePair<string, float> route in source.RouteLengths)
-            PublishEntry(route.Key, "child", route.Value, source.MovementSpeed);
+            ConsiderClosest(closest, route.Key, "child", route.Value);
 
         foreach (KeyValuePair<string, float> route in source.ParentRouteLengths)
-            PublishEntry(ETACalculate.ExtractGoalLabel(route.Key), "parents", route.Value, source.MovementSpeed);
+            ConsiderClosest(closest, ETACalculate.ExtractGoalLabel(route.Key), "parent", route.Value);
+
+        List<ClosestMessage> messages = new List<ClosestMessage>();
+        foreach (KeyValuePair<string, (string Type, float Length)> entry in closest)
+        {
+            messages.Add(new ClosestMessage
+            {
+                label = entry.Key,
+                closertype = entry.Value.Type ?? "none"
+            });
+        }
+
+        PublishEntries(messages);
 
         lastPublishedEtaVersion = source.EtaVersion;
     }
 
-    private void PublishEntry(string label, string type, float routeLength, float movementSpeed)
+    private static void ConsiderClosest(Dictionary<string, (string Type, float Length)> closest, string label, string type, float routeLength)
     {
-        bool reachable = routeLength >= 0f;
-        EtasMessage message = new EtasMessage
+        if (!closest.TryGetValue(label, out (string Type, float Length) current))
+            current = (null, float.PositiveInfinity);
+
+        if (routeLength >= 0f && routeLength < current.Length)
+            current = (type, routeLength);
+
+        closest[label] = current;
+    }
+
+    private void PublishEntries(List<ClosestMessage> messages)
+    {
+        if (messages.Count == 0)
+            return;
+
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < messages.Count; i++)
         {
-            label = label,
-            type = type,
-            eta = reachable ? routeLength / movementSpeed : -1f,
-            reachable = reachable
-        };
-        string json = JsonUtility.ToJson(message);
-        Publish(topic, json);
+            if (i > 0) json.Append(',');
+            json.Append(JsonUtility.ToJson(messages[i]));
+        }
+        json.Append(']');
+
+        string payload = json.ToString();
+        Publish(topic, payload);
 
         if (logPublishedMessage)
-            Debug.Log($"EtasPublisher: published topic={topic}, payload={json}");
+            Debug.Log($"EtasPublisher: published topic={topic}, payload={payload}");
     }
 
     public void Publish(string publishTopic, string payload)
@@ -222,11 +251,9 @@ public class EtasPublisher : MonoBehaviour
     }
 
     [Serializable]
-    private class EtasMessage
+    private class ClosestMessage
     {
         public string label;
-        public string type;
-        public float eta;
-        public bool reachable;
+        public string closertype;
     }
 }
