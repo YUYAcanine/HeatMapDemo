@@ -177,6 +177,9 @@ MonoBehaviour:
   - enabled: 1
     deviceIndex: 1
     kinectTransform: {fileID: 431353223}
+  - enabled: 1
+    deviceIndex: 2
+    kinectTransform: {fileID: 1865616046}
   stride: 1
   saveFileName: pointcloud.pcd
   capturePointCloudButton: {fileID: 250982629}
@@ -186,8 +189,8 @@ MonoBehaviour:
   captureBuildNavMeshAndLinksButton: {fileID: 1271077895}
   savePcdButton: {fileID: 166432937}
   pointNavLink: {fileID: 0}
-  autoUpdateCaptureBuildNavMeshAndLinks: 0
-  autoUpdateIntervalSeconds: 40
+  autoUpdateCaptureBuildNavMeshAndLinks: 1
+  autoUpdateIntervalSeconds: 20
   ransacIterations: 300
   planeDistanceThreshold: 0.025
   minPlanePoints: 300
@@ -3498,7 +3501,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!65 &1865616043
 BoxCollider:
   m_ObjectHideFlags: 0
