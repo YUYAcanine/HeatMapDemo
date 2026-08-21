@@ -209,7 +209,7 @@ Transform:
   m_GameObject: {fileID: 409491273}
   serializedVersion: 2
   m_LocalRotation: {x: 0.010803492, y: -0.00041544953, z: -0.71682566, w: 0.69716865}
-  m_LocalPosition: {x: -0.714, y: -1.16, z: 0.418}
+  m_LocalPosition: {x: -0.752, y: -1.873, z: 0.673}
   m_LocalScale: {x: -1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -917,6 +917,7 @@ MonoBehaviour:
   headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
   headToNoseVectorWidth: 0.015
   objectMarkerRoot: {fileID: 0}
+  objectCoordinateCalibration: {fileID: 409491274}
   objectMarkerScale: 0.12
   objectLabelVerticalPadding: 0.015
   objectLabelCharacterSize: 0.08

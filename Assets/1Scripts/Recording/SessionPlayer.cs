@@ -54,6 +54,10 @@ public class SessionPlayer : MonoBehaviour
 
     [Header("Object Visual (object_coordinate)")]
     [SerializeField] private Transform objectMarkerRoot;
+    [Tooltip("MultiIntegrationLoggerシーンのTurtleSubscriberが持つ、部屋に対して校正済みのTransform。" +
+        "設定すると、生座標をこのTransformのローカル座標として解釈し、Loggerのリアルタイム表示と同じワールド位置に変換する。" +
+        "TestSubscribe配下は非表示のためobjectMarkerRootとしては使えないが、参照だけなら非アクティブでも問題ない。")]
+    [SerializeField] private Transform objectCoordinateCalibration;
     [SerializeField] private float objectMarkerScale = 0.12f;
     [SerializeField] private float objectLabelVerticalPadding = 0.015f;
     [SerializeField] private float objectLabelCharacterSize = 0.08f;
@@ -800,24 +804,32 @@ public class SessionPlayer : MonoBehaviour
         if (!TryGetObjectPosition(json, message, out Vector3 rawPosition))
             return;
 
-        Vector3 localPosition = rawPosition * objectCoordinateScale + objectCoordinateOffset;
+        Vector3 calibratedPosition = rawPosition * objectCoordinateScale + objectCoordinateOffset;
+
+        // objectCoordinateCalibrationはMultiIntegrationLoggerのTurtleSubscriberが実際に
+        // マーカーを配置しているTransform(部屋に対して校正済み)を指す。これを介してワールド
+        // 座標に変換することで、Logger側のリアルタイム表示と同じ位置に描画される。
+        // 未設定の場合は従来通りobjectMarkerRoot(またはこのオブジェクト自身)のローカル座標として扱う。
+        Vector3 worldPosition = objectCoordinateCalibration != null
+            ? objectCoordinateCalibration.TransformPoint(calibratedPosition)
+            : (objectMarkerRoot != null ? objectMarkerRoot : transform).TransformPoint(calibratedPosition);
 
         bool markerAlreadyExists =
             objectMarkersByLabel.TryGetValue(label, out GameObject marker) && marker != null;
 
         if (markerAlreadyExists)
-            marker.transform.localPosition = localPosition;
+            marker.transform.position = worldPosition;
         else
-            CreateObjectMarker(label, localPosition);
+            CreateObjectMarker(label, worldPosition);
     }
 
-    private void CreateObjectMarker(string label, Vector3 localPosition)
+    private void CreateObjectMarker(string label, Vector3 worldPosition)
     {
         Transform parent = objectMarkerRoot != null ? objectMarkerRoot : transform;
 
         GameObject markerRootObject = new GameObject($"ObjectMarker_{label}");
         markerRootObject.transform.SetParent(parent, false);
-        markerRootObject.transform.localPosition = localPosition;
+        markerRootObject.transform.position = worldPosition;
 
         GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         marker.name = "Sphere";
