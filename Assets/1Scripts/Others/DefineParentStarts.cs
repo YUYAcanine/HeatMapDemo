@@ -134,6 +134,11 @@ public class DefineParentStarts : MonoBehaviour
 
         foreach (RaycastHit hit in hits)
         {
+            // 床は必ずPelvisより下にあるはずなので、Pelvisと同じかそれより上のヒット
+            // (テーブル等、真上から見て手前にある別のColliderを誤検出したもの)は除外する。
+            if (hit.point.y >= pelvisPosition.y)
+                continue;
+
             if (hit.distance >= nearestDistance)
                 continue;
 

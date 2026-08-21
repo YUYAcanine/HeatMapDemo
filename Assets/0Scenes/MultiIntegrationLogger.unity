@@ -1232,7 +1232,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   skeletonSubscriber: {fileID: 942113970}
-  snapToNearestFloor: 0
+  snapToNearestFloor: 1
   floorLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -1251,7 +1251,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   skeletonSubscriber: {fileID: 942113970}
-  snapToNearestFloor: 0
+  snapToNearestFloor: 1
   floorLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
