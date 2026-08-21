@@ -17,7 +17,7 @@ public class RouteSub : MonoBehaviour
 
     [Header("Route")]
     [SerializeField] private Material routeLineMaterial;
-    [SerializeField] private float startSearchRadius = 2.0f;
+    [SerializeField] private float startSearchRadius = 3.0f;
     [Tooltip("startSearchRadius以内にNavMeshが見つからない場合、この半径まで広げて最寄りの点を探す(スタート地点の真下にNavMeshが無いケースの救済用)。")]
     [SerializeField] private float startFallbackSearchRadius = 1000f;
     [SerializeField] private float goalSearchRadius = 0.8f;

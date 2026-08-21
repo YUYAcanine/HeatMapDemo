@@ -2037,7 +2037,7 @@ MonoBehaviour:
   pointNavLink: {fileID: 0}
   generateNavLinksBeforeRoute: 1
   routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
-  startSearchRadius: 2
+  startSearchRadius: 3
   startFallbackSearchRadius: 1000
   goalSearchRadius: 0.8
   routeLineWidth: 0.05

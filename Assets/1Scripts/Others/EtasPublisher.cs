@@ -110,10 +110,19 @@ public class EtasPublisher : MonoBehaviour
         List<ClosestMessage> messages = new List<ClosestMessage>();
         foreach (KeyValuePair<string, (string Type, float Length)> entry in closest)
         {
+            string type = entry.Value.Type ?? "none";
+
+            // childが到達不可の場合は、parentが到達可能でもclosertypeはnoneにする。
+            bool childReachable =
+                source.RouteLengths.TryGetValue(entry.Key, out float childLength) && childLength >= 0f;
+
+            if (!childReachable)
+                type = "none";
+
             messages.Add(new ClosestMessage
             {
                 label = entry.Key,
-                closertype = entry.Value.Type ?? "none"
+                closertype = type
             });
         }
 
