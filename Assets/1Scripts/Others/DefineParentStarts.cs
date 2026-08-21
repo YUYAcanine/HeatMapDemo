@@ -17,6 +17,8 @@ public class DefineParentStarts : MonoBehaviour
     [SerializeField] private LayerMask floorLayerMask = ~0;
     [SerializeField] private float raycastStartHeight = 1.5f;
     [SerializeField] private float floorSearchDistance = 5f;
+    [Tooltip("Pelvisの真下だけでなく、その周囲この半径(m)の円柱状の範囲も含めて床を探す。")]
+    [SerializeField] private float floorSearchRadius = 0.3f;
 
     private readonly Dictionary<string, Transform> startsByLabel = new Dictionary<string, Transform>();
 
@@ -119,8 +121,9 @@ public class DefineParentStarts : MonoBehaviour
 
         Vector3 origin = pelvisPosition + Vector3.up * raycastStartHeight;
 
-        RaycastHit[] hits = Physics.RaycastAll(
+        RaycastHit[] hits = Physics.SphereCastAll(
             origin,
+            Mathf.Max(floorSearchRadius, 0.001f),
             Vector3.down,
             raycastStartHeight + floorSearchDistance,
             floorLayerMask,

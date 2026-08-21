@@ -1238,6 +1238,7 @@ MonoBehaviour:
     m_Bits: 4294967295
   raycastStartHeight: 1.5
   floorSearchDistance: 5
+  floorSearchRadius: 0.3
 --- !u!114 &1231161500
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1257,6 +1258,7 @@ MonoBehaviour:
     m_Bits: 4294967295
   raycastStartHeight: 1.5
   floorSearchDistance: 5
+  floorSearchRadius: 0.3
 --- !u!1 &1231161600
 GameObject:
   m_ObjectHideFlags: 0
@@ -2037,7 +2039,7 @@ MonoBehaviour:
   pointNavLink: {fileID: 0}
   generateNavLinksBeforeRoute: 1
   routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
-  startSearchRadius: 3
+  startSearchRadius: 1
   startFallbackSearchRadius: 1000
   goalSearchRadius: 0.8
   routeLineWidth: 0.05

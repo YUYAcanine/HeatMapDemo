@@ -24,6 +24,8 @@ public class DefineStart : MonoBehaviour
     [SerializeField] private float raycastStartHeight = 1.5f;
     [Tooltip("Raycastの開始点から真下に向かって床を探す最大距離(m)。")]
     [SerializeField] private float floorSearchDistance = 5f;
+    [Tooltip("Pelvisの真下だけでなく、その周囲この半径(m)の円柱状の範囲も含めて床を探す。")]
+    [SerializeField] private float floorSearchRadius = 0.3f;
 
     public bool HasActivePerson { get; private set; }
     public string ActiveLabel { get; private set; }
@@ -71,8 +73,9 @@ public class DefineStart : MonoBehaviour
 
         Vector3 origin = pelvisPosition + Vector3.up * raycastStartHeight;
 
-        RaycastHit[] hits = Physics.RaycastAll(
+        RaycastHit[] hits = Physics.SphereCastAll(
             origin,
+            Mathf.Max(floorSearchRadius, 0.001f),
             Vector3.down,
             raycastStartHeight + floorSearchDistance,
             floorLayerMask,
