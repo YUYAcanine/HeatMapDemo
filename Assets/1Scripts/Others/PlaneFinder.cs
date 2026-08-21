@@ -58,10 +58,10 @@ public class PlaneFinder : MonoBehaviour
     [HideInInspector]
     public float planeDistanceThreshold = 0.025f;
     [HideInInspector]
-    public int minPlanePoints = 300;
+    public int minPlanePoints = 150;
     [HideInInspector]
     [Range(0f, 1f)]
-    public float minPlanePointRatio = 0.08f;
+    public float minPlanePointRatio = 0.04f;
     [HideInInspector]
     [Range(0f, 1f)]
     public float minUpDot = 0.7f;
