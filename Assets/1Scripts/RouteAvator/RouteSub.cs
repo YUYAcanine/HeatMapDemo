@@ -26,13 +26,21 @@ public class RouteSub : MonoBehaviour
     [SerializeField] private float routeSampleInterval = 0.2f;
     [SerializeField] private bool logRouteSearch = true;
 
+    [Header("Route - Parent")]
+    [Tooltip("child(headPelvisDistance最短の人物)以外の全人物(=parent)のスタート位置。空の場合はシーン内から自動収集する。")]
+    [SerializeField] private DefineParentStarts parentStarts;
+    [Tooltip("parent用の経路ラインに使うマテリアル。childのrouteLineMaterialとは別の色にする。")]
+    [SerializeField] private Material parentRouteLineMaterial;
+
     [Header("Start Marker")]
     [Tooltip("NavMesh上にスナップされたスタート地点に球マーカーを表示する。")]
     [SerializeField] private bool showStartMarker = true;
-    [SerializeField] private float startMarkerScale = 0.15f;
-    [SerializeField] private Color startMarkerColor = Color.green;
+    [SerializeField] private float startMarkerScale = 0.05f;
+    [SerializeField] private Color startMarkerColor = Color.white;
 
     private readonly Dictionary<string, RouteEntry> routesByLabel =
+        new Dictionary<string, RouteEntry>();
+    private readonly Dictionary<string, RouteEntry> parentRoutesByKey =
         new Dictionary<string, RouteEntry>();
     private int lastMarkerVersion = -1;
     private GameObject startMarker;
@@ -100,6 +108,7 @@ public class RouteSub : MonoBehaviour
         {
             SetStartMarkerVisible(false);
             MarkAllMarkersUnreachable(currentSubscriber);
+            GenerateParentRoutes(currentSubscriber);
             RouteVersion++;
             return;
         }
@@ -119,7 +128,100 @@ public class RouteSub : MonoBehaviour
         }
 
         RemoveRoutesNotIn(activeLabels);
+        GenerateParentRoutes(currentSubscriber);
         RouteVersion++;
+    }
+
+    private void GenerateParentRoutes(Subscriber currentSubscriber)
+    {
+        DefineParentStarts starts = GetParentStarts();
+        HashSet<string> activeKeys = new HashSet<string>();
+
+        if (starts != null)
+        {
+            foreach (KeyValuePair<string, Transform> parentEntry in starts.StartsByLabel)
+            {
+                string parentLabel = parentEntry.Key;
+                Transform parentStartTransform = parentEntry.Value;
+
+                if (parentStartTransform == null)
+                    continue;
+
+                if (!TrySamplePoint(parentStartTransform.position, startSearchRadius, $"parent start ({parentLabel})", out Vector3 parentStartPoint) &&
+                    !TrySamplePoint(parentStartTransform.position, startFallbackSearchRadius, $"parent start ({parentLabel}, fallback)", out parentStartPoint))
+                {
+                    continue;
+                }
+
+                foreach (KeyValuePair<string, GameObject> markerPair in currentSubscriber.MarkersByLabel)
+                {
+                    if (markerPair.Value == null)
+                        continue;
+
+                    string key = $"{parentLabel}__{markerPair.Key}";
+                    activeKeys.Add(key);
+                    GenerateParentRouteForMarker(key, parentLabel, markerPair.Key, markerPair.Value.transform.position, parentStartPoint);
+                }
+            }
+        }
+
+        RemoveParentRoutesNotIn(activeKeys);
+    }
+
+    private void GenerateParentRouteForMarker(string key, string parentLabel, string goalLabel, Vector3 requestedGoal, Vector3 startPoint)
+    {
+        RouteEntry route = GetOrCreateParentRoute(key);
+        if (!TrySamplePoint(requestedGoal, goalSearchRadius, $"parent goal ({parentLabel}->{goalLabel})", out Vector3 goalPoint))
+        {
+            HideRoute(route);
+            return;
+        }
+
+        bool calculated = NavMesh.CalculatePath(startPoint, goalPoint, NavMesh.AllAreas, route.Path);
+        route.HasPath = calculated &&
+            route.Path.status == NavMeshPathStatus.PathComplete &&
+            route.Path.corners.Length >= 2;
+
+        if (logRouteSearch)
+            Debug.Log($"RouteSub: parent path result. parent={parentLabel}, goal={goalLabel}, calculated={calculated}, status={route.Path.status}, complete={route.HasPath}, corners={route.Path.corners.Length}, start={startPoint}, goalPoint={goalPoint}");
+
+        ApplyRouteLine(route, parentRouteLineMaterial);
+    }
+
+    private DefineParentStarts GetParentStarts()
+    {
+        if (parentStarts != null)
+            return parentStarts;
+
+        parentStarts = FindObjectOfType<DefineParentStarts>();
+        return parentStarts;
+    }
+
+    private RouteEntry GetOrCreateParentRoute(string key)
+    {
+        if (parentRoutesByKey.TryGetValue(key, out RouteEntry existing))
+            return existing;
+
+        LineRenderer line = new GameObject($"RouteSubParentLine_{key}").AddComponent<LineRenderer>();
+        line.transform.SetParent(transform, false);
+        line.positionCount = 0;
+        line.enabled = false;
+        RouteEntry route = new RouteEntry { Path = new NavMeshPath(), Line = line };
+        parentRoutesByKey[key] = route;
+        return route;
+    }
+
+    private void RemoveParentRoutesNotIn(HashSet<string> activeKeys)
+    {
+        List<string> removedKeys = new List<string>();
+        foreach (KeyValuePair<string, RouteEntry> pair in parentRoutesByKey)
+        {
+            if (activeKeys.Contains(pair.Key)) continue;
+            if (pair.Value.Line != null) Destroy(pair.Value.Line.gameObject);
+            removedKeys.Add(pair.Key);
+        }
+        foreach (string key in removedKeys)
+            parentRoutesByKey.Remove(key);
     }
 
     private void MarkAllMarkersUnreachable(Subscriber currentSubscriber)
@@ -145,6 +247,14 @@ public class RouteSub : MonoBehaviour
                 Destroy(route.Line.gameObject);
         }
         routesByLabel.Clear();
+
+        foreach (RouteEntry route in parentRoutesByKey.Values)
+        {
+            if (route.Line != null)
+                Destroy(route.Line.gameObject);
+        }
+        parentRoutesByKey.Clear();
+
         SetStartMarkerVisible(false);
         RouteVersion++;
     }
@@ -222,7 +332,7 @@ public class RouteSub : MonoBehaviour
         if (!route.HasPath)
             Debug.LogWarning($"RouteSub: route not generated for {label}. status={route.Path.status}, corners={route.Path.corners.Length}.");
 
-        ApplyRouteLine(route);
+        ApplyRouteLine(route, routeLineMaterial);
     }
 
     private Subscriber GetSubscriber()
@@ -289,7 +399,7 @@ public class RouteSub : MonoBehaviour
         return false;
     }
 
-    private void ApplyRouteLine(RouteEntry route)
+    private void ApplyRouteLine(RouteEntry route, Material material)
     {
         if (!route.HasPath || route.Line == null)
         {
@@ -306,7 +416,7 @@ public class RouteSub : MonoBehaviour
             return;
         }
 
-        route.Line.material = routeLineMaterial;
+        route.Line.material = material;
         route.Line.startWidth = routeLineWidth;
         route.Line.endWidth = routeLineWidth;
         route.Line.positionCount = points.Count;
@@ -399,6 +509,15 @@ public class RouteSub : MonoBehaviour
 
         Gizmos.color = Color.cyan;
         foreach (RouteEntry route in routesByLabel.Values)
+        {
+            if (!route.HasPath || route.Path == null) continue;
+            for (int i = 0; i < route.Path.corners.Length - 1; i++)
+                Gizmos.DrawLine(route.Path.corners[i] + Vector3.up * routeLineYOffset,
+                    route.Path.corners[i + 1] + Vector3.up * routeLineYOffset);
+        }
+
+        Gizmos.color = Color.blue;
+        foreach (RouteEntry route in parentRoutesByKey.Values)
         {
             if (!route.HasPath || route.Path == null) continue;
             for (int i = 0; i < route.Path.corners.Length - 1; i++)

@@ -725,6 +725,7 @@ Transform:
   - {fileID: 409491274}
   - {fileID: 2029327484}
   - {fileID: 958918281}
+  - {fileID: 1231161601}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: -89.256, y: -234.70999, z: 236.40201}
 --- !u!1 &942113968
@@ -1229,6 +1230,57 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 327e1f0739f02f9409d1ddd634ca0da1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  skeletonSubscriber: {fileID: 942113970}
+  snapToNearestFloor: 0
+  floorLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  raycastStartHeight: 1.5
+  floorSearchDistance: 5
+--- !u!1 &1231161600
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1231161601}
+  - component: {fileID: 1231161500}
+  m_Layer: 0
+  m_Name: ParentStarts
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1231161601
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1231161600}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 866067530}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1231161500
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1231161600}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3f57a2ad3b5b64344a3d3c5b0a9d5b21, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
   skeletonSubscriber: {fileID: 942113970}
   snapToNearestFloor: 0
   floorLayerMask:
@@ -1939,9 +1991,11 @@ MonoBehaviour:
   routeLineYOffset: 0.05
   routeSampleInterval: 0.2
   logRouteSearch: 1
+  parentStarts: {fileID: 1231161500}
+  parentRouteLineMaterial: {fileID: 2100000, guid: 209d92faaf65eae418fabfc8a58da8a5, type: 2}
   showStartMarker: 1
-  startMarkerScale: 0.15
-  startMarkerColor: {r: 0, g: 1, b: 0, a: 1}
+  startMarkerScale: 0.05
+  startMarkerColor: {r: 1, g: 1, b: 1, a: 1}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

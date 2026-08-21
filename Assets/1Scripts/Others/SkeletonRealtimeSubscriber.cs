@@ -60,6 +60,19 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
     public Transform ShortestPersonTransform { get; private set; }
     public bool HasShortestPerson => ShortestPersonTransform != null;
 
+    // ShortestLabel(=child)以外の全人物(=parent)。DefineParentStarts等の外部スクリプトが
+    // parent側の経路生成のスタート位置を決めるために参照する。
+    public IEnumerable<KeyValuePair<string, Transform>> GetOtherPersons()
+    {
+        foreach (KeyValuePair<string, PersonMarker> entry in markersByLabel)
+        {
+            if (entry.Key == ShortestLabel || entry.Value.root == null)
+                continue;
+
+            yield return new KeyValuePair<string, Transform>(entry.Key, entry.Value.root);
+        }
+    }
+
     private void Start()
     {
         if (connectOnStart)
