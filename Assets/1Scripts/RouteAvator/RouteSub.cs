@@ -42,6 +42,10 @@ public class RouteSub : MonoBehaviour
         new Dictionary<string, RouteEntry>();
     private readonly Dictionary<string, RouteEntry> parentRoutesByKey =
         new Dictionary<string, RouteEntry>();
+    private readonly Dictionary<string, GameObject> parentStartMarkersByLabel =
+        new Dictionary<string, GameObject>();
+    private readonly Dictionary<string, GameObject> goalMarkersByLabel =
+        new Dictionary<string, GameObject>();
     private int lastMarkerVersion = -1;
     private GameObject startMarker;
     public int RouteVersion { get; private set; }
@@ -103,12 +107,15 @@ public class RouteSub : MonoBehaviour
             start != null
                 ? start.position
                 : transform.position;
+        HashSet<string> activeGoalKeys = new HashSet<string>();
+
         if (!TrySamplePoint(requestedStart, startSearchRadius, "start", out Vector3 startPoint) &&
             !TrySamplePoint(requestedStart, startFallbackSearchRadius, "start (fallback)", out startPoint))
         {
             SetStartMarkerVisible(false);
             MarkAllMarkersUnreachable(currentSubscriber);
-            GenerateParentRoutes(currentSubscriber);
+            GenerateParentRoutes(currentSubscriber, activeGoalKeys);
+            RemoveMarkersNotIn(goalMarkersByLabel, activeGoalKeys);
             RouteVersion++;
             return;
         }
@@ -124,18 +131,20 @@ public class RouteSub : MonoBehaviour
                 continue;
 
             activeLabels.Add(label);
-            GenerateRouteForMarker(label, marker.transform.position, startPoint);
+            GenerateRouteForMarker(label, marker.transform.position, startPoint, activeGoalKeys);
         }
 
         RemoveRoutesNotIn(activeLabels);
-        GenerateParentRoutes(currentSubscriber);
+        GenerateParentRoutes(currentSubscriber, activeGoalKeys);
+        RemoveMarkersNotIn(goalMarkersByLabel, activeGoalKeys);
         RouteVersion++;
     }
 
-    private void GenerateParentRoutes(Subscriber currentSubscriber)
+    private void GenerateParentRoutes(Subscriber currentSubscriber, HashSet<string> activeGoalKeys)
     {
         DefineParentStarts starts = GetParentStarts();
         HashSet<string> activeKeys = new HashSet<string>();
+        HashSet<string> activeParentStartKeys = new HashSet<string>();
 
         if (starts != null)
         {
@@ -153,6 +162,9 @@ public class RouteSub : MonoBehaviour
                     continue;
                 }
 
+                activeParentStartKeys.Add(parentLabel);
+                CreateOrUpdateMarker(parentStartMarkersByLabel, parentLabel, parentStartPoint);
+
                 foreach (KeyValuePair<string, GameObject> markerPair in currentSubscriber.MarkersByLabel)
                 {
                     if (markerPair.Value == null)
@@ -160,15 +172,16 @@ public class RouteSub : MonoBehaviour
 
                     string key = $"{parentLabel}__{markerPair.Key}";
                     activeKeys.Add(key);
-                    GenerateParentRouteForMarker(key, parentLabel, markerPair.Key, markerPair.Value.transform.position, parentStartPoint);
+                    GenerateParentRouteForMarker(key, parentLabel, markerPair.Key, markerPair.Value.transform.position, parentStartPoint, activeGoalKeys);
                 }
             }
         }
 
         RemoveParentRoutesNotIn(activeKeys);
+        RemoveMarkersNotIn(parentStartMarkersByLabel, activeParentStartKeys);
     }
 
-    private void GenerateParentRouteForMarker(string key, string parentLabel, string goalLabel, Vector3 requestedGoal, Vector3 startPoint)
+    private void GenerateParentRouteForMarker(string key, string parentLabel, string goalLabel, Vector3 requestedGoal, Vector3 startPoint, HashSet<string> activeGoalKeys)
     {
         RouteEntry route = GetOrCreateParentRoute(key);
         if (!TrySamplePoint(requestedGoal, goalSearchRadius, $"parent goal ({parentLabel}->{goalLabel})", out Vector3 goalPoint))
@@ -176,6 +189,9 @@ public class RouteSub : MonoBehaviour
             HideRoute(route);
             return;
         }
+
+        activeGoalKeys.Add(goalLabel);
+        CreateOrUpdateMarker(goalMarkersByLabel, goalLabel, goalPoint);
 
         bool calculated = NavMesh.CalculatePath(startPoint, goalPoint, NavMesh.AllAreas, route.Path);
         route.HasPath = calculated &&
@@ -255,6 +271,20 @@ public class RouteSub : MonoBehaviour
         }
         parentRoutesByKey.Clear();
 
+        foreach (GameObject marker in parentStartMarkersByLabel.Values)
+        {
+            if (marker != null)
+                Destroy(marker);
+        }
+        parentStartMarkersByLabel.Clear();
+
+        foreach (GameObject marker in goalMarkersByLabel.Values)
+        {
+            if (marker != null)
+                Destroy(marker);
+        }
+        goalMarkersByLabel.Clear();
+
         SetStartMarkerVisible(false);
         RouteVersion++;
     }
@@ -289,6 +319,53 @@ public class RouteSub : MonoBehaviour
             startMarker.SetActive(visible);
     }
 
+    // parentのスタート地点/ゴール地点用の小さい白球マーカー。childのスタートマーカーと同じ見た目。
+    private void CreateOrUpdateMarker(Dictionary<string, GameObject> markers, string key, Vector3 position)
+    {
+        if (!showStartMarker)
+        {
+            if (markers.TryGetValue(key, out GameObject existing) && existing != null)
+                existing.SetActive(false);
+            return;
+        }
+
+        if (!markers.TryGetValue(key, out GameObject marker) || marker == null)
+        {
+            marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            marker.name = $"RouteSub_Marker_{key}";
+
+            Renderer markerRenderer = marker.GetComponent<Renderer>();
+            if (markerRenderer != null)
+                markerRenderer.material.color = startMarkerColor;
+
+            markers[key] = marker;
+        }
+
+        marker.transform.SetParent(null, true);
+        marker.transform.position = position;
+        marker.transform.localScale = Vector3.one * Mathf.Max(startMarkerScale, 0.01f);
+        marker.SetActive(true);
+    }
+
+    private void RemoveMarkersNotIn(Dictionary<string, GameObject> markers, HashSet<string> activeKeys)
+    {
+        List<string> staleKeys = null;
+        foreach (KeyValuePair<string, GameObject> pair in markers)
+        {
+            if (activeKeys.Contains(pair.Key)) continue;
+            staleKeys ??= new List<string>();
+            staleKeys.Add(pair.Key);
+        }
+
+        if (staleKeys == null) return;
+
+        foreach (string key in staleKeys)
+        {
+            if (markers[key] != null) Destroy(markers[key]);
+            markers.Remove(key);
+        }
+    }
+
     public void GetRouteLengths(Dictionary<string, float> destination)
     {
         if (destination == null)
@@ -312,7 +389,31 @@ public class RouteSub : MonoBehaviour
         }
     }
 
-    private void GenerateRouteForMarker(string label, Vector3 requestedGoal, Vector3 startPoint)
+    // parentRoutesByKeyのキーは "parentLabel__goalLabel" 形式。
+    public void GetParentRouteLengths(Dictionary<string, float> destination)
+    {
+        if (destination == null)
+            return;
+
+        destination.Clear();
+        foreach (KeyValuePair<string, RouteEntry> pair in parentRoutesByKey)
+        {
+            RouteEntry route = pair.Value;
+            if (!route.HasPath || route.Path == null || route.Path.corners.Length < 2)
+            {
+                destination[pair.Key] = -1f;
+                continue;
+            }
+
+            float length = 0f;
+            for (int i = 0; i < route.Path.corners.Length - 1; i++)
+                length += Vector3.Distance(route.Path.corners[i], route.Path.corners[i + 1]);
+
+            destination[pair.Key] = length;
+        }
+    }
+
+    private void GenerateRouteForMarker(string label, Vector3 requestedGoal, Vector3 startPoint, HashSet<string> activeGoalKeys)
     {
         RouteEntry route = GetOrCreateRoute(label);
         if (!TrySamplePoint(requestedGoal, goalSearchRadius, $"goal ({label})", out Vector3 goalPoint))
@@ -320,6 +421,9 @@ public class RouteSub : MonoBehaviour
             HideRoute(route);
             return;
         }
+
+        activeGoalKeys.Add(label);
+        CreateOrUpdateMarker(goalMarkersByLabel, label, goalPoint);
 
         bool calculated = NavMesh.CalculatePath(startPoint, goalPoint, NavMesh.AllAreas, route.Path);
         route.HasPath = calculated &&
@@ -498,6 +602,18 @@ public class RouteSub : MonoBehaviour
     {
         if (startMarker != null)
             Destroy(startMarker);
+
+        foreach (GameObject marker in parentStartMarkersByLabel.Values)
+        {
+            if (marker != null)
+                Destroy(marker);
+        }
+
+        foreach (GameObject marker in goalMarkersByLabel.Values)
+        {
+            if (marker != null)
+                Destroy(marker);
+        }
     }
 
     private void OnDrawGizmos()

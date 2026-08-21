@@ -19,7 +19,10 @@ public class ETACalculate : MonoBehaviour
 
     private readonly Dictionary<string, float> routeLengths =
         new Dictionary<string, float>();
-    private readonly List<string> sortedLabels = new List<string>();
+    private readonly Dictionary<string, float> parentRouteLengths =
+        new Dictionary<string, float>();
+    private readonly List<(string Label, string Tag, float Length)> displayEntries =
+        new List<(string Label, string Tag, float Length)>();
     private int lastRouteVersion = -1;
     private float lastMovementSpeed = -1f;
 
@@ -58,19 +61,42 @@ public class ETACalculate : MonoBehaviour
             return;
 
         currentRouteSub.GetRouteLengths(routeLengths);
-        sortedLabels.Clear();
-        sortedLabels.AddRange(routeLengths.Keys);
-        sortedLabels.Sort(System.StringComparer.OrdinalIgnoreCase);
+        currentRouteSub.GetParentRouteLengths(parentRouteLengths);
+
+        bool hasParentRoutes = parentRouteLengths.Count > 0;
+
+        displayEntries.Clear();
+        foreach (KeyValuePair<string, float> pair in routeLengths)
+            displayEntries.Add((pair.Key, "child", pair.Value));
+
+        if (hasParentRoutes)
+        {
+            foreach (KeyValuePair<string, float> pair in parentRouteLengths)
+                displayEntries.Add((ExtractGoalLabel(pair.Key), "parents", pair.Value));
+        }
+
+        displayEntries.Sort((a, b) =>
+        {
+            int labelComparison = string.Compare(a.Label, b.Label, System.StringComparison.OrdinalIgnoreCase);
+            return labelComparison != 0
+                ? labelComparison
+                : string.Compare(a.Tag, b.Tag, System.StringComparison.OrdinalIgnoreCase);
+        });
 
         float safeSpeed = Mathf.Max(movementSpeed, 0.01f);
         StringBuilder text = new StringBuilder();
-        foreach (string label in sortedLabels)
+        foreach ((string label, string tag, float routeLength) in displayEntries)
         {
             if (text.Length > 0)
                 text.AppendLine();
 
-            float routeLength = routeLengths[label];
             text.Append(label);
+            if (hasParentRoutes)
+            {
+                text.Append(" (");
+                text.Append(tag);
+                text.Append(')');
+            }
             text.Append(": ");
             if (routeLength < 0f)
             {
@@ -99,5 +125,13 @@ public class ETACalculate : MonoBehaviour
 
         routeSub = FindObjectOfType<RouteSub>();
         return routeSub;
+    }
+
+    // RouteSub.GetParentRouteLengths のキーは "parentLabel__goalLabel" 形式なので、
+    // 表示用にgoalLabelだけを取り出す。
+    private static string ExtractGoalLabel(string parentRouteKey)
+    {
+        int separatorIndex = parentRouteKey.IndexOf("__", System.StringComparison.Ordinal);
+        return separatorIndex >= 0 ? parentRouteKey.Substring(separatorIndex + 2) : parentRouteKey;
     }
 }
