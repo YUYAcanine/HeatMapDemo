@@ -1230,7 +1230,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   skeletonSubscriber: {fileID: 942113970}
-  snapToNearestFloor: 1
+  snapToNearestFloor: 0
   floorLayerMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -1933,11 +1933,15 @@ MonoBehaviour:
   generateNavLinksBeforeRoute: 1
   routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
   startSearchRadius: 2
+  startFallbackSearchRadius: 1000
   goalSearchRadius: 0.8
   routeLineWidth: 0.05
   routeLineYOffset: 0.05
   routeSampleInterval: 0.2
   logRouteSearch: 1
+  showStartMarker: 1
+  startMarkerScale: 0.15
+  startMarkerColor: {r: 0, g: 1, b: 0, a: 1}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

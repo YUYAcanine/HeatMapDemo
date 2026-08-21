@@ -223,6 +223,10 @@ public class PlaneFinder : MonoBehaviour
     private int lastCaptureRequestFrame = -1;
     private float nextAutoUpdateTime;
 
+    // Kinectデバイスは毎回開閉すると不安定になりやすいため、CaptureOnce間で使い回す。
+    private Device singleDevice;
+    private readonly Dictionary<int, Device> multiDevicesByIndex = new Dictionary<int, Device>();
+
     void Awake()
     {
         // Assets/3DObject/KinectPCD
@@ -247,6 +251,7 @@ public class PlaneFinder : MonoBehaviour
     void OnDisable()
     {
         UnregisterButtonEvents();
+        CloseAllDevices();
     }
 
     void Update()
@@ -478,58 +483,48 @@ public class PlaneFinder : MonoBehaviour
         lastCaptureRequestFrame = Time.frameCount;
         isCapturing = true;
 
-        if (useMultipleKinects &&
-            kinectSources != null &&
-            kinectSources.Length > 0)
-        {
-            try
-            {
-                CaptureFromMultipleKinects();
-            }
-            finally
-            {
-                isCapturing = false;
-            }
-
-            return;
-        }
-
-        Device dev = null;
-        bool camerasStarted = false;
-
         try
         {
-            int installedCount =
-                Device.GetInstalledCount();
-
-            if (installedCount <= deviceIndex)
+            if (useMultipleKinects &&
+                kinectSources != null &&
+                kinectSources.Length > 0)
             {
-                Debug.LogError(
-                    $"PlaneFinder: Kinect deviceIndex {deviceIndex} is not available. Installed devices: {installedCount}");
+                CaptureFromMultipleKinects();
                 return;
             }
 
-            dev = Device.Open(deviceIndex);
+            CaptureFromSingleKinect();
+        }
+        finally
+        {
+            isCapturing = false;
+        }
+    }
 
-            dev.StartCameras(new DeviceConfiguration
+    private void CaptureFromSingleKinect()
+    {
+        Device dev = EnsureSingleDeviceOpen();
+
+        if (dev == null)
+            return;
+
+        try
+        {
+            // カメラは撮影の直前だけ回し、撮影後は必ず止める。デバイスハンドル自体は
+            // 使い回すが、ストリーミングを常時回しっぱなしにはしない(マルチKinect構成で
+            // 複数台のIR投光が同時に干渉して深度品質が落ちるのを防ぐため)。
+            dev.StartCameras(CreateKinectDeviceConfiguration());
+
+            try
             {
-                ColorFormat = ImageFormat.ColorBGRA32,
-                ColorResolution = ColorResolution.R720p,
-                DepthMode = DepthMode.NFOV_2x2Binned,
-                CameraFPS = FPS.FPS30,
-                SynchronizedImagesOnly = true
-            });
-
-            camerasStarted = true;
-
             using (Capture cap = dev.GetCapture())
             {
                 Image depth = cap.Depth;
                 Image color = cap.Color;
 
                 Calibration calib = dev.GetCalibration();
-                Transformation trans = calib.CreateTransformation();
 
+                using (Transformation trans = calib.CreateTransformation())
                 using (Image pointCloudImage =
                        trans.DepthImageToPointCloud(depth))
                 {
@@ -603,34 +598,85 @@ public class PlaneFinder : MonoBehaviour
                     }
                 }
             }
+            }
+            finally
+            {
+                try { dev.StopCameras(); }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
+                }
+            }
         }
         catch (System.Exception ex)
         {
             Debug.LogError(
                 $"PlaneFinder: Kinect capture failed. {ex.GetType().Name}: {ex.Message}");
-        }
-        finally
-        {
-            if (dev != null)
-            {
-                if (camerasStarted)
-                {
-                    try
-                    {
-                        dev.StopCameras();
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogWarning(
-                            $"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
-                    }
-                }
 
-                dev.Dispose();
+            // 取得中に例外が起きた場合はデバイスが不安定な状態になっている可能性があるため、
+            // 一旦閉じて次回のCaptureOnceで開き直す。
+            CloseSingleDevice();
+        }
+    }
+
+    // Kinectデバイスハンドル自体(Device.Open/Dispose)は毎回作り直すと不安定になりやすいので
+    // 使い回す。ただしカメラストリーミング(StartCameras/StopCameras)は撮影のたびに
+    // 開始/停止する(常時ストリーミングにすると、マルチKinect構成で複数台のIR投光が
+    // 同時に干渉して深度品質が落ちるため)。
+    private Device EnsureSingleDeviceOpen()
+    {
+        if (singleDevice != null)
+            return singleDevice;
+
+        try
+        {
+            int installedCount =
+                Device.GetInstalledCount();
+
+            if (installedCount <= deviceIndex)
+            {
+                Debug.LogError(
+                    $"PlaneFinder: Kinect deviceIndex {deviceIndex} is not available. Installed devices: {installedCount}");
+                return null;
             }
 
-            isCapturing = false;
+            singleDevice = Device.Open(deviceIndex);
+            Debug.Log($"PlaneFinder: opened Kinect device {deviceIndex} (kept open for reuse).");
+            return singleDevice;
         }
+        catch (System.Exception ex)
+        {
+            Debug.LogError(
+                $"PlaneFinder: failed to open Kinect device {deviceIndex}. {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static DeviceConfiguration CreateKinectDeviceConfiguration()
+    {
+        return new DeviceConfiguration
+        {
+            ColorFormat = ImageFormat.ColorBGRA32,
+            ColorResolution = ColorResolution.R720p,
+            DepthMode = DepthMode.NFOV_2x2Binned,
+            CameraFPS = FPS.FPS30,
+            SynchronizedImagesOnly = true
+        };
+    }
+
+    private void CloseSingleDevice()
+    {
+        if (singleDevice == null)
+            return;
+
+        try { singleDevice.StopCameras(); }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
+        }
+
+        singleDevice.Dispose();
+        singleDevice = null;
     }
 
     // =========================
@@ -698,34 +744,30 @@ public class PlaneFinder : MonoBehaviour
             return;
         }
 
-        Device dev = null;
-        bool camerasStarted = false;
+        Device dev = EnsureMultiDeviceOpen(sourceDeviceIndex);
+
+        if (dev == null)
+            return;
+
         int beforeCount =
             vertices.Count;
 
         try
         {
-            dev = Device.Open(sourceDeviceIndex);
+            // カメラは撮影の直前だけ回し、撮影後は必ず止める(複数台のIR投光が同時に
+            // 干渉して深度品質が落ちるのを防ぐため、常時ストリーミングにはしない)。
+            dev.StartCameras(CreateKinectDeviceConfiguration());
 
-            dev.StartCameras(new DeviceConfiguration
+            try
             {
-                ColorFormat = ImageFormat.ColorBGRA32,
-                ColorResolution = ColorResolution.R720p,
-                DepthMode = DepthMode.NFOV_2x2Binned,
-                CameraFPS = FPS.FPS30,
-                SynchronizedImagesOnly = true
-            });
-
-            camerasStarted = true;
-
             using (Capture cap = dev.GetCapture())
             {
                 Image depth = cap.Depth;
                 Image color = cap.Color;
 
                 Calibration calib = dev.GetCalibration();
-                Transformation trans = calib.CreateTransformation();
 
+                using (Transformation trans = calib.CreateTransformation())
                 using (Image pointCloudImage =
                        trans.DepthImageToPointCloud(depth))
                 {
@@ -786,35 +828,88 @@ public class PlaneFinder : MonoBehaviour
                     }
                 }
             }
+            }
+            finally
+            {
+                try { dev.StopCameras(); }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
+                }
+            }
         }
         catch (System.Exception ex)
         {
             Debug.LogWarning(
                 $"PlaneFinder: Kinect {sourceDeviceIndex} capture failed. {ex.GetType().Name}: {ex.Message}");
-        }
-        finally
-        {
-            if (dev != null)
-            {
-                if (camerasStarted)
-                {
-                    try
-                    {
-                        dev.StopCameras();
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogWarning(
-                            $"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
-                    }
-                }
 
-                dev.Dispose();
-            }
+            // 取得中に例外が起きた場合はデバイスが不安定な状態になっている可能性があるため、
+            // 一旦閉じて次回のCaptureOnceで開き直す。
+            CloseMultiDevice(sourceDeviceIndex);
         }
 
         Debug.Log(
             $"PlaneFinder: Kinect {sourceDeviceIndex} captured {vertices.Count - beforeCount} points.");
+    }
+
+    // Kinectデバイスハンドル自体(Device.Open/Dispose)は毎回作り直すと不安定になりやすいので
+    // 使い回す。ただしカメラストリーミング(StartCameras/StopCameras)は撮影のたびに
+    // 開始/停止する(複数台を常時同時ストリーミングさせるとIR投光が干渉するため)。
+    private Device EnsureMultiDeviceOpen(int index)
+    {
+        if (multiDevicesByIndex.TryGetValue(index, out Device existing) && existing != null)
+            return existing;
+
+        try
+        {
+            Device dev = Device.Open(index);
+
+            multiDevicesByIndex[index] = dev;
+            Debug.Log($"PlaneFinder: opened Kinect device {index} (kept open for reuse).");
+            return dev;
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError(
+                $"PlaneFinder: failed to open Kinect device {index}. {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private void CloseMultiDevice(int index)
+    {
+        if (!multiDevicesByIndex.TryGetValue(index, out Device dev) || dev == null)
+            return;
+
+        try { dev.StopCameras(); }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
+        }
+
+        dev.Dispose();
+        multiDevicesByIndex.Remove(index);
+    }
+
+    private void CloseAllDevices()
+    {
+        CloseSingleDevice();
+
+        foreach (Device dev in multiDevicesByIndex.Values)
+        {
+            if (dev == null)
+                continue;
+
+            try { dev.StopCameras(); }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
+            }
+
+            dev.Dispose();
+        }
+
+        multiDevicesByIndex.Clear();
     }
 
     private Vector3 TransformCapturedPointToLocal(

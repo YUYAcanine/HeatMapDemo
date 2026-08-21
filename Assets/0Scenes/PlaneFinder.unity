@@ -186,8 +186,8 @@ MonoBehaviour:
   captureBuildNavMeshAndLinksButton: {fileID: 1271077895}
   savePcdButton: {fileID: 166432937}
   pointNavLink: {fileID: 0}
-  autoUpdateCaptureBuildNavMeshAndLinks: 1
-  autoUpdateIntervalSeconds: 15
+  autoUpdateCaptureBuildNavMeshAndLinks: 0
+  autoUpdateIntervalSeconds: 40
   ransacIterations: 300
   planeDistanceThreshold: 0.025
   minPlanePoints: 300
@@ -238,6 +238,8 @@ MonoBehaviour:
   mergeOneCellNavMeshGaps: 1
   navMeshGapMergeIterations: 1
   maxNavMeshMergeHeightDifference: 0.06
+  navMeshSurfaceExpansionIterations: 1
+  minNavMeshExpansionNeighborCount: 1
   pointCloudNavMeshAgentTypeId: 0
   pointCloudNavMeshVoxelSize: 0.02
   pointCloudNavMeshIgnoredAgentRadius: 0.01
@@ -3866,11 +3868,15 @@ MonoBehaviour:
   generateNavLinksBeforeRoute: 1
   routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
   startSearchRadius: 2
+  startFallbackSearchRadius: 1000
   goalSearchRadius: 0.8
   routeLineWidth: 0.05
   routeLineYOffset: 0.05
   routeSampleInterval: 0.2
   logRouteSearch: 1
+  showStartMarker: 1
+  startMarkerScale: 0.15
+  startMarkerColor: {r: 0, g: 1, b: 0, a: 1}
 --- !u!1 &2060170812
 GameObject:
   m_ObjectHideFlags: 0
