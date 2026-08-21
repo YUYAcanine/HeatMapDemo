@@ -296,6 +296,58 @@ MonoBehaviour:
   connectOnStart: 1
   logPublishedMessage: 1
   etaCalculate: {fileID: 0}
+--- !u!1 &1231161700
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1231161701}
+  - component: {fileID: 1231161702}
+  m_Layer: 0
+  m_Name: ETASPublisher
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1231161701
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1231161700}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 866067530}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1231161702
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1231161700}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c1a8e5f2d7b4a3d9b0e5f3a7c2d4e1f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  mqttHost: 192.168.236.211
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/etas
+  connectOnStart: 1
+  logPublishedMessage: 1
+  etaCalculate: {fileID: 2029327485}
 --- !u!1 &431353219
 GameObject:
   m_ObjectHideFlags: 0
@@ -726,6 +778,7 @@ Transform:
   - {fileID: 2029327484}
   - {fileID: 958918281}
   - {fileID: 1231161601}
+  - {fileID: 1231161701}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: -89.256, y: -234.70999, z: 236.40201}
 --- !u!1 &942113968

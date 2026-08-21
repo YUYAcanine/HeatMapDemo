@@ -27,6 +27,8 @@ public class ETACalculate : MonoBehaviour
     private float lastMovementSpeed = -1f;
 
     public IReadOnlyDictionary<string, float> RouteLengths => routeLengths;
+    // キーは "parentLabel__goalLabel" 形式。ExtractGoalLabelでgoalLabelだけを取り出せる。
+    public IReadOnlyDictionary<string, float> ParentRouteLengths => parentRouteLengths;
     public float MovementSpeed => Mathf.Max(movementSpeed, 0.01f);
     public int EtaVersion { get; private set; }
 
@@ -121,7 +123,7 @@ public class ETACalculate : MonoBehaviour
 
     // RouteSub.GetParentRouteLengths のキーは "parentLabel__goalLabel" 形式なので、
     // 表示用にgoalLabelだけを取り出す。
-    private static string ExtractGoalLabel(string parentRouteKey)
+    public static string ExtractGoalLabel(string parentRouteKey)
     {
         int separatorIndex = parentRouteKey.IndexOf("__", System.StringComparison.Ordinal);
         return separatorIndex >= 0 ? parentRouteKey.Substring(separatorIndex + 2) : parentRouteKey;
