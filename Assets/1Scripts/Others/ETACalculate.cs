@@ -63,17 +63,12 @@ public class ETACalculate : MonoBehaviour
         currentRouteSub.GetRouteLengths(routeLengths);
         currentRouteSub.GetParentRouteLengths(parentRouteLengths);
 
-        bool hasParentRoutes = parentRouteLengths.Count > 0;
-
         displayEntries.Clear();
         foreach (KeyValuePair<string, float> pair in routeLengths)
             displayEntries.Add((pair.Key, "child", pair.Value));
 
-        if (hasParentRoutes)
-        {
-            foreach (KeyValuePair<string, float> pair in parentRouteLengths)
-                displayEntries.Add((ExtractGoalLabel(pair.Key), "parents", pair.Value));
-        }
+        foreach (KeyValuePair<string, float> pair in parentRouteLengths)
+            displayEntries.Add((ExtractGoalLabel(pair.Key), "parents", pair.Value));
 
         displayEntries.Sort((a, b) =>
         {
@@ -91,12 +86,9 @@ public class ETACalculate : MonoBehaviour
                 text.AppendLine();
 
             text.Append(label);
-            if (hasParentRoutes)
-            {
-                text.Append(" (");
-                text.Append(tag);
-                text.Append(')');
-            }
+            text.Append(" (");
+            text.Append(tag);
+            text.Append(")");
             text.Append(": ");
             if (routeLength < 0f)
             {
