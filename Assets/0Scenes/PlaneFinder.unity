@@ -295,7 +295,7 @@ MonoBehaviour:
   savePcdButton: {fileID: 166432937}
   pointNavLink: {fileID: 0}
   autoUpdateCaptureBuildNavMeshAndLinks: 1
-  autoUpdateIntervalSeconds: 10
+  autoUpdateIntervalSeconds: 2
   auxiliaryFloorObjects:
   - {fileID: 500629354}
   - {fileID: 29031164}
@@ -338,6 +338,7 @@ MonoBehaviour:
   generatedNavMeshObjectName: PointCloudNavMeshSource
   generatedNavMeshSourceMeshObjectName: SourceMesh
   showNavMeshSourceMesh: 1
+  buildNavMeshSourceMeshCollider: 1
   generatedNavMeshSourceColor: {r: 0.15, g: 0.9, b: 0.25, a: 0.35}
   navMeshCellSize: 0.06
   minNavMeshCellPoints: 1

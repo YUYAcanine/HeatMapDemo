@@ -141,6 +141,8 @@ public class PlaneFinder : MonoBehaviour
     [HideInInspector]
     public string generatedNavMeshSourceMeshObjectName = "SourceMesh";
     public bool showNavMeshSourceMesh = false;
+    [Tooltip("NavMeshソースメッシュにMeshColliderを付与する。RouteTestSimpleのクリックによるNavMeshテストで使用する。不要なら切ると生成のたびのcook負荷を減らせる。")]
+    public bool buildNavMeshSourceMeshCollider = true;
     [HideInInspector]
     public Color generatedNavMeshSourceColor = new Color(0.15f, 0.9f, 0.25f, 0.35f);
     [HideInInspector]
@@ -181,8 +183,8 @@ public class PlaneFinder : MonoBehaviour
     public int minNavMeshExpansionNeighborCount = 1;
     [HideInInspector]
     public int pointCloudNavMeshAgentTypeId = 0;
-    [HideInInspector]
-    public float pointCloudNavMeshVoxelSize = 0.03f;
+    [Tooltip("NavMeshBuilderのボクセルサイズ(m)。小さいほど精密だがボクセル化コストが急増する。10秒間隔などで頻繁に再構築する場合は大きめにして高速化する。")]
+    public float pointCloudNavMeshVoxelSize = 0.05f;
     [HideInInspector]
     public float pointCloudNavMeshIgnoredAgentRadius = 0.01f;
     [HideInInspector]
@@ -241,7 +243,11 @@ public class PlaneFinder : MonoBehaviour
 
     // Kinectデバイスは毎回開閉すると不安定になりやすいため、CaptureOnce間で使い回す。
     private Device singleDevice;
+    // 単一Kinect構成でのみ、StartCameras済みのストリーミングをCaptureOnce間で使い回す
+    // (IR干渉の懸念がないため。マルチKinect構成では従来通り撮影のたびにStart/Stopする)。
+    private bool singleDeviceStreaming;
     private readonly Dictionary<int, Device> multiDevicesByIndex = new Dictionary<int, Device>();
+    private readonly HashSet<int> multiDevicesStreaming = new HashSet<int>();
 
     void Awake()
     {
@@ -284,10 +290,10 @@ public class PlaneFinder : MonoBehaviour
             return;
         }
 
-        if (Time.time < nextAutoUpdateTime)
+        // Time.timeは1フレーム内(=CaptureBuildNavMeshAndLinksが同期的にブロックしている間)は
+        // 進まないため、計算完了からの経過時間を正しく測れるTime.realtimeSinceStartupを使う。
+        if (Time.realtimeSinceStartup < nextAutoUpdateTime)
             return;
-
-        ScheduleNextAutoUpdate();
 
         if (isCapturing)
         {
@@ -298,12 +304,15 @@ public class PlaneFinder : MonoBehaviour
         Debug.Log(
             $"PlaneFinder: auto update triggered. interval={Mathf.Max(autoUpdateIntervalSeconds, 1f):F1}s");
         CaptureBuildNavMeshAndLinks();
+
+        // 計算(撮影〜NavMesh/リンク生成)が終わった時点を起点に次回までの間隔を測る。
+        ScheduleNextAutoUpdate();
     }
 
     private void ScheduleNextAutoUpdate()
     {
         nextAutoUpdateTime =
-            Time.time + Mathf.Max(autoUpdateIntervalSeconds, 1f);
+            Time.realtimeSinceStartup + Mathf.Max(autoUpdateIntervalSeconds, 1f);
     }
 
     private void RegisterButtonEvents()
@@ -411,11 +420,10 @@ public class PlaneFinder : MonoBehaviour
         savedColors.Clear();
         ClearGeneratedRoutes();
 
-        MeshFilter meshFilter =
-            GetComponent<MeshFilter>();
-
-        if (meshFilter != null)
-            meshFilter.sharedMesh = null;
+        // 点群メッシュ(MeshFilter.sharedMesh)はここではクリアしない。
+        // 破棄はCreateMesh側で次のメッシュに差し替えるタイミングで行う
+        // (ここで参照だけnullにすると、古いMeshが誰からも参照されなくなった状態で
+        // Destroyされずに残ってしまいリークするため)。
 
         MeshCollider meshCollider =
             GetComponent<MeshCollider>();
@@ -478,7 +486,34 @@ public class PlaneFinder : MonoBehaviour
         foreach (GeneratedNavMeshDataOwner owner in owners)
             owner.SetNavMeshData(null);
 
+        DestroyGeneratedMeshesAndMaterials(child);
+
         DestroyImmediate(child.gameObject);
+    }
+
+    // 手続き的に new Mesh()/new Material() で生成したオブジェクトは、それを参照している
+    // GameObjectをDestroyしても自動的には解放されない(Unityのネイティブオブジェクトのため)。
+    // 参照が完全に失われる直前に明示的にDestroyしないと、再生成するたびにリークし続ける。
+    private void DestroyGeneratedMeshesAndMaterials(
+        Transform root)
+    {
+        MeshFilter[] meshFilters =
+            root.GetComponentsInChildren<MeshFilter>(true);
+
+        foreach (MeshFilter meshFilter in meshFilters)
+        {
+            if (meshFilter.sharedMesh != null)
+                DestroyImmediate(meshFilter.sharedMesh);
+        }
+
+        MeshRenderer[] meshRenderers =
+            root.GetComponentsInChildren<MeshRenderer>(true);
+
+        foreach (MeshRenderer meshRenderer in meshRenderers)
+        {
+            if (meshRenderer.sharedMaterial != null)
+                DestroyImmediate(meshRenderer.sharedMaterial);
+        }
     }
 
     // =========================
@@ -526,13 +561,13 @@ public class PlaneFinder : MonoBehaviour
 
         try
         {
-            // カメラは撮影の直前だけ回し、撮影後は必ず止める。デバイスハンドル自体は
-            // 使い回すが、ストリーミングを常時回しっぱなしにはしない(マルチKinect構成で
-            // 複数台のIR投光が同時に干渉して深度品質が落ちるのを防ぐため)。
-            dev.StartCameras(CreateKinectDeviceConfiguration());
+            // 単一Kinect構成ではIR投光の干渉が起きないため、ストリーミングは
+            // 開始したまま使い回す。毎回StartCameras/StopCamerasすると、
+            // 短い間隔(数秒〜十数秒おき)で回したときにUSBの再ネゴシエーション分の
+            // オーバーヘッドが積み重なって重くなる(マルチKinect構成では従来通り
+            // CaptureFromMultipleKinects側で撮影のたびにStart/Stopする)。
+            EnsureSingleDeviceStreaming(dev);
 
-            try
-            {
             using (Capture cap = dev.GetCapture())
             {
                 Image depth = cap.Depth;
@@ -614,15 +649,6 @@ public class PlaneFinder : MonoBehaviour
                     }
                 }
             }
-            }
-            finally
-            {
-                try { dev.StopCameras(); }
-                catch (System.Exception ex)
-                {
-                    Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
-                }
-            }
         }
         catch (System.Exception ex)
         {
@@ -630,15 +656,15 @@ public class PlaneFinder : MonoBehaviour
                 $"PlaneFinder: Kinect capture failed. {ex.GetType().Name}: {ex.Message}");
 
             // 取得中に例外が起きた場合はデバイスが不安定な状態になっている可能性があるため、
-            // 一旦閉じて次回のCaptureOnceで開き直す。
+            // 一旦閉じて次回のCaptureOnceで開き直す(ストリーミング状態もここでリセットされる)。
             CloseSingleDevice();
         }
     }
 
     // Kinectデバイスハンドル自体(Device.Open/Dispose)は毎回作り直すと不安定になりやすいので
-    // 使い回す。ただしカメラストリーミング(StartCameras/StopCameras)は撮影のたびに
-    // 開始/停止する(常時ストリーミングにすると、マルチKinect構成で複数台のIR投光が
-    // 同時に干渉して深度品質が落ちるため)。
+    // 使い回す。単一Kinect構成ではカメラストリーミング(StartCameras)もEnsureSingleDeviceStreamingで
+    // 一度開始したまま使い回す(IR干渉の懸念がないため)。マルチKinect構成では
+    // CaptureFromMultipleKinects側で従来通り撮影のたびにStart/Stopする。
     private Device EnsureSingleDeviceOpen()
     {
         if (singleDevice != null)
@@ -668,6 +694,16 @@ public class PlaneFinder : MonoBehaviour
         }
     }
 
+    private void EnsureSingleDeviceStreaming(
+        Device dev)
+    {
+        if (singleDeviceStreaming)
+            return;
+
+        dev.StartCameras(CreateKinectDeviceConfiguration());
+        singleDeviceStreaming = true;
+    }
+
     private static DeviceConfiguration CreateKinectDeviceConfiguration()
     {
         return new DeviceConfiguration
@@ -693,6 +729,7 @@ public class PlaneFinder : MonoBehaviour
 
         singleDevice.Dispose();
         singleDevice = null;
+        singleDeviceStreaming = false;
     }
 
     // =========================
@@ -770,12 +807,10 @@ public class PlaneFinder : MonoBehaviour
 
         try
         {
-            // カメラは撮影の直前だけ回し、撮影後は必ず止める(複数台のIR投光が同時に
-            // 干渉して深度品質が落ちるのを防ぐため、常時ストリーミングにはしない)。
-            dev.StartCameras(CreateKinectDeviceConfiguration());
+            // IR投光の干渉は問題にならないため、マルチKinect構成でもストリーミングは
+            // 開始したまま使い回す(撮影のたびにStart/Stopしない)。
+            EnsureMultiDeviceStreaming(sourceDeviceIndex, dev);
 
-            try
-            {
             using (Capture cap = dev.GetCapture())
             {
                 Image depth = cap.Depth;
@@ -844,15 +879,6 @@ public class PlaneFinder : MonoBehaviour
                     }
                 }
             }
-            }
-            finally
-            {
-                try { dev.StopCameras(); }
-                catch (System.Exception ex)
-                {
-                    Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
-                }
-            }
         }
         catch (System.Exception ex)
         {
@@ -860,7 +886,7 @@ public class PlaneFinder : MonoBehaviour
                 $"PlaneFinder: Kinect {sourceDeviceIndex} capture failed. {ex.GetType().Name}: {ex.Message}");
 
             // 取得中に例外が起きた場合はデバイスが不安定な状態になっている可能性があるため、
-            // 一旦閉じて次回のCaptureOnceで開き直す。
+            // 一旦閉じて次回のCaptureOnceで開き直す(ストリーミング状態もここでリセットされる)。
             CloseMultiDevice(sourceDeviceIndex);
         }
 
@@ -869,8 +895,8 @@ public class PlaneFinder : MonoBehaviour
     }
 
     // Kinectデバイスハンドル自体(Device.Open/Dispose)は毎回作り直すと不安定になりやすいので
-    // 使い回す。ただしカメラストリーミング(StartCameras/StopCameras)は撮影のたびに
-    // 開始/停止する(複数台を常時同時ストリーミングさせるとIR投光が干渉するため)。
+    // 使い回す。カメラストリーミング(StartCameras)もEnsureMultiDeviceStreamingで
+    // デバイスごとに一度開始したら使い回す(IR干渉は問題にならないため)。
     private Device EnsureMultiDeviceOpen(int index)
     {
         if (multiDevicesByIndex.TryGetValue(index, out Device existing) && existing != null)
@@ -892,6 +918,17 @@ public class PlaneFinder : MonoBehaviour
         }
     }
 
+    private void EnsureMultiDeviceStreaming(
+        int index,
+        Device dev)
+    {
+        if (multiDevicesStreaming.Contains(index))
+            return;
+
+        dev.StartCameras(CreateKinectDeviceConfiguration());
+        multiDevicesStreaming.Add(index);
+    }
+
     private void CloseMultiDevice(int index)
     {
         if (!multiDevicesByIndex.TryGetValue(index, out Device dev) || dev == null)
@@ -905,6 +942,7 @@ public class PlaneFinder : MonoBehaviour
 
         dev.Dispose();
         multiDevicesByIndex.Remove(index);
+        multiDevicesStreaming.Remove(index);
     }
 
     private void CloseAllDevices()
@@ -926,6 +964,7 @@ public class PlaneFinder : MonoBehaviour
         }
 
         multiDevicesByIndex.Clear();
+        multiDevicesStreaming.Clear();
     }
 
     private Vector3 TransformCapturedPointToLocal(
@@ -1005,6 +1044,15 @@ public class PlaneFinder : MonoBehaviour
         List<Vector3> pts,
         List<Color32> cols)
     {
+        MeshFilter meshFilter =
+            GetComponent<MeshFilter>();
+        MeshRenderer meshRenderer =
+            GetComponent<MeshRenderer>();
+        Mesh previousMesh =
+            meshFilter.sharedMesh;
+        Material previousMaterial =
+            meshRenderer.sharedMaterial;
+
         Mesh mesh = new Mesh();
 
         mesh.indexFormat =
@@ -1026,12 +1074,23 @@ public class PlaneFinder : MonoBehaviour
             MeshTopology.Points,
             0);
 
-        GetComponent<MeshFilter>().mesh = mesh;
+        meshFilter.sharedMesh = mesh;
 
-        Material mat = new Material(
-            Shader.Find("Sprites/Default"));
+        // マテリアルは色/シェーダーが毎回同じなので使い回す。新規生成が必要なのは初回のみ。
+        if (previousMaterial == null)
+        {
+            previousMaterial =
+                new Material(Shader.Find("Sprites/Default"));
+            meshRenderer.sharedMaterial = previousMaterial;
+        }
 
-        GetComponent<MeshRenderer>().material = mat;
+        // 生成したMesh/Materialは手動でnew(=Unityのネイティブオブジェクト)しているため、
+        // 参照を上書きするだけでは古い方が解放されずリークする。明示的にDestroyする。
+        if (previousMesh != null &&
+            previousMesh != mesh)
+        {
+            DestroyImmediate(previousMesh);
+        }
     }
 
     // =========================
@@ -2090,14 +2149,19 @@ public class PlaneFinder : MonoBehaviour
         meshRenderer.enabled =
             showNavMeshSourceMesh;
 
-        MeshCollider meshCollider =
-            navMeshObject.GetComponent<MeshCollider>();
+        // MeshColliderの再構築(cook)は三角形数が多いほど重く、生成のたびに毎回発生する。
+        // RouteTestSimpleのクリックテスト(Physics.Raycast)で使うため既定ではONにしているが、
+        // それを使わない/軽くしたい場合はOFFにできるようにする。
+        if (buildNavMeshSourceMeshCollider)
+        {
+            MeshCollider meshCollider =
+                navMeshObject.GetComponent<MeshCollider>();
 
-        if (meshCollider == null)
-            meshCollider = navMeshObject.AddComponent<MeshCollider>();
+            if (meshCollider == null)
+                meshCollider = navMeshObject.AddComponent<MeshCollider>();
 
-        meshCollider.sharedMesh = null;
-        meshCollider.sharedMesh = mesh;
+            meshCollider.sharedMesh = mesh;
+        }
 
         GeneratedNavMeshDataOwner owner =
             navMeshObject.GetComponent<GeneratedNavMeshDataOwner>();
