@@ -2255,13 +2255,14 @@ public class PlaneFinder : MonoBehaviour
         return new Bounds(center, extents * 2f);
     }
 
-    private struct AuxiliaryFloorFootprint
+    private class AuxiliaryFloorFootprint
     {
         public float UMin;
         public float UMax;
         public float VMin;
         public float VMax;
         public float Height;
+        public List<Vector2> Triangles2D = new List<Vector2>();
     }
 
     private int CollectAuxiliaryFloorPoints(
@@ -2300,7 +2301,7 @@ public class PlaneFinder : MonoBehaviour
             if (flattenToPlane)
             {
                 averageHeight =
-                    GetAverageLocalHeight(vertices, meshTransform, normal);
+                    GetTopLocalHeight(vertices, meshTransform, normal);
             }
 
             for (int i = 0; i < triangles.Length; i += 3)
@@ -2352,7 +2353,7 @@ public class PlaneFinder : MonoBehaviour
         return addedCount;
     }
 
-    private float GetAverageLocalHeight(
+    private float GetTopLocalHeight(
         Vector3[] localVertices,
         Transform meshTransform,
         Vector3 normal)
@@ -2361,7 +2362,8 @@ public class PlaneFinder : MonoBehaviour
             localVertices.Length == 0)
             return 0f;
 
-        float sum = 0f;
+        float topHeight =
+            float.MinValue;
 
         foreach (Vector3 vertex in localVertices)
         {
@@ -2370,10 +2372,11 @@ public class PlaneFinder : MonoBehaviour
             Vector3 localPoint =
                 transform.InverseTransformPoint(worldPoint);
 
-            sum += Vector3.Dot(normal, localPoint);
+            topHeight =
+                Mathf.Max(topHeight, Vector3.Dot(normal, localPoint));
         }
 
-        return sum / localVertices.Length;
+        return topHeight;
     }
 
     private List<AuxiliaryFloorFootprint> BuildAuxiliaryFloorFootprints(
@@ -2393,25 +2396,35 @@ public class PlaneFinder : MonoBehaviour
                 !meshFilter.gameObject.activeInHierarchy)
                 continue;
 
+            Mesh mesh =
+                meshFilter.sharedMesh;
             Vector3[] vertices =
-                meshFilter.sharedMesh.vertices;
+                mesh.vertices;
+            int[] triangles =
+                mesh.triangles;
 
-            if (vertices.Length == 0)
+            if (vertices.Length == 0 ||
+                triangles.Length == 0)
                 continue;
 
             Transform meshTransform =
                 meshFilter.transform;
 
+            // ローカル頂点をあらかじめ(u, v, h)に変換しておく。
+            Vector2[] projected =
+                new Vector2[vertices.Length];
+            float[] heights =
+                new float[vertices.Length];
             float uMin = float.MaxValue;
             float uMax = float.MinValue;
             float vMin = float.MaxValue;
             float vMax = float.MinValue;
-            float heightSum = 0f;
+            float topHeight = float.MinValue;
 
-            foreach (Vector3 vertex in vertices)
+            for (int i = 0; i < vertices.Length; i++)
             {
                 Vector3 worldPoint =
-                    meshTransform.TransformPoint(vertex);
+                    meshTransform.TransformPoint(vertices[i]);
                 Vector3 localPoint =
                     transform.InverseTransformPoint(worldPoint);
 
@@ -2422,25 +2435,129 @@ public class PlaneFinder : MonoBehaviour
                 float h =
                     Vector3.Dot(normal, localPoint);
 
+                projected[i] = new Vector2(u, v);
+                heights[i] = h;
+
                 uMin = Mathf.Min(uMin, u);
                 uMax = Mathf.Max(uMax, u);
                 vMin = Mathf.Min(vMin, v);
                 vMax = Mathf.Max(vMax, v);
-                heightSum += h;
+                // Cubeなど厚みのあるメッシュの場合、床として使うべきなのは上面(normal方向で最も高い頂点群)の高さ。
+                // 全頂点の平均を使うと底面の頂点に引っ張られて厚みの半分だけ低い位置になってしまう。
+                topHeight = Mathf.Max(topHeight, h);
             }
 
-            footprints.Add(
+            AuxiliaryFloorFootprint footprint =
                 new AuxiliaryFloorFootprint
                 {
                     UMin = uMin - margin,
                     UMax = uMax + margin,
                     VMin = vMin - margin,
                     VMax = vMax + margin,
-                    Height = heightSum / vertices.Length
-                });
+                    Height = topHeight
+                };
+
+            // メッシュの実際の三角形をそのまま2D形状として保持する(AABBだけだと
+            // 回転した/矩形でないメッシュのfootprintが実際より大きく・違う形になってしまうため)。
+            for (int i = 0; i < triangles.Length; i += 3)
+            {
+                footprint.Triangles2D.Add(projected[triangles[i]]);
+                footprint.Triangles2D.Add(projected[triangles[i + 1]]);
+                footprint.Triangles2D.Add(projected[triangles[i + 2]]);
+            }
+
+            footprints.Add(footprint);
         }
 
         return footprints;
+    }
+
+    private static float Cross2D(
+        Vector2 a,
+        Vector2 b)
+    {
+        return a.x * b.y - a.y * b.x;
+    }
+
+    private static bool IsPointInTriangle2D(
+        Vector2 p,
+        Vector2 a,
+        Vector2 b,
+        Vector2 c)
+    {
+        float d1 =
+            Cross2D(p - a, b - a);
+        float d2 =
+            Cross2D(p - b, c - b);
+        float d3 =
+            Cross2D(p - c, a - c);
+
+        bool hasNeg =
+            d1 < 0f || d2 < 0f || d3 < 0f;
+        bool hasPos =
+            d1 > 0f || d2 > 0f || d3 > 0f;
+
+        return !(hasNeg && hasPos);
+    }
+
+    private static float PointToSegmentDistance2D(
+        Vector2 p,
+        Vector2 a,
+        Vector2 b)
+    {
+        Vector2 ab =
+            b - a;
+        float sqrLength =
+            Mathf.Max(ab.sqrMagnitude, 1e-8f);
+        float t =
+            Mathf.Clamp01(Vector2.Dot(p - a, ab) / sqrLength);
+        Vector2 closest =
+            a + ab * t;
+
+        return Vector2.Distance(p, closest);
+    }
+
+    // footprintの実際のメッシュ形状(三角形の集合)に対して、点が内部にあるか、
+    // または境界からmargin以内にあるかを判定する。AABBだけの判定と違い、
+    // 回転した/矩形でないメッシュでも実際の形状に沿った判定になる。
+    private static bool IsPointInsideFootprintShape(
+        AuxiliaryFloorFootprint footprint,
+        float u,
+        float v,
+        float margin)
+    {
+        Vector2 p =
+            new Vector2(u, v);
+
+        for (int i = 0; i < footprint.Triangles2D.Count; i += 3)
+        {
+            if (IsPointInTriangle2D(
+                p,
+                footprint.Triangles2D[i],
+                footprint.Triangles2D[i + 1],
+                footprint.Triangles2D[i + 2]))
+                return true;
+        }
+
+        if (margin <= 0f)
+            return false;
+
+        for (int i = 0; i < footprint.Triangles2D.Count; i += 3)
+        {
+            Vector2 a =
+                footprint.Triangles2D[i];
+            Vector2 b =
+                footprint.Triangles2D[i + 1];
+            Vector2 c =
+                footprint.Triangles2D[i + 2];
+
+            if (PointToSegmentDistance2D(p, a, b) <= margin ||
+                PointToSegmentDistance2D(p, b, c) <= margin ||
+                PointToSegmentDistance2D(p, c, a) <= margin)
+                return true;
+        }
+
+        return false;
     }
 
     private List<Vector3> RemovePointsInsideAuxiliaryFootprints(
@@ -2459,6 +2576,8 @@ public class PlaneFinder : MonoBehaviour
 
         float heightTolerance =
             Mathf.Max(auxiliaryFloorHeightTolerance, 0.01f);
+        float margin =
+            Mathf.Max(auxiliaryFloorFootprintMargin, 0f);
         List<Vector3> result =
             new List<Vector3>(sourcePoints.Count);
 
@@ -2482,6 +2601,9 @@ public class PlaneFinder : MonoBehaviour
                     continue;
 
                 if (Mathf.Abs(h - footprint.Height) > heightTolerance)
+                    continue;
+
+                if (!IsPointInsideFootprintShape(footprint, u, v, margin))
                     continue;
 
                 insideFloorFootprint = true;
@@ -2781,10 +2903,91 @@ public class PlaneFinder : MonoBehaviour
             usedLayerCount++;
         }
 
+        if (useAuxiliaryFloorPoints &&
+            prioritizeAuxiliaryFloorOverPointCloud)
+        {
+            int guaranteedCellCount =
+                AppendAuxiliaryFloorGuaranteedQuads(
+                    vertices,
+                    triangles,
+                    normal,
+                    axisU,
+                    axisV,
+                    cellSize);
+
+            if (guaranteedCellCount > 0)
+            {
+                sourceCellCount += guaranteedCellCount;
+                usedLayerCount++;
+            }
+        }
+
         return CreateNavMeshSourceMesh(
             generatedNavMeshObjectName + "Mesh",
             vertices,
             triangles);
+    }
+
+    private int AppendAuxiliaryFloorGuaranteedQuads(
+        List<Vector3> vertices,
+        List<int> triangles,
+        Vector3 normal,
+        Vector3 axisU,
+        Vector3 axisV,
+        float cellSize)
+    {
+        if (auxiliaryFloorObjects == null ||
+            auxiliaryFloorObjects.Count == 0)
+            return 0;
+
+        // 点群由来の穴埋め/ノイズ除去(垂直構造の除去・薄いセルの除去など)は、
+        // 実世界で確実に平面だとわかっている補助オブジェクトのfootprintには適用したくない。
+        // footprint内のセルは、点群側で既に何らかのセルが(別の高さで)存在していても
+        // 無条件に補助平面の高さで埋め直し、完全な床を保証する
+        // (「既に埋まっているからスキップ」という判定は、家具などのノイズが
+        // 同じ(x,y)セルの別の高さに存在するだけで補助平面側が抜けてしまうため使わない)。
+        List<AuxiliaryFloorFootprint> footprints =
+            BuildAuxiliaryFloorFootprints(normal, axisU, axisV);
+        int addedCellCount = 0;
+
+        foreach (AuxiliaryFloorFootprint footprint in footprints)
+        {
+            int minX = Mathf.FloorToInt(footprint.UMin / cellSize);
+            int maxX = Mathf.FloorToInt(footprint.UMax / cellSize);
+            int minY = Mathf.FloorToInt(footprint.VMin / cellSize);
+            int maxY = Mathf.FloorToInt(footprint.VMax / cellSize);
+
+            for (int x = minX; x <= maxX; x++)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    // セル中心が実際のメッシュ形状(投影した三角形)の内部にあるセルだけを埋める。
+                    // AABB全体を埋めると、回転した/矩形でない補助オブジェクトの場合に
+                    // 実物より広く・違う形のNavMeshができてしまう。
+                    float centerU =
+                        (x + 0.5f) * cellSize;
+                    float centerV =
+                        (y + 0.5f) * cellSize;
+
+                    if (!IsPointInsideFootprintShape(footprint, centerU, centerV, 0f))
+                        continue;
+
+                    AddHorizontalSurfaceQuad(
+                        vertices,
+                        triangles,
+                        new Vector2Int(x, y),
+                        footprint.Height,
+                        normal,
+                        axisU,
+                        axisV,
+                        cellSize);
+
+                    addedCellCount++;
+                }
+            }
+        }
+
+        return addedCellCount;
     }
 
     private Mesh CreateNavMeshSourceMesh(
