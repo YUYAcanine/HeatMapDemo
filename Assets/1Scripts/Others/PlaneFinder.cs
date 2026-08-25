@@ -52,6 +52,22 @@ public class PlaneFinder : MonoBehaviour
     public bool autoUpdateCaptureBuildNavMeshAndLinks = false;
     public float autoUpdateIntervalSeconds = 20f;
 
+    [Header("Auxiliary Floor Objects")]
+    [Tooltip("点群の平面検知が不安定な場合の補助。実際の床の位置・向きに合わせて配置したPlane/Quad/CubeなどのMeshFilterをドラッグ&ドロップしてください。")]
+    public List<MeshFilter> auxiliaryFloorObjects = new List<MeshFilter>();
+    [Tooltip("補助床オブジェクトの表面から点をサンプリングする間隔(m)。navMeshCellSize程度を推奨。")]
+    public float auxiliaryFloorPointSpacing = 0.03f;
+    [Tooltip("補助床オブジェクトの点をRANSAC平面検知・NavMesh生成用の点群に混ぜる。")]
+    public bool useAuxiliaryFloorPoints = true;
+    [Tooltip("補助床オブジェクトがあれば、その法線(up方向)を床の向きとして直接採用しRANSACをスキップする。点群ノイズによる法線のブレを防げる。")]
+    public bool bypassRansacWithAuxiliaryFloor = true;
+    [Tooltip("補助床オブジェクトの直上(水平footprint内)にある実点群を、きれいな補助平面の点で置き換える。")]
+    public bool prioritizeAuxiliaryFloorOverPointCloud = true;
+    [Tooltip("footprint内で実点群を置き換える高さ許容範囲(m)。この範囲内の高さの点だけを床ノイズとみなして除去し、これより高い点(家具など)はそのまま残す。")]
+    public float auxiliaryFloorHeightTolerance = 0.12f;
+    [Tooltip("補助床オブジェクトのfootprint(水平方向の範囲)を広げるマージン(m)。境界付近の実点群ノイズも除去したい場合に増やす。")]
+    public float auxiliaryFloorFootprintMargin = 0.02f;
+
     [Header("Plane Detection")]
     [HideInInspector]
     public int ransacIterations = 300;
@@ -1104,7 +1120,27 @@ public class PlaneFinder : MonoBehaviour
             return;
         }
 
-        if (!TryBuildNavMeshFromPointCloud(savedVertices, out int vertexCount, out int triangleCount, out int cellCount))
+        List<Vector3> pointsForNavMesh = savedVertices;
+
+        if (useAuxiliaryFloorPoints &&
+            auxiliaryFloorObjects != null &&
+            auxiliaryFloorObjects.Count > 0)
+        {
+            pointsForNavMesh =
+                BuildPointsWithAuxiliaryFloorPriority(
+                    savedVertices,
+                    out int addedCount,
+                    out int removedCount);
+
+            if (addedCount > 0 ||
+                removedCount > 0)
+            {
+                Debug.Log(
+                    $"PlaneFinder: auxiliary floor override applied. addedPoints={addedCount}, removedPoints={removedCount}, objects={auxiliaryFloorObjects.Count}.");
+            }
+        }
+
+        if (!TryBuildNavMeshFromPointCloud(pointsForNavMesh, out int vertexCount, out int triangleCount, out int cellCount))
         {
             Debug.LogWarning(
                 "PlaneFinder: NavMeshを生成できませんでした。点群の密度や対象範囲を確認してください。");
@@ -2219,12 +2255,347 @@ public class PlaneFinder : MonoBehaviour
         return new Bounds(center, extents * 2f);
     }
 
+    private struct AuxiliaryFloorFootprint
+    {
+        public float UMin;
+        public float UMax;
+        public float VMin;
+        public float VMax;
+        public float Height;
+    }
+
+    private int CollectAuxiliaryFloorPoints(
+        List<Vector3> outPoints,
+        Vector3 normal,
+        bool flattenToPlane)
+    {
+        if (auxiliaryFloorObjects == null ||
+            auxiliaryFloorObjects.Count == 0)
+            return 0;
+
+        float spacing =
+            Mathf.Max(auxiliaryFloorPointSpacing, 0.005f);
+        float cellArea =
+            spacing * spacing;
+        int addedCount = 0;
+
+        foreach (MeshFilter meshFilter in auxiliaryFloorObjects)
+        {
+            if (meshFilter == null ||
+                meshFilter.sharedMesh == null ||
+                !meshFilter.gameObject.activeInHierarchy)
+                continue;
+
+            Mesh mesh =
+                meshFilter.sharedMesh;
+            Vector3[] vertices =
+                mesh.vertices;
+            int[] triangles =
+                mesh.triangles;
+            Transform meshTransform =
+                meshFilter.transform;
+
+            float averageHeight = 0f;
+
+            if (flattenToPlane)
+            {
+                averageHeight =
+                    GetAverageLocalHeight(vertices, meshTransform, normal);
+            }
+
+            for (int i = 0; i < triangles.Length; i += 3)
+            {
+                Vector3 worldA =
+                    meshTransform.TransformPoint(vertices[triangles[i]]);
+                Vector3 worldB =
+                    meshTransform.TransformPoint(vertices[triangles[i + 1]]);
+                Vector3 worldC =
+                    meshTransform.TransformPoint(vertices[triangles[i + 2]]);
+
+                float triangleArea =
+                    Vector3.Cross(worldB - worldA, worldC - worldA).magnitude * 0.5f;
+
+                if (triangleArea < PlaneEpsilon)
+                    continue;
+
+                int sampleCount =
+                    Mathf.Max(1, Mathf.RoundToInt(triangleArea / cellArea));
+
+                for (int s = 0; s < sampleCount; s++)
+                {
+                    float r1 =
+                        Mathf.Sqrt(Random.value);
+                    float r2 =
+                        Random.value;
+
+                    Vector3 worldPoint =
+                        (1f - r1) * worldA +
+                        (r1 * (1f - r2)) * worldB +
+                        (r1 * r2) * worldC;
+
+                    Vector3 localPoint =
+                        transform.InverseTransformPoint(worldPoint);
+
+                    if (flattenToPlane)
+                    {
+                        float height =
+                            Vector3.Dot(normal, localPoint);
+                        localPoint += normal * (averageHeight - height);
+                    }
+
+                    outPoints.Add(localPoint);
+                    addedCount++;
+                }
+            }
+        }
+
+        return addedCount;
+    }
+
+    private float GetAverageLocalHeight(
+        Vector3[] localVertices,
+        Transform meshTransform,
+        Vector3 normal)
+    {
+        if (localVertices == null ||
+            localVertices.Length == 0)
+            return 0f;
+
+        float sum = 0f;
+
+        foreach (Vector3 vertex in localVertices)
+        {
+            Vector3 worldPoint =
+                meshTransform.TransformPoint(vertex);
+            Vector3 localPoint =
+                transform.InverseTransformPoint(worldPoint);
+
+            sum += Vector3.Dot(normal, localPoint);
+        }
+
+        return sum / localVertices.Length;
+    }
+
+    private List<AuxiliaryFloorFootprint> BuildAuxiliaryFloorFootprints(
+        Vector3 normal,
+        Vector3 axisU,
+        Vector3 axisV)
+    {
+        List<AuxiliaryFloorFootprint> footprints =
+            new List<AuxiliaryFloorFootprint>();
+        float margin =
+            Mathf.Max(auxiliaryFloorFootprintMargin, 0f);
+
+        foreach (MeshFilter meshFilter in auxiliaryFloorObjects)
+        {
+            if (meshFilter == null ||
+                meshFilter.sharedMesh == null ||
+                !meshFilter.gameObject.activeInHierarchy)
+                continue;
+
+            Vector3[] vertices =
+                meshFilter.sharedMesh.vertices;
+
+            if (vertices.Length == 0)
+                continue;
+
+            Transform meshTransform =
+                meshFilter.transform;
+
+            float uMin = float.MaxValue;
+            float uMax = float.MinValue;
+            float vMin = float.MaxValue;
+            float vMax = float.MinValue;
+            float heightSum = 0f;
+
+            foreach (Vector3 vertex in vertices)
+            {
+                Vector3 worldPoint =
+                    meshTransform.TransformPoint(vertex);
+                Vector3 localPoint =
+                    transform.InverseTransformPoint(worldPoint);
+
+                float u =
+                    Vector3.Dot(axisU, localPoint);
+                float v =
+                    Vector3.Dot(axisV, localPoint);
+                float h =
+                    Vector3.Dot(normal, localPoint);
+
+                uMin = Mathf.Min(uMin, u);
+                uMax = Mathf.Max(uMax, u);
+                vMin = Mathf.Min(vMin, v);
+                vMax = Mathf.Max(vMax, v);
+                heightSum += h;
+            }
+
+            footprints.Add(
+                new AuxiliaryFloorFootprint
+                {
+                    UMin = uMin - margin,
+                    UMax = uMax + margin,
+                    VMin = vMin - margin,
+                    VMax = vMax + margin,
+                    Height = heightSum / vertices.Length
+                });
+        }
+
+        return footprints;
+    }
+
+    private List<Vector3> RemovePointsInsideAuxiliaryFootprints(
+        List<Vector3> sourcePoints,
+        List<AuxiliaryFloorFootprint> footprints,
+        Vector3 normal,
+        Vector3 axisU,
+        Vector3 axisV,
+        out int removedCount)
+    {
+        removedCount = 0;
+
+        if (footprints == null ||
+            footprints.Count == 0)
+            return new List<Vector3>(sourcePoints);
+
+        float heightTolerance =
+            Mathf.Max(auxiliaryFloorHeightTolerance, 0.01f);
+        List<Vector3> result =
+            new List<Vector3>(sourcePoints.Count);
+
+        foreach (Vector3 point in sourcePoints)
+        {
+            float u =
+                Vector3.Dot(axisU, point);
+            float v =
+                Vector3.Dot(axisV, point);
+            float h =
+                Vector3.Dot(normal, point);
+            bool insideFloorFootprint =
+                false;
+
+            foreach (AuxiliaryFloorFootprint footprint in footprints)
+            {
+                if (u < footprint.UMin ||
+                    u > footprint.UMax ||
+                    v < footprint.VMin ||
+                    v > footprint.VMax)
+                    continue;
+
+                if (Mathf.Abs(h - footprint.Height) > heightTolerance)
+                    continue;
+
+                insideFloorFootprint = true;
+                break;
+            }
+
+            if (insideFloorFootprint)
+                removedCount++;
+            else
+                result.Add(point);
+        }
+
+        return result;
+    }
+
+    private List<Vector3> BuildPointsWithAuxiliaryFloorPriority(
+        List<Vector3> sourcePoints,
+        out int addedCount,
+        out int removedCount)
+    {
+        addedCount = 0;
+        removedCount = 0;
+
+        if (!TryGetAuxiliaryFloorNormal(out Vector3 normal))
+        {
+            List<Vector3> appended =
+                new List<Vector3>(sourcePoints);
+            addedCount =
+                CollectAuxiliaryFloorPoints(appended, Vector3.up, false);
+            return appended;
+        }
+
+        CreateHorizontalAxes(normal, out Vector3 axisU, out Vector3 axisV);
+
+        List<Vector3> baseResult;
+
+        if (prioritizeAuxiliaryFloorOverPointCloud)
+        {
+            List<AuxiliaryFloorFootprint> footprints =
+                BuildAuxiliaryFloorFootprints(normal, axisU, axisV);
+
+            baseResult =
+                RemovePointsInsideAuxiliaryFootprints(
+                    sourcePoints,
+                    footprints,
+                    normal,
+                    axisU,
+                    axisV,
+                    out removedCount);
+        }
+        else
+        {
+            baseResult =
+                new List<Vector3>(sourcePoints);
+        }
+
+        addedCount =
+            CollectAuxiliaryFloorPoints(
+                baseResult,
+                normal,
+                prioritizeAuxiliaryFloorOverPointCloud);
+
+        return baseResult;
+    }
+
+    private bool TryGetAuxiliaryFloorNormal(
+        out Vector3 normal)
+    {
+        normal =
+            Vector3.zero;
+
+        if (auxiliaryFloorObjects == null ||
+            auxiliaryFloorObjects.Count == 0)
+            return false;
+
+        Vector3 sum =
+            Vector3.zero;
+        int count = 0;
+
+        foreach (MeshFilter meshFilter in auxiliaryFloorObjects)
+        {
+            if (meshFilter == null ||
+                !meshFilter.gameObject.activeInHierarchy)
+                continue;
+
+            sum += transform.InverseTransformDirection(meshFilter.transform.up).normalized;
+            count++;
+        }
+
+        if (count == 0 ||
+            sum.sqrMagnitude < PlaneEpsilon)
+            return false;
+
+        normal = sum.normalized;
+        return true;
+    }
+
     private bool TryGetBaseHorizontalFrame(
         List<Vector3> points,
         out Vector3 horizontalNormal,
         out Vector3 axisU,
         out Vector3 axisV)
     {
+        if (useAuxiliaryFloorPoints &&
+            bypassRansacWithAuxiliaryFloor &&
+            TryGetAuxiliaryFloorNormal(out horizontalNormal))
+        {
+            if (Vector3.Dot(GetWorldNormal(horizontalNormal), Vector3.up) < 0f)
+                horizontalNormal = -horizontalNormal;
+
+            CreateHorizontalAxes(horizontalNormal, out axisU, out axisV);
+            return true;
+        }
+
         horizontalNormal =
             Vector3.zero;
         axisU =
