@@ -81,6 +81,8 @@ public class Subscriber : MonoBehaviour
         {
             client = new TcpClient();
             client.NoDelay = true;
+            mqttHost = MqttConfig.ResolveHost(mqttHost);
+            mqttPort = MqttConfig.ResolvePort(mqttPort);
             client.Connect(mqttHost, mqttPort);
             stream = client.GetStream();
             SendConnectPacket();

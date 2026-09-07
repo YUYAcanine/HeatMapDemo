@@ -56,6 +56,8 @@ public class Publisher : MonoBehaviour
         try
         {
             client = new TcpClient { NoDelay = true };
+            mqttHost = MqttConfig.ResolveHost(mqttHost);
+            mqttPort = MqttConfig.ResolvePort(mqttPort);
             client.Connect(mqttHost, mqttPort);
             stream = client.GetStream();
             SendConnectPacket();
