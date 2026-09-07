@@ -900,9 +900,10 @@ MonoBehaviour:
   skeletonSubscriber: {fileID: 0}
   skeletonFullSubscriber: {fileID: 990030003}
   objectSubscriber: {fileID: 0}
-  outputDirectory: 
-  recordOnStart: 1
+  outputDirectory:
+  recordOnStart: 0
   flushInterval: 1
+  toggleKey: 32
 --- !u!1 &990030001
 GameObject:
   m_ObjectHideFlags: 0

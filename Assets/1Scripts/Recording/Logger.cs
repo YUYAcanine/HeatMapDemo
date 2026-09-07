@@ -21,9 +21,13 @@ public class Logger : MonoBehaviour
     [Header("Output")]
     [Tooltip("空の場合は Assets/Data/Logs に保存する。")]
     [SerializeField] private string outputDirectory = "";
-    [SerializeField] private bool recordOnStart = true;
+    [SerializeField] private bool recordOnStart = false;
     [Tooltip("この秒数ごとにディスクへFlushする。")]
     [SerializeField] private float flushInterval = 1f;
+
+    [Header("Manual Control")]
+    [Tooltip("このキーを押すたびに 記録開始 → 停止 → 新しいログで開始 … とトグルする。")]
+    [SerializeField] private KeyCode toggleKey = KeyCode.Space;
 
     private StreamWriter writer;
     private float recordingStartTime;
@@ -109,8 +113,21 @@ public class Logger : MonoBehaviour
         Debug.Log($"Logger: recording stopped. path={CurrentLogPath}");
     }
 
+    // スペースキー(toggleKey)で手動トグル。
+    // 1回目: 記録開始 / 2回目: 停止 / 3回目: 別ファイルで新規記録開始 …
+    public void ToggleRecording()
+    {
+        if (IsRecording)
+            StopRecording();
+        else
+            StartRecording();
+    }
+
     private void Update()
     {
+        if (toggleKey != KeyCode.None && Input.GetKeyDown(toggleKey))
+            ToggleRecording();
+
         if (!IsRecording || writer == null)
             return;
 
@@ -119,6 +136,18 @@ public class Logger : MonoBehaviour
             writer.Flush();
             lastFlushTime = Time.unscaledTime;
         }
+    }
+
+    private void OnGUI()
+    {
+        const int w = 220;
+        const int h = 28;
+        GUI.color = IsRecording ? new Color(1f, 0.3f, 0.3f, 1f) : new Color(1f, 1f, 1f, 0.7f);
+        string label = IsRecording
+            ? $"● REC  {Time.unscaledTime - recordingStartTime:F1}s  ({toggleKey} で停止)"
+            : $"■ STOPPED  ({toggleKey} で記録開始)";
+        GUI.Label(new Rect(10, 10, w, h), label);
+        GUI.color = Color.white;
     }
 
     private void HandleNavMeshMessage(string topic, string json) => WriteLine("navmesh", topic, json);
