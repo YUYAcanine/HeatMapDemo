@@ -685,7 +685,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 044cdabe21e20e5469ab947239d64deb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mqttHost: 192.168.236.211
+  mqttHost: 192.168.238.160
   mqttPort: 1883
   mqttUsername: mqtt-user
   mqttPassword: 401402
