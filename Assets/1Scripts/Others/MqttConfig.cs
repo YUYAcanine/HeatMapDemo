@@ -5,7 +5,7 @@ using UnityEngine;
 /// <summary>
 /// MQTT 接続先を 1 か所で管理するための共通設定。
 ///
-/// Assets/Data/IP/MqttConnection.json の host / port を書き換えるだけで、
+/// Assets/IP/MqttConnection.json の host / port を書き換えるだけで、
 /// すべての Publisher / Subscriber 系スクリプトの接続先が切り替わる。
 ///
 /// ファイルが存在しない・壊れている場合は、各コンポーネントの
@@ -21,7 +21,7 @@ public static class MqttConfig
     }
 
     // Assets からの相対パス。Application.dataPath が Assets を指す（エディタ実行時）。
-    private const string RelativePath = "Data/IP/MqttConnection.json";
+    private const string RelativePath = "IP/MqttConnection.json";
 
     private static ConnectionData cached;
     private static bool loaded;
