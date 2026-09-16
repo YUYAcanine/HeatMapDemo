@@ -27,6 +27,13 @@ public class SkeletonRealtimeSubscriber_FULL : MonoBehaviour
 
     public event Action<string, string> OnMessageReceived;
 
+    // 記録開始時のスナップショット用: 最後に受信したトピックと生ペイロードを保持する。
+    // このクラスはペイロードをパースしないパススルーなのでラベル単位に分解できず、
+    // 保持できるのは直近の1通だけ。人物が複数いる場合、スナップショットに含まれるのは
+    // 最後に届いた1人分になる。
+    public string LastTopic { get; private set; }
+    public string LastPayload { get; private set; }
+
     public bool IsConnected =>
         client != null && client.Connected;
 
@@ -157,6 +164,9 @@ public class SkeletonRealtimeSubscriber_FULL : MonoBehaviour
 
         if (logReceivedMessage)
             Debug.Log($"SkeletonRealtimeSubscriber_FULL: received payload bytes={Encoding.UTF8.GetByteCount(json)}");
+
+        LastTopic = topic;
+        LastPayload = json;
 
         OnMessageReceived?.Invoke(topic, json);
     }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -72,6 +73,8 @@ public class Logger : MonoBehaviour
         recordingStartTime = Time.unscaledTime;
         lastFlushTime = recordingStartTime;
         IsRecording = true;
+
+        WriteInitialSnapshot();
 
         if (navSub != null)
             navSub.OnMessageReceived += HandleNavMeshMessage;
@@ -148,6 +151,34 @@ public class Logger : MonoBehaviour
             : $"■ STOPPED  ({toggleKey} で記録開始)";
         GUI.Label(new Rect(10, 10, w, h), label);
         GUI.color = Color.white;
+    }
+
+    // 記録開始時点で各Subscriberが既に受信済みの状態を、t≒0のログ行として先頭に書き出す。
+    // Loggerはイベント駆動なので、これが無いと「記録開始後に再送されないデータ」
+    // (retainedで一度きり配信される平面や、静止していて更新が来ない物体)がログから
+    // 丸ごと欠落し、Viewerでの再生時に平面も物体も出てこないことになる。
+    //
+    // 平面(navmesh)を先頭に書くのは、SessionPlayerが同一時刻のエントリをファイル順に
+    // 適用するため。NavMeshを先に構築してからマーカーを置く必要がある。
+    private void WriteInitialSnapshot()
+    {
+        if (navSub != null && !string.IsNullOrEmpty(navSub.LastPayload))
+            WriteLine("navmesh", navSub.LastTopic, navSub.LastPayload);
+
+        if (skeletonSubscriber != null)
+        {
+            foreach (KeyValuePair<string, string> pair in skeletonSubscriber.LastPayloadsByLabel)
+                WriteLine("skeleton", skeletonSubscriber.LastTopic, pair.Value);
+        }
+
+        if (skeletonFullSubscriber != null && !string.IsNullOrEmpty(skeletonFullSubscriber.LastPayload))
+            WriteLine("skeleton_full", skeletonFullSubscriber.LastTopic, skeletonFullSubscriber.LastPayload);
+
+        if (objectSubscriber != null)
+        {
+            foreach (KeyValuePair<string, string> pair in objectSubscriber.LastPayloadsByLabel)
+                WriteLine("object", objectSubscriber.LastTopic, pair.Value);
+        }
     }
 
     private void HandleNavMeshMessage(string topic, string json) => WriteLine("navmesh", topic, json);

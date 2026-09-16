@@ -51,6 +51,13 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
     // MultiIntegrationLoggerシーンのLogger.csはこれを購読してタイムライン付きログに落とす。
     public event Action<string, string> OnMessageReceived;
 
+    // 記録開始時のスナップショット用: ラベル(人物)ごとに最後に受信した生ペイロードを保持する。
+    // Logger.csが記録開始時にこれをt=0のログ行として書き出すことで、記録開始前から
+    // 存在していた人物もログの先頭から復元できるようにする。
+    private readonly Dictionary<string, string> lastPayloadsByLabel = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> LastPayloadsByLabel => lastPayloadsByLabel;
+    public string LastTopic { get; private set; }
+
     public bool IsConnected =>
         client != null && client.Connected;
 
@@ -202,6 +209,8 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
         if (logReceivedMessage)
             Debug.Log($"SkeletonRealtimeSubscriber: received payload={json}");
 
+        LastTopic = topic;
+
         OnMessageReceived?.Invoke(topic, json);
         TryCreateOrUpdateMarker(json);
     }
@@ -229,6 +238,8 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
             Debug.LogWarning($"SkeletonRealtimeSubscriber: message skipped because label is empty. json={json}");
             return;
         }
+
+        lastPayloadsByLabel[message.label] = json;
 
         Vector3 position = new Vector3(message.x, message.y, message.z);
 
@@ -383,6 +394,7 @@ public class SkeletonRealtimeSubscriber : MonoBehaviour
                 Destroy(markersByLabel[label].root.gameObject);
 
             markersByLabel.Remove(label);
+            lastPayloadsByLabel.Remove(label);
         }
 
         UpdateHighlight();

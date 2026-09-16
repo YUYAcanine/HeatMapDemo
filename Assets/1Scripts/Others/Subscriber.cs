@@ -45,6 +45,13 @@ public class Subscriber : MonoBehaviour
     // MultiIntegrationLoggerシーンのLogger.csはこれを購読してタイムライン付きログに落とす。
     public event Action<string, string> OnMessageReceived;
 
+    // 記録開始時のスナップショット用: ラベルごとに最後に受信した生ペイロードを保持する。
+    // Logger.csが記録開始時にこれをt=0のログ行として書き出すことで、記録開始前に
+    // 受信済みで以降更新が来ない物体もログから復元できるようにする。
+    private readonly Dictionary<string, string> lastPayloadsByLabel = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> LastPayloadsByLabel => lastPayloadsByLabel;
+    public string LastTopic { get; private set; }
+
     public string LastMessage { get; private set; }
     public string LatestLabel { get; private set; }
     public Transform LatestMarkerTransform { get; private set; }
@@ -191,6 +198,7 @@ public class Subscriber : MonoBehaviour
 
         string json = Encoding.UTF8.GetString(body, payloadOffset, body.Length - payloadOffset);
         LastMessage = json;
+        LastTopic = topic;
         if (logReceivedMessage)
             Debug.Log($"Subscriber: received topic={topic}, payload={json}");
         OnMessageReceived?.Invoke(topic, json);
@@ -304,6 +312,8 @@ public class Subscriber : MonoBehaviour
             return;
         }
 
+        lastPayloadsByLabel[label] = json;
+
         Vector3 localPosition =
             rawPosition * coordinateScale + coordinateOffset;
 
@@ -395,6 +405,7 @@ public class Subscriber : MonoBehaviour
         }
 
         markersByLabel.Clear();
+        lastPayloadsByLabel.Clear();
         LatestMarkerTransform = null;
     }
 

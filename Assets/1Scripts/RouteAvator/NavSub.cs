@@ -57,6 +57,12 @@ public class NavSub : MonoBehaviour
     public int LastTriangleCount { get; private set; }
     public int LastLinkCount { get; private set; }
 
+    // 記録開始時のスナップショット用: 最後に受信したトピックと生ペイロードを保持する。
+    // Logger.csが記録開始時にこれをt=0のログ行として書き出すことで、記録開始前に
+    // 受信済みの平面(retainedメッセージ等)もログから復元できるようにする。
+    public string LastTopic { get; private set; }
+    public string LastPayload { get; private set; }
+
     private void Start()
     {
         if (connectOnStart)
@@ -187,6 +193,9 @@ public class NavSub : MonoBehaviour
             Debug.Log(
                 $"NavSub: received payload. bytes={Encoding.UTF8.GetByteCount(json)}");
         }
+
+        LastTopic = topic;
+        LastPayload = json;
 
         OnMessageReceived?.Invoke(topic, json);
         TryRebuildNavMesh(json);
