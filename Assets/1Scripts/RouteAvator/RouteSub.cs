@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.Serialization;
 using Button = UnityEngine.UI.Button;
 
 public class RouteSub : MonoBehaviour
@@ -8,7 +9,11 @@ public class RouteSub : MonoBehaviour
     [Header("Source")]
     [SerializeField] private Transform start;
     [SerializeField] private Subscriber subscriber;
-    [SerializeField] private bool autoGenerateWhenMarkerUpdates = true;
+    [Tooltip("routeUpdateIntervalごとに経路を自動再計算する。")]
+    [FormerlySerializedAs("autoGenerateWhenMarkerUpdates")]
+    [SerializeField] private bool autoGenerateRoute = true;
+    [Tooltip("この秒数ごとに経路を再計算する。マーカーが更新されていなくても、スタート位置(人物)の移動を反映するため常に再計算する。0にすると毎フレーム。")]
+    [SerializeField, Min(0f)] private float routeUpdateInterval = 0.5f;
     [SerializeField] private Button generateRouteButton;
 
     [Header("NavMesh Link")]
@@ -46,7 +51,7 @@ public class RouteSub : MonoBehaviour
         new Dictionary<string, GameObject>();
     private readonly Dictionary<string, GameObject> goalMarkersByLabel =
         new Dictionary<string, GameObject>();
-    private int lastMarkerVersion = -1;
+    private float lastRouteGenerateTime = float.NegativeInfinity;
     private GameObject startMarker;
     public int RouteVersion { get; private set; }
 
@@ -70,15 +75,21 @@ public class RouteSub : MonoBehaviour
         Subscriber currentSubscriber =
             GetSubscriber();
 
-        if (!autoGenerateWhenMarkerUpdates ||
+        // マーカーの更新有無ではなく一定間隔で再計算する。
+        // スタート位置(DefineStart/DefineParentStartsが毎フレーム更新する人物位置)は
+        // マーカー更新と無関係に動くため、常に定期的に計算し直す必要がある。
+        // 逆に物体メッセージの受信レートでそのまま回すと再計算が過剰になる。
+        if (!autoGenerateRoute ||
             currentSubscriber == null ||
-            !currentSubscriber.HasLatestMarker ||
-            currentSubscriber.MarkerVersion == lastMarkerVersion)
+            !currentSubscriber.HasLatestMarker)
         {
             return;
         }
 
-        lastMarkerVersion = currentSubscriber.MarkerVersion;
+        if (Time.unscaledTime - lastRouteGenerateTime < routeUpdateInterval)
+            return;
+
+        lastRouteGenerateTime = Time.unscaledTime;
         GenerateRoute();
     }
 
