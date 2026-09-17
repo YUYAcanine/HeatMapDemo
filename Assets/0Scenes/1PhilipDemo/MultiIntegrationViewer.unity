@@ -209,7 +209,7 @@ Transform:
   m_GameObject: {fileID: 409491273}
   serializedVersion: 2
   m_LocalRotation: {x: 0.010803492, y: -0.00041544953, z: -0.71682566, w: 0.69716865}
-  m_LocalPosition: {x: -0.752, y: -1.873, z: 0.673}
+  m_LocalPosition: {x: -0.753, y: -1.874, z: 0.744}
   m_LocalScale: {x: -1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -893,7 +893,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8798a6d0e2a843cdab72aa929455a8ad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  logFilePath: Assets/Data/Logs
+  logFilePath: Assets/Data/Logs/
   toggleKey: 32
   navAgentTypeId: 0
   navAgentRadius: 0.01
@@ -916,6 +916,7 @@ MonoBehaviour:
   showHeadToNoseVector: 1
   headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
   headToNoseVectorWidth: 0.015
+  objectCoordinateSpace: 1
   objectMarkerRoot: {fileID: 0}
   objectCoordinateCalibration: {fileID: 409491274}
   objectMarkerScale: 0.12
@@ -1157,6 +1158,7 @@ MonoBehaviour:
     m_Bits: 4294967295
   raycastStartHeight: 1.5
   floorSearchDistance: 5
+  floorSearchRadius: 0.3
 --- !u!1 &1422476024
 GameObject:
   m_ObjectHideFlags: 0
@@ -1905,17 +1907,24 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   start: {fileID: 1231161390}
   subscriber: {fileID: 0}
-  autoGenerateWhenMarkerUpdates: 1
+  autoGenerateRoute: 1
+  routeUpdateInterval: 0.5
   generateRouteButton: {fileID: 0}
   pointNavLink: {fileID: 0}
   generateNavLinksBeforeRoute: 1
   routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
   startSearchRadius: 2
+  startFallbackSearchRadius: 1000
   goalSearchRadius: 0.8
   routeLineWidth: 0.05
   routeLineYOffset: 0.05
   routeSampleInterval: 0.2
   logRouteSearch: 1
+  parentStarts: {fileID: 0}
+  parentRouteLineMaterial: {fileID: 0}
+  showStartMarker: 1
+  startMarkerScale: 0.05
+  startMarkerColor: {r: 1, g: 1, b: 1, a: 1}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -4086,7 +4086,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   start: {fileID: 1231161390}
   subscriber: {fileID: 0}
-  autoGenerateWhenMarkerUpdates: 1
+  autoGenerateRoute: 1
+  routeUpdateInterval: 0.5
   generateRouteButton: {fileID: 0}
   pointNavLink: {fileID: 0}
   generateNavLinksBeforeRoute: 1

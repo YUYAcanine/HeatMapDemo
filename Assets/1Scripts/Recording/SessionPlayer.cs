@@ -52,7 +52,18 @@ public class SessionPlayer : MonoBehaviour
     [SerializeField] private Color headToNoseVectorColor = Color.yellow;
     [SerializeField] private float headToNoseVectorWidth = 0.015f;
 
+    public enum ObjectCoordinateSpace
+    {
+        // 生ログ(session_yyyyMMdd_HHmmss.jsonl)用。座標をobjectCoordinateCalibrationのローカル座標として扱う。
+        Relative,
+        // 変換済みログ(session_revised.jsonl等)用。座標を骨格/NavMeshと同じワールド座標としてそのまま使う。
+        World
+    }
+
     [Header("Object Visual (object_coordinate)")]
+    [Tooltip("Relative: 物体座標をobjectCoordinateCalibration(未設定ならobjectMarkerRoot/自身)の相対座標として表示する。\n" +
+        "World: 物体座標を骨格・NavMeshと同じ共通(ワールド)座標系としてそのまま表示する。")]
+    [SerializeField] private ObjectCoordinateSpace objectCoordinateSpace = ObjectCoordinateSpace.Relative;
     [SerializeField] private Transform objectMarkerRoot;
     [Tooltip("MultiIntegrationLoggerシーンのTurtleSubscriberが持つ、部屋に対して校正済みのTransform。" +
         "設定すると、生座標をこのTransformのローカル座標として解釈し、Loggerのリアルタイム表示と同じワールド位置に変換する。" +
@@ -810,9 +821,15 @@ public class SessionPlayer : MonoBehaviour
         // マーカーを配置しているTransform(部屋に対して校正済み)を指す。これを介してワールド
         // 座標に変換することで、Logger側のリアルタイム表示と同じ位置に描画される。
         // 未設定の場合は従来通りobjectMarkerRoot(またはこのオブジェクト自身)のローカル座標として扱う。
-        Vector3 worldPosition = objectCoordinateCalibration != null
-            ? objectCoordinateCalibration.TransformPoint(calibratedPosition)
-            : (objectMarkerRoot != null ? objectMarkerRoot : transform).TransformPoint(calibratedPosition);
+        // Worldモードでは既にワールド座標に変換済みとみなし、どのTransformも介さない。
+        Vector3 worldPosition;
+
+        if (objectCoordinateSpace == ObjectCoordinateSpace.World)
+            worldPosition = calibratedPosition;
+        else if (objectCoordinateCalibration != null)
+            worldPosition = objectCoordinateCalibration.TransformPoint(calibratedPosition);
+        else
+            worldPosition = (objectMarkerRoot != null ? objectMarkerRoot : transform).TransformPoint(calibratedPosition);
 
         bool markerAlreadyExists =
             objectMarkersByLabel.TryGetValue(label, out GameObject marker) && marker != null;
