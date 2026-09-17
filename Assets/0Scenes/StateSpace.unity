@@ -1382,6 +1382,8 @@ MonoBehaviour:
   playbackSpeed: 1
   playButton: {fileID: 605979555}
   stopButton: {fileID: 1216169016}
+  showFrameNumber: 1
+  frameText: {fileID: 0}
 --- !u!4 &1885839195
 Transform:
   m_ObjectHideFlags: 0

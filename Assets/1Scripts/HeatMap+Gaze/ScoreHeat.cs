@@ -8,8 +8,16 @@ using UnityEngine;
 public class ScoreHeat : MonoBehaviour
 {
     [Header("JSON")]
+    [Tooltip("入力フォルダ名。Assets/Data/Analyze/input/<inputFolder>/ から読む。")]
+    [SerializeField] private string inputFolder = "sou1";
+
+    [Tooltip("input フォルダ内の骨格 JSON ファイル名。")]
     [SerializeField] private string skeletonJson = "skeleton.json";
-    [SerializeField] private string lightJson = "light.json";
+
+    [Tooltip("input フォルダ内のライト JSON ファイル名。")]
+    [SerializeField] private string lightJson = "light_log.json";
+
+    private const string InputRoot = "Data/Analyze/input";
 
     [Header("Score Targets")]
     [SerializeField] private GameObject[] targets;
@@ -363,7 +371,12 @@ public class ScoreHeat : MonoBehaviour
     private void LoadSkeleton()
     {
         string path =
-            Path.Combine(Application.dataPath, "Data", skeletonJson);
+            Path.Combine(
+                Application.dataPath,
+                InputRoot,
+                (inputFolder ?? "").Trim().Trim('/', '\\'),
+                skeletonJson
+            );
 
         if (!File.Exists(path))
         {
@@ -387,7 +400,12 @@ public class ScoreHeat : MonoBehaviour
             return;
 
         string path =
-            Path.Combine(Application.dataPath, "Data", lightJson);
+            Path.Combine(
+                Application.dataPath,
+                InputRoot,
+                (inputFolder ?? "").Trim().Trim('/', '\\'),
+                lightJson
+            );
 
         if (!File.Exists(path))
         {

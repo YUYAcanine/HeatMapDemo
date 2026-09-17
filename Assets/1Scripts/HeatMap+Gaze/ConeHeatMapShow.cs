@@ -6,8 +6,16 @@ using UnityEngine;
 public class ConeHeatMapShow : MonoBehaviour
 {
     [Header("JSON")]
+    [Tooltip("入力フォルダ名。Assets/Data/Analyze/input/<inputFolder>/ から読む。")]
+    [SerializeField] private string inputFolder = "sou1";
+
+    [Tooltip("input フォルダ内の骨格 JSON ファイル名。")]
     [SerializeField] private string skeletonJson = "skeleton.json";
-    [SerializeField] private string lightJson = "light.json";
+
+    [Tooltip("input フォルダ内のライト JSON ファイル名。")]
+    [SerializeField] private string lightJson = "light_log.json";
+
+    private const string InputRoot = "Data/Analyze/input";
 
     [Header("Target Mesh")]
     [SerializeField] private GameObject meshObject;
@@ -372,7 +380,8 @@ public class ConeHeatMapShow : MonoBehaviour
         string path =
             Path.Combine(
                 Application.dataPath,
-                "Data",
+                InputRoot,
+                (inputFolder ?? "").Trim().Trim('/', '\\'),
                 skeletonJson
             );
 
@@ -393,7 +402,8 @@ public class ConeHeatMapShow : MonoBehaviour
         string path =
             Path.Combine(
                 Application.dataPath,
-                "Data",
+                InputRoot,
+                (inputFolder ?? "").Trim().Trim('/', '\\'),
                 lightJson
             );
 
