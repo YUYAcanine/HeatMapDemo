@@ -15,13 +15,17 @@ public class HeatMapShow : MonoBehaviour
     [Header("Playback")]
     [SerializeField] private float playbackSpeed = 1.0f;
 
+    [Header("Gaze Angle Correction")]
+    [Tooltip("Downward angle correction in degrees")]
+    public float downwardAngle = 15f;
+
     [Header("Heat")]
     public float paintRadius = 0.3f;
     public float heatPerHit = 0.2f;
     public float maxHeatDisplay = 5f;
 
     [Header("Light Filter")]
-    public bool showAll = true;   // ← 追加（最優先）
+    public bool showAll = true;
     public bool useLight1 = true;
     public bool useLight2 = false;
     public bool useLight3 = false;
@@ -46,7 +50,7 @@ public class HeatMapShow : MonoBehaviour
 
     private bool finished = false;
 
-    // =========================
+    // =========================================================
     void Start()
     {
         LoadSkeleton();
@@ -54,34 +58,47 @@ public class HeatMapShow : MonoBehaviour
         InitMesh();
     }
 
+    // =========================================================
     void Update()
     {
-        if (finished) return;
+        if (finished)
+            return;
 
-        playbackTime += Time.deltaTime * playbackSpeed;
+        playbackTime +=
+            Time.deltaTime * playbackSpeed;
 
-        bool updated = UpdateFrame(playbackTime);
+        bool updated =
+            UpdateFrame(playbackTime);
 
         if (updated)
         {
             ProcessGaze();
+
             ApplyColor();
         }
     }
 
-    // =========================
+    // =========================================================
     bool UpdateFrame(float timeSec)
     {
         if (frameIndex >= frames.Count)
         {
             finished = true;
-            Debug.Log("=== Heatmap generation finished ===");
+
+            Debug.Log(
+                "=== Heatmap generation finished ==="
+            );
+
             return false;
         }
 
-        float frameTime = frames[frameIndex].normalizedTimestampTicks * 1e-7f;
+        float frameTime =
+            frames[frameIndex]
+            .normalizedTimestampTicks
+            * 1e-7f;
 
-        if (timeSec < frameTime) return false;
+        if (timeSec < frameTime)
+            return false;
 
         joints.Clear();
 
@@ -91,38 +108,108 @@ public class HeatMapShow : MonoBehaviour
         {
             foreach (var jp in f.joints)
             {
-                if (System.Enum.TryParse(jp.jointId, out JointId id))
+                if (
+                    System.Enum.TryParse(
+                        jp.jointId,
+                        out JointId id
+                    )
+                )
+                {
                     joints[id] = jp.position;
+                }
             }
         }
 
         frameIndex++;
+
         return true;
     }
 
-    // =========================
+    // =========================================================
     void ProcessGaze()
     {
-        if (!joints.ContainsKey(JointId.Head) || !joints.ContainsKey(JointId.Nose))
-            return;
-
-        Vector3 head = joints[JointId.Head];
-        Vector3 nose = joints[JointId.Nose];
-
-        Vector3 dir = (nose - head + new Vector3(0, -0.05f, 0)).normalized;
-
-        Ray ray = new Ray(head, dir);
-
-        if (Physics.Raycast(ray, out var hit, 100f))
+        if (
+            !joints.ContainsKey(JointId.Head)
+            || !joints.ContainsKey(JointId.Nose)
+        )
         {
-            if (hit.collider.transform != meshObject.transform)
+            return;
+        }
+
+        Vector3 head =
+            joints[JointId.Head];
+
+        Vector3 nose =
+            joints[JointId.Nose];
+
+        // =========================
+        // Raw Direction
+        // =========================
+
+        Vector3 rawDir =
+            (nose - head).normalized;
+
+        // =========================
+        // Face-local downward correction
+        // =========================
+
+        Vector3 rightAxis =
+            Vector3.Cross(
+                Vector3.up,
+                rawDir
+            ).normalized;
+
+        // 真上・真下向き対策
+        if (rightAxis.sqrMagnitude < 0.0001f)
+        {
+            rightAxis = Vector3.right;
+        }
+
+        Quaternion correction =
+            Quaternion.AngleAxis(
+                downwardAngle,
+                rightAxis
+            );
+
+        Vector3 dir =
+            (correction * rawDir).normalized;
+
+        // =========================
+
+        Ray ray =
+            new Ray(head, dir);
+
+        Debug.DrawRay(
+            head,
+            dir * 5f,
+            Color.red
+        );
+
+        if (
+            Physics.Raycast(
+                ray,
+                out var hit,
+                100f
+            )
+        )
+        {
+            if (
+                hit.collider.transform
+                != meshObject.transform
+            )
+            {
+                return;
+            }
+
+            LightFrame lf =
+                GetClosestLight(
+                    playbackTime
+                );
+
+            if (lf == null)
                 return;
 
-            LightFrame lf = GetClosestLight(playbackTime);
-
-            if (lf == null) return;
-
-            // 🔥 フィルタ
+            // 🔥 Filter
             if (MatchLightCondition(lf))
             {
                 AddHeat(hit.point);
@@ -130,29 +217,37 @@ public class HeatMapShow : MonoBehaviour
         }
     }
 
-    // =========================
-    bool MatchLightCondition(LightFrame lf)
+    // =========================================================
+    bool MatchLightCondition(
+        LightFrame lf
+    )
     {
-        // 👑 最優先：全部表示
+        // 最優先
         if (showAll)
             return true;
 
-        // 完全一致フィルタ
         return
-            lf.light1 == useLight1 &&
-            lf.light2 == useLight2 &&
+            lf.light1 == useLight1
+            &&
+            lf.light2 == useLight2
+            &&
             lf.light3 == useLight3;
     }
 
-    // =========================
+    // =========================================================
     LightFrame GetClosestLight(float t)
     {
         LightFrame closest = null;
-        float minDiff = float.MaxValue;
+
+        float minDiff =
+            float.MaxValue;
 
         foreach (var lf in lightFrames)
         {
-            float diff = Mathf.Abs(lf.unityTime - t);
+            float diff =
+                Mathf.Abs(
+                    lf.unityTime - t
+                );
 
             if (diff < minDiff)
             {
@@ -167,96 +262,168 @@ public class HeatMapShow : MonoBehaviour
         return closest;
     }
 
-    // =========================
+    // =========================================================
     void AddHeat(Vector3 hit)
     {
-        float r2 = paintRadius * paintRadius;
+        float r2 =
+            paintRadius * paintRadius;
 
-        for (int i = 0; i < verts.Length; i++)
+        for (
+            int i = 0;
+            i < verts.Length;
+            i++
+        )
         {
-            Vector3 w = meshObject.transform.TransformPoint(verts[i]);
+            Vector3 w =
+                meshObject.transform
+                .TransformPoint(
+                    verts[i]
+                );
 
-            if ((w - hit).sqrMagnitude <= r2)
+            if (
+                (w - hit).sqrMagnitude
+                <= r2
+            )
+            {
                 heat[i] += heatPerHit;
+            }
         }
     }
 
+    // =========================================================
     void ApplyColor()
     {
-        for (int i = 0; i < verts.Length; i++)
+        for (
+            int i = 0;
+            i < verts.Length;
+            i++
+        )
         {
-            float a = Mathf.Clamp01(heat[i] / maxHeatDisplay);
-            colors[i] = new Color(1, 0, 0, a);
+            float a =
+                Mathf.Clamp01(
+                    heat[i]
+                    / maxHeatDisplay
+                );
+
+            colors[i] =
+                new Color(
+                    1,
+                    0,
+                    0,
+                    a
+                );
         }
 
         targetMesh.colors = colors;
     }
 
-    // =========================
+    // =========================================================
     void LoadSkeleton()
     {
-        string path = Path.Combine(Application.dataPath, "Data", skeletonJson);
-        string json = File.ReadAllText(path);
+        string path =
+            Path.Combine(
+                Application.dataPath,
+                "Data",
+                skeletonJson
+            );
 
-        FrameList list = JsonUtility.FromJson<FrameList>(json);
+        string json =
+            File.ReadAllText(path);
+
+        FrameList list =
+            JsonUtility.FromJson<FrameList>(
+                json
+            );
+
         frames = list.frames;
     }
 
+    // =========================================================
     void LoadLight()
     {
-        string path = Path.Combine(Application.dataPath, "Data", lightJson);
-        string json = File.ReadAllText(path);
+        string path =
+            Path.Combine(
+                Application.dataPath,
+                "Data",
+                lightJson
+            );
 
-        LightFrameList list = JsonUtility.FromJson<LightFrameList>(json);
+        string json =
+            File.ReadAllText(path);
+
+        LightFrameList list =
+            JsonUtility.FromJson<LightFrameList>(
+                json
+            );
+
         lightFrames = list.frames;
     }
 
+    // =========================================================
     void InitMesh()
     {
-        MeshFilter mf = meshObject.GetComponent<MeshFilter>();
+        MeshFilter mf =
+            meshObject.GetComponent<MeshFilter>();
+
         targetMesh = mf.mesh;
 
-        verts = targetMesh.vertices;
-        colors = new Color[verts.Length];
-        heat = new float[verts.Length];
+        verts =
+            targetMesh.vertices;
+
+        colors =
+            new Color[verts.Length];
+
+        heat =
+            new float[verts.Length];
 
         targetMesh.colors = colors;
 
-        var col = meshObject.GetComponent<MeshCollider>() ?? meshObject.AddComponent<MeshCollider>();
+        var col =
+            meshObject.GetComponent<MeshCollider>()
+            ??
+            meshObject.AddComponent<MeshCollider>();
+
         col.sharedMesh = targetMesh;
     }
 
-    // =========================
+    // =========================================================
     [System.Serializable]
     private class FrameList
     {
         public List<FrameData> frames;
     }
 
+    // =========================================================
     [System.Serializable]
     private class FrameData
     {
         public long normalizedTimestampTicks;
+
         public List<JointPosition> joints;
     }
 
+    // =========================================================
     [System.Serializable]
     private class JointPosition
     {
         public string jointId;
+
         public Vector3 position;
     }
 
+    // =========================================================
     [System.Serializable]
     private class LightFrameList
     {
         public List<LightFrame> frames;
     }
 
+    // =========================================================
     [System.Serializable]
     private class LightFrame
     {
         public float unityTime;
+
         public bool light1;
         public bool light2;
         public bool light3;

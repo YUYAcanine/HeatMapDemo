@@ -1,6 +1,7 @@
 using Microsoft.Azure.Kinect.BodyTracking;
 using System.Collections.Generic;
 using System.IO;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -19,6 +20,8 @@ public class JointPositionLoader : MonoBehaviour
     [Header("UI")]
     [SerializeField] private Button playButton;
     [SerializeField] private Button stopButton;
+    [SerializeField] private bool showFrameNumber = true;
+    [SerializeField] private TMP_Text frameText;
 
     // =========================
     // Internal data
@@ -42,10 +45,13 @@ public class JointPositionLoader : MonoBehaviour
         CreateJointObjects();
         CreateLines();
         SetupUI();
+        UpdateFrameText();
     }
 
     void Update()
     {
+        UpdateFrameText();
+
         if (!isPlaying) return;
 
         playbackTime += Time.deltaTime * playbackSpeed;
@@ -71,6 +77,7 @@ public class JointPositionLoader : MonoBehaviour
         lastValidFrame = null;
         isPlaying = true;
         HideSkeleton();
+        UpdateFrameText();
         Debug.Log("Playback started");
     }
 
@@ -79,11 +86,12 @@ public class JointPositionLoader : MonoBehaviour
         isPlaying = false;
         lastValidFrame = null;
         HideSkeleton();
+        UpdateFrameText();
         Debug.Log("Playback stopped");
     }
 
     // =========================
-    // JSON LoadiAssets/Dataj
+    // JSON Loadï¿½iAssets/Dataï¿½j
     // =========================
     private void LoadFrames()
     {
@@ -108,7 +116,7 @@ public class JointPositionLoader : MonoBehaviour
     {
         if (frames.Count == 0) return;
 
-        // joints ‚ª‘¶Ý‚·‚éÅ‰‚ÌƒtƒŒ[ƒ€‚ð’T‚·
+        // joints ï¿½ï¿½ï¿½ï¿½ï¿½Ý‚ï¿½ï¿½ï¿½Åï¿½ï¿½Ìƒtï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½ï¿½Tï¿½ï¿½
         FrameData firstValid = frames.Find(f => f.joints != null && f.joints.Count > 0);
         if (firstValid == null)
         {
@@ -196,6 +204,25 @@ public class JointPositionLoader : MonoBehaviour
         }
 
         frameIndex++;
+        UpdateFrameText();
+    }
+
+    private void UpdateFrameText()
+    {
+        if (frameText == null)
+            return;
+
+        if (frameText.gameObject.activeSelf != showFrameNumber)
+            frameText.gameObject.SetActive(showFrameNumber);
+
+        if (!showFrameNumber)
+            return;
+
+        int displayedFrame =
+            Mathf.Clamp(frameIndex, 0, frames.Count);
+
+        frameText.text =
+            $"Frame : {displayedFrame} / {frames.Count}";
     }
 
     private void ApplyFrame(FrameData frame)

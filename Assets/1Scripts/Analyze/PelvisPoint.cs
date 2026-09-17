@@ -1,6 +1,8 @@
 using Microsoft.Azure.Kinect.BodyTracking;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using TMPro;
 using UnityEngine;
 
 public class PelvisVectorArrow : MonoBehaviour
@@ -23,16 +25,31 @@ public class PelvisVectorArrow : MonoBehaviour
     [SerializeField] private Color light3Color = new Color(0f, 0.6f, 1f, 1f);    // 青寄り
     [SerializeField] private Color defaultColor = Color.white;                    // 同時ON / OFF / 未一致
 
+    [Header("Light Filter")]
+    [SerializeField] private bool showAll = true;
+    [SerializeField] private bool useLight1 = true;
+    [SerializeField] private bool useLight2 = false;
+    [SerializeField] private bool useLight3 = false;
+
     [Header("Matching Settings")]
     [SerializeField] private float timeTolerance = 0.1f;   // skeletonとlightの時間対応許容
     [SerializeField] private float minDistance = 0.01f;    // 微小ノイズ除去
+    [SerializeField] private float maxDistance = 1.0f;     // 大きすぎる変位を除外
+
+    [Header("Movement Direction Evaluation")]
+    [SerializeField] private Transform[] targets;
+    [SerializeField] private TMP_Text evaluationText;
 
     private List<LightFrame> lightFrames = new List<LightFrame>();
+    private readonly List<TargetEvaluation> targetEvaluations =
+        new List<TargetEvaluation>();
 
     void Start()
     {
+        RegisterTargets();
         LoadLightJson();
         PlotPelvisVectors();
+        UpdateEvaluationText();
     }
 
     // =========================================================
@@ -110,9 +127,30 @@ public class PelvisVectorArrow : MonoBehaviour
             {
                 float dist = Vector3.Distance(prevPelvis.Value, currentPelvis);
 
-                if (dist > minDistance)
+                bool withinMaxDistance =
+                    maxDistance <= 0f ||
+                    dist <= maxDistance;
+
+                if (dist > minDistance && withinMaxDistance)
                 {
-                    Color arrowColor = GetLightColor(frame.unityTime);
+                    LightFrame lightFrame =
+                        GetClosestLight(frame.unityTime);
+
+                    if (!MatchesSelectedLight(lightFrame))
+                    {
+                        prevPelvis = currentPelvis;
+                        continue;
+                    }
+
+                    Vector3 movementVector =
+                        currentPelvis - prevPelvis.Value;
+
+                    EvaluateTargets(
+                        currentPelvis,
+                        movementVector
+                    );
+
+                    Color arrowColor = GetLightColor(lightFrame);
                     CreateArrow(prevPelvis.Value, currentPelvis, arrowColor);
                 }
             }
@@ -123,13 +161,110 @@ public class PelvisVectorArrow : MonoBehaviour
         Debug.Log("Pelvis vector arrows created.");
     }
 
+    private void RegisterTargets()
+    {
+        targetEvaluations.Clear();
+
+        if (targets == null)
+            return;
+
+        foreach (Transform target in targets)
+        {
+            if (target == null)
+                continue;
+
+            targetEvaluations.Add(
+                new TargetEvaluation(target)
+            );
+        }
+    }
+
+    private void EvaluateTargets(
+        Vector3 currentPelvis,
+        Vector3 movementVector
+    )
+    {
+        movementVector.y = 0f;
+
+        float movementMagnitude =
+            movementVector.magnitude;
+
+        if (movementMagnitude <= 0f)
+            return;
+
+        foreach (TargetEvaluation evaluation in targetEvaluations)
+        {
+            if (evaluation.Target == null)
+                continue;
+
+            Vector3 targetVector =
+                evaluation.Target.position - currentPelvis;
+
+            targetVector.y = 0f;
+
+            float targetMagnitude =
+                targetVector.magnitude;
+
+            if (targetMagnitude <= 0f)
+                continue;
+
+            float dot =
+                Vector3.Dot(
+                    movementVector,
+                    targetVector
+                );
+
+            float cosine =
+                dot /
+                (movementMagnitude * targetMagnitude);
+
+            evaluation.DotSum += dot;
+            evaluation.CosineSum +=
+                Mathf.Clamp(cosine, -1f, 1f);
+            evaluation.SampleCount++;
+        }
+    }
+
+    private void UpdateEvaluationText()
+    {
+        if (evaluationText == null)
+            return;
+
+        StringBuilder builder = new StringBuilder();
+        builder.Append("Filter : ");
+        builder.AppendLine(GetFilterName());
+        builder.AppendLine();
+
+        foreach (TargetEvaluation evaluation in targetEvaluations)
+        {
+            if (evaluation.Target == null)
+                continue;
+
+            float averageCosine =
+                evaluation.SampleCount > 0
+                    ? evaluation.CosineSum / evaluation.SampleCount
+                    : 0f;
+
+            builder.AppendLine(evaluation.Target.name);
+            builder.Append("  Dot Sum : ");
+            builder.AppendLine(evaluation.DotSum.ToString("F4"));
+            builder.Append("  Cos Average : ");
+            builder.AppendLine(averageCosine.ToString("F4"));
+            builder.Append("  Samples : ");
+            builder.AppendLine(evaluation.SampleCount.ToString());
+            builder.AppendLine();
+        }
+
+        evaluationText.text = builder.ToString();
+    }
+
     // =========================================================
     // 時刻に最も近いLight frameを探して色を決定
     // =========================================================
-    private Color GetLightColor(float skeletonTime)
+    private LightFrame GetClosestLight(float skeletonTime)
     {
         if (lightFrames == null || lightFrames.Count == 0)
-            return defaultColor;
+            return null;
 
         LightFrame closest = null;
         float minDiff = float.MaxValue;
@@ -146,20 +281,73 @@ public class PelvisVectorArrow : MonoBehaviour
         }
 
         if (closest == null || minDiff > timeTolerance)
+            return null;
+
+        return closest;
+    }
+
+    private bool MatchesSelectedLight(LightFrame lightFrame)
+    {
+        if (showAll)
+            return true;
+
+        if (lightFrame == null)
+            return false;
+
+        return
+            lightFrame.light1 == useLight1 &&
+            lightFrame.light2 == useLight2 &&
+            lightFrame.light3 == useLight3;
+    }
+
+    private string GetFilterName()
+    {
+        if (showAll)
+            return "All";
+
+        if (useLight1 && !useLight2 && !useLight3)
+            return "Light1";
+
+        if (!useLight1 && useLight2 && !useLight3)
+            return "Light2";
+
+        if (!useLight1 && !useLight2 && useLight3)
+            return "Light3";
+
+        if (!useLight1 && !useLight2 && !useLight3)
+            return "All Lights Off";
+
+        StringBuilder builder = new StringBuilder();
+
+        if (useLight1)
+            builder.Append("Light1 ");
+
+        if (useLight2)
+            builder.Append("Light2 ");
+
+        if (useLight3)
+            builder.Append("Light3 ");
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private Color GetLightColor(LightFrame lightFrame)
+    {
+        if (lightFrame == null)
             return defaultColor;
 
         int onCount =
-            (closest.light1 ? 1 : 0) +
-            (closest.light2 ? 1 : 0) +
-            (closest.light3 ? 1 : 0);
+            (lightFrame.light1 ? 1 : 0) +
+            (lightFrame.light2 ? 1 : 0) +
+            (lightFrame.light3 ? 1 : 0);
 
         // 2つ以上同時ONは無視
         if (onCount != 1)
             return defaultColor;
 
-        if (closest.light1) return light1Color;
-        if (closest.light2) return light2Color;
-        if (closest.light3) return light3Color;
+        if (lightFrame.light1) return light1Color;
+        if (lightFrame.light2) return light2Color;
+        if (lightFrame.light3) return light3Color;
 
         return defaultColor;
     }
@@ -288,5 +476,18 @@ public class PelvisVectorArrow : MonoBehaviour
         public bool light1;
         public bool light2;
         public bool light3;
+    }
+
+    private class TargetEvaluation
+    {
+        public Transform Target { get; }
+        public float DotSum { get; set; }
+        public float CosineSum { get; set; }
+        public int SampleCount { get; set; }
+
+        public TargetEvaluation(Transform target)
+        {
+            Target = target;
+        }
     }
 }

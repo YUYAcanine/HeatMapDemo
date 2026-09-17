@@ -29,5 +29,5 @@ Assets/NotoSansJP-Regular SDF.asset
 Recordings/
 obj/
 .vsconfig
-*.json
+Assets/joint_positions.json
 *.config
