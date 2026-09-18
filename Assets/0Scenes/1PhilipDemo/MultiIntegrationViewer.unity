@@ -916,7 +916,7 @@ MonoBehaviour:
   showHeadToNoseVector: 1
   headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
   headToNoseVectorWidth: 0.015
-  objectCoordinateSpace: 1
+  objectCoordinateSpace: 0
   objectMarkerRoot: {fileID: 0}
   objectCoordinateCalibration: {fileID: 409491274}
   objectMarkerScale: 0.12
