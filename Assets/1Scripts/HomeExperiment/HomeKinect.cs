@@ -13,6 +13,9 @@ public class HomeKinect : MonoBehaviour
     // このプレイ中に保存済みの位置姿勢ファイルを適用できたか
     public bool PoseLoaded { get; private set; }
 
+    // 読み込んだ位置姿勢ファイルに記録されていたキネクト本体のシリアル番号(無ければ空)
+    public string SavedSerialNumber { get; private set; } = "";
+
     public bool TryLoadPose(string path)
     {
         if (!File.Exists(path))
@@ -25,6 +28,7 @@ public class HomeKinect : MonoBehaviour
 
             transform.SetPositionAndRotation(data.position, data.GetRotation());
             PoseLoaded = true;
+            SavedSerialNumber = data.serialNumber ?? "";
 
             Debug.Log($"[HomeKinect] Kinect{kinectId}: 位置姿勢を読み込みました: {path}");
             return true;
@@ -36,13 +40,15 @@ public class HomeKinect : MonoBehaviour
         }
     }
 
-    public void SavePose(string path)
+    public void SavePose(string path, string serialNumber = null, int deviceIndex = -1)
     {
         HomeKinectTransformData data = new HomeKinectTransformData
         {
             position = transform.position,
             rotation = transform.eulerAngles,
-            rotationQuaternion = transform.rotation
+            rotationQuaternion = transform.rotation,
+            serialNumber = serialNumber ?? "",
+            deviceIndex = deviceIndex
         };
 
         Directory.CreateDirectory(Path.GetDirectoryName(path));

@@ -5,6 +5,8 @@ using UnityEngine;
 
 // シーン1(1HeadDirRecording)用。Spaceキーで全キネクトの骨格データ記録を同時に開始/終了し、
 // Assets/Data/HomeExperiment/<実験の名前>/Skeleton/<実験対象者>/<ID>_skeleton.json に保存する。
+// Record Raw Mkv にチェックを入れると、同じタイミングで全キネクトの生データ(カラー・深度・赤外線の MKV)も
+// Raw~/ に記録する(画像での推定 Tools/GazePipeline 用)。
 // 実験の名前は同じGameObjectの HomeEnvLoader から取得する。
 [RequireComponent(typeof(HomeEnvLoader))]
 public class HomeSkeletonRecordingController : MonoBehaviour
@@ -16,6 +18,13 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     [Header("Recorders")]
     [Tooltip("空の場合はシーン内の表示中の HomeSkeletonRecorder を自動で集める。")]
     [SerializeField] private HomeSkeletonRecorder[] recorders;
+
+    [Header("Raw Recording")]
+    [Tooltip("骨格と一緒に、全キネクトのカラー(MJPG)・深度・赤外線をそのまま MKV に記録する(Skeleton/<実験対象者>/Raw~/)。\n" +
+             "あとから Tools/GazePipeline で画像から骨格・頭の向き・視線を推定するため。プレイ開始前に設定する。")]
+    [SerializeField] private bool recordRawMkv = false;
+    [Tooltip("Record Raw Mkv のときのカラー解像度。骨格推定は深度だけを使うので、上げても Kinect の骨格の精度は変わらない(離れた人の顔が大きく写る)。")]
+    [SerializeField] private Microsoft.Azure.Kinect.Sensor.ColorResolution rawColorResolution = Microsoft.Azure.Kinect.Sensor.ColorResolution.R1080p;
 
     [Header("Input")]
     [SerializeField] private KeyCode toggleKey = KeyCode.Space;
@@ -41,6 +50,16 @@ public class HomeSkeletonRecordingController : MonoBehaviour
 
         if (recorders == null || recorders.Length == 0)
             recorders = FindObjectsOfType<HomeSkeletonRecorder>();
+
+        // 各キネクトはカメラを Start で開くので、それより前(Awake)に記録の設定を渡す
+        foreach (HomeSkeletonRecorder recorder in recorders)
+        {
+            if (recorder == null)
+                continue;
+
+            recorder.recordRawMkv = recordRawMkv;
+            recorder.rawColorResolution = rawColorResolution;
+        }
     }
 
     private void Update()
@@ -114,8 +133,23 @@ public class HomeSkeletonRecordingController : MonoBehaviour
         recordingStartClock = HomeSkeletonRecorder.ClockSeconds;
         recordingStartedAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
 
+        string rawDir = HomeExperimentPaths.GetRawDirectory(env.ExperimentName, subjectName);
+        bool anyRaw = activeRecorders.Exists(r => r.recordRawMkv);
+
+        if (anyRaw)
+            BackupPreviousRaw(rawDir);
+
         foreach (HomeSkeletonRecorder recorder in activeRecorders)
-            recorder.BeginRecording(recordingStartClock);
+        {
+            HomeRawIndex rawInfo = new HomeRawIndex
+            {
+                experimentName = env.ExperimentName,
+                subjectName = subjectName,
+                recordingStartedAt = recordingStartedAt
+            };
+
+            recorder.BeginRecording(recordingStartClock, anyRaw ? rawDir : null, rawInfo);
+        }
 
         isRecording = true;
         SetMessage($"記録開始: {env.ExperimentName} / {subjectName} (キネクト {activeRecorders.Count} 台)", false);
@@ -176,6 +210,26 @@ public class HomeSkeletonRecordingController : MonoBehaviour
         SetMessage($"記録終了 ({duration:F1}s):{summary} → {subjectDir}", false);
     }
 
+    // 同じ実験対象者で撮り直した場合、前の生データは上書きせず Raw~/old_<日時>/ に移して残す
+    private static void BackupPreviousRaw(string rawDir)
+    {
+        if (!Directory.Exists(rawDir))
+            return;
+
+        string[] files = Directory.GetFiles(rawDir);
+
+        if (files.Length == 0)
+            return;
+
+        string backupDir = Path.Combine(rawDir, $"old_{System.DateTime.Now:yyyyMMdd_HHmmss}");
+        Directory.CreateDirectory(backupDir);
+
+        foreach (string file in files)
+            File.Move(file, Path.Combine(backupDir, Path.GetFileName(file)));
+
+        Debug.LogWarning($"[HomeSkeletonRecordingController] 既存の生データを退避しました: {backupDir}");
+    }
+
     private void SetMessage(string message, bool isError)
     {
         lastMessage = message;
@@ -209,6 +263,14 @@ public class HomeSkeletonRecordingController : MonoBehaviour
 
             string state = !recorder.IsReady ? "未接続" :
                 isRecording ? $"{recorder.RecordedFrameCount} frames" : "準備完了";
+
+            if (recorder.SerialMismatch)
+                state += " / シリアル番号がシーン0と違う";
+
+            if (recorder.recordRawMkv && isRecording)
+                state += recorder.IsRecordingRaw ? $" / MKV {recorder.RawFrameCount} frames" : " / MKV 停止(エラー)";
+            else if (recorder.recordRawMkv)
+                state += " / MKV 記録あり";
 
             text.AppendLine($"Kinect{recorder.KinectId}: {state} / 検出 {recorder.LatestBodyCount} 人");
         }

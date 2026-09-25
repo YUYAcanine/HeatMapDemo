@@ -9,21 +9,33 @@ using UnityEngine.EventSystems;
 //       ├ Env/
 //       │   ├ KinectA_Transform.json  … キネクトの位置姿勢(1台1ファイル)
 //       │   ├ RoomObjects.json        … 部屋オブジェクトの一覧とTransform
-//       │   └ Meshes/                 … アセットを参照できない部屋オブジェクトのメッシュ
+//       │   ├ TargetObjects.json      … 注視などの対象物体(シーン0で部屋オブジェクトの下に置いた物体)の一覧とTransform
+//       │   └ Meshes/                 … アセットを参照できない部屋オブジェクト/対象物体のメッシュ
 //       └ Skeleton/
 //           └ <実験対象者>/
 //               ├ A_skeleton.json     … キネクト1台ごとの骨格データ
-//               └ Filtered/
-//                   ├ filtered_AllJoints.json  … 信頼度フィルタリング後の骨格(シーン3, 全関節の信頼度で選択)
-//                   └ filtered_HeadJoints.json … 信頼度フィルタリング後の骨格(シーン3, 頭部の関節の信頼度で選択)
+//               ├ Raw~/                  … シーン1 で Record Raw Mkv にチェックを入れて記録した生データ(Unityは「~」で終わるフォルダを読み込まない)
+//               │   ├ A.mkv              … キネクト1台ごとのカラー(MJPG)・深度・赤外線(Azure Kinect 公式の録画形式)
+//               │   ├ A_raw_index.json   … フレームごとの時刻(全キネクト共通の時計)・キネクトの位置姿勢・シリアル番号
+//               │   └ A_calibration.json … キネクトの校正情報(カメラの内部パラメータ・深度→カラーの外部パラメータ)
+//               ├ Filtered/
+//               │   ├ filtered_AllJoints.json  … 信頼度フィルタリング後の骨格(シーン3, 全関節の信頼度で選択)
+//               │   └ filtered_HeadJoints.json … 信頼度フィルタリング後の骨格(シーン3, 頭部の関節の信頼度で選択)
+//               └ Analysis/
+//                   ├ heatmap_<骨格>.json … 視線コーンのヒートマップ(シーン4, 部屋メッシュの頂点ごとのヒート)
+//                   └ score_<骨格>.json   … 対象物体ごとのスコアとフレームごとの注視対象(シーン4)
+//                   (<骨格> は filtered_HeadJoints / KinectA など、解析に使った骨格データ)
 public static class HomeExperimentPaths
 {
     public const string EnvFolderName = "Env";
     public const string SkeletonFolderName = "Skeleton";
     public const string MeshFolderName = "Meshes";
     public const string RoomObjectsFileName = "RoomObjects.json";
+    public const string TargetObjectsFileName = "TargetObjects.json";
     public const string SkeletonFileSuffix = "_skeleton.json";
     public const string FilteredFolderName = "Filtered";
+    public const string AnalysisFolderName = "Analysis";
+    public const string RawFolderName = "Raw~";
 
     public static string RootDirectory =>
         Path.Combine(Application.dataPath, "Data", "HomeExperiment");
@@ -40,6 +52,9 @@ public static class HomeExperimentPaths
     public static string GetRoomObjectsPath(string experimentName) =>
         Path.Combine(GetEnvDirectory(experimentName), RoomObjectsFileName);
 
+    public static string GetTargetObjectsPath(string experimentName) =>
+        Path.Combine(GetEnvDirectory(experimentName), TargetObjectsFileName);
+
     public static string GetKinectTransformPath(string experimentName, string kinectId) =>
         Path.Combine(GetEnvDirectory(experimentName), $"Kinect{kinectId}_Transform.json");
 
@@ -54,6 +69,18 @@ public static class HomeExperimentPaths
 
     public static string GetFilteredSkeletonPath(string experimentName, string subjectName, string modeName) =>
         Path.Combine(GetSubjectDirectory(experimentName, subjectName), FilteredFolderName, $"filtered_{modeName}.json");
+
+    public static string GetRawDirectory(string experimentName, string subjectName) =>
+        Path.Combine(GetSubjectDirectory(experimentName, subjectName), RawFolderName);
+
+    public static string GetAnalysisDirectory(string experimentName, string subjectName) =>
+        Path.Combine(GetSubjectDirectory(experimentName, subjectName), AnalysisFolderName);
+
+    public static string GetGazeHeatMapPath(string experimentName, string subjectName, string sourceName) =>
+        Path.Combine(GetAnalysisDirectory(experimentName, subjectName), $"heatmap_{sourceName}.json");
+
+    public static string GetGazeScorePath(string experimentName, string subjectName, string sourceName) =>
+        Path.Combine(GetAnalysisDirectory(experimentName, subjectName), $"score_{sourceName}.json");
 
     // フォルダ名として使える名前か(空でなく、パス区切りやWindowsの禁止文字を含まない)。
     public static bool IsValidFolderName(string name, out string error)

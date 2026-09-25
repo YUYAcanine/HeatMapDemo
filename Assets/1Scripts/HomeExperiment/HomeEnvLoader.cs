@@ -1,8 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
 
-// シーン1(1HeadDirRecording) / シーン2(2HeadDirViewer)用。
+// シーン1(1HeadDirRecording) / シーン2(2HeadDirViewer) / シーン3(3HeadDirFilter) / シーン4(4GazeAnalyze)用。
 // シーン開始時に Assets/Data/HomeExperiment/<実験の名前>/Env/ から
 //   - 部屋オブジェクト(RoomObjects.json)
+//   - 対象物体(TargetObjects.json)  ※シーン0で部屋オブジェクトの下に物体を置いた場合のみ
 //   - キネクトの位置姿勢(Kinect<ID>_Transform.json)  ※kinectsを設定した場合のみ
 // を再現する。同じGameObjectの録画/再生コンポーネントはここから実験の名前を参照する。
 [DefaultExecutionOrder(-100)]
@@ -25,6 +27,12 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
 
     public bool IsLoaded { get; private set; }
 
+    // 再生成した部屋オブジェクト(Awakeで作られるので、Start以降で参照する)
+    public List<GameObject> RoomObjects { get; private set; } = new List<GameObject>();
+
+    // 再生成した対象物体。それぞれ group を持つ HomeTargetObject が付いている
+    public List<GameObject> TargetObjects { get; private set; } = new List<GameObject>();
+
     private void Awake()
     {
         if (!HomeExperimentPaths.IsValidFolderName(experimentName, out string error))
@@ -46,7 +54,14 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
         if (loadRoomObjects)
         {
             Transform parent = roomObjectParent != null ? roomObjectParent : transform;
-            ok &= HomeRoomObjectIO.Load(experimentName, parent) != null;
+            List<GameObject> created = HomeRoomObjectIO.Load(experimentName, parent);
+
+            if (created != null)
+                RoomObjects = created;
+
+            ok &= created != null;
+
+            TargetObjects = HomeRoomObjectIO.LoadTargets(experimentName, parent);
         }
 
         if (kinects != null)

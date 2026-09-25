@@ -1,0 +1,12 @@
+# PyTorch は CUDA 版を先に入れる:
+#   pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
+# onnxruntime-gpu は CUDA 12 版 (1.23 以降は CUDA 13 用で、ドライバ 566 では動かない)
+onnxruntime-gpu==1.22.0
+rtmlib==0.0.16
+av==18.1.0
+numpy==2.4.6
+scipy==1.17.1
+pillow==12.3.0
+safetensors==0.8.0
+# OpenCV 5 は undistortPointsIter が無いので 4 系
+opencv-python==4.14.0.94

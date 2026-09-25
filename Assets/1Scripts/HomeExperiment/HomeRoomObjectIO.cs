@@ -12,14 +12,31 @@ using UnityEditor;
 //   - モデル(.obj/.fbx)やPrefabのインスタンス … アセット参照(GUID/パス) + ワールドTransform
 //   - それ以外のメッシュ(プリミティブの箱など)  … メッシュ自体を Env/Meshes に書き出し + ワールドTransform
 // アセット参照での保存/再生成には AssetDatabase を使うため、Unityエディタ上での実行を前提とする。
+//
+// 部屋オブジェクト(RoomObjects.json)と対象物体(TargetObjects.json)の区別:
+//   roomRoots の下で最初に見つかった「メッシュを持つオブジェクト」または「モデル/Prefabのインスタンス」が部屋オブジェクト。
+//   部屋オブジェクトのさらに下に置いた物体は、注視などの対象物体として TargetObjects.json に保存する。
+//   (モデルのインスタンスの場合は、モデルに元から入っている子は部屋の一部とみなし、後から追加した物体だけを対象物体にする)
+//     RoomObjects            … roomRoots
+//       └ LivingLab          … 部屋オブジェクト
+//           └ mesh           … (モデルに元から入っている子 = 部屋の一部)
+//               └ TV         … 対象物体 (group = "TV")
+//                   └ Stand  … 対象物体 (group = "TV", TVと一緒に数える)
 public static class HomeRoomObjectIO
 {
     // ------------------------------------------------------------
     // Save
     // ------------------------------------------------------------
 #if UNITY_EDITOR
-    // roots 配下の「表示中でメッシュを持つ」オブジェクトを保存する。保存した個数を返す。
-    public static int Save(string experimentName, IEnumerable<Transform> roots)
+    private class SaveContext
+    {
+        public HomeRoomObjectList rooms;
+        public HomeRoomObjectList targets;
+        public string meshDir;
+    }
+
+    // roots 配下の「表示中でメッシュを持つ」オブジェクトを保存する。保存した部屋オブジェクトの個数を返す。
+    public static int Save(string experimentName, IEnumerable<Transform> roots, out int targetCount)
     {
         string meshDir = HomeExperimentPaths.GetMeshDirectory(experimentName);
 
@@ -27,30 +44,46 @@ public static class HomeRoomObjectIO
         if (Directory.Exists(meshDir))
             Directory.Delete(meshDir, true);
 
-        HomeRoomObjectList list = new HomeRoomObjectList
+        string savedAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        SaveContext context = new SaveContext
         {
-            experimentName = experimentName,
-            savedAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            rooms = new HomeRoomObjectList { experimentName = experimentName, savedAt = savedAt },
+            targets = new HomeRoomObjectList { experimentName = experimentName, savedAt = savedAt },
+            meshDir = meshDir
         };
 
         foreach (Transform root in roots)
-            Collect(root, list, meshDir);
+            Collect(root, context, false, null);
 
-        string path = HomeExperimentPaths.GetRoomObjectsPath(experimentName);
+        WriteList(HomeExperimentPaths.GetRoomObjectsPath(experimentName), context.rooms, "部屋オブジェクト");
+        WriteList(HomeExperimentPaths.GetTargetObjectsPath(experimentName), context.targets, "対象物体");
+
+        HashSet<string> groups = new HashSet<string>();
+
+        foreach (HomeRoomObjectData data in context.targets.objects)
+            groups.Add(data.group);
+
+        targetCount = groups.Count;
+        return context.rooms.objects.Count;
+    }
+
+    private static void WriteList(string path, HomeRoomObjectList list, string label)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         File.WriteAllText(path, JsonUtility.ToJson(list, true));
 
         foreach (HomeRoomObjectData data in list.objects)
         {
             string source = data.sourceType == HomeRoomObjectData.SourceAsset ? data.assetPath : $"Meshes/{data.meshFile}";
-            Debug.Log($"[HomeRoomObjectIO]   - {data.name} ({source}) pos={data.position} rot={data.rotation.eulerAngles} scale={data.scale}");
+            string group = string.IsNullOrEmpty(data.group) ? "" : $" group={data.group}";
+            Debug.Log($"[HomeRoomObjectIO]   - {data.name} ({source}){group} pos={data.position} rot={data.rotation.eulerAngles} scale={data.scale}");
         }
 
-        Debug.Log($"[HomeRoomObjectIO] 部屋オブジェクトを {list.objects.Count} 個保存しました: {path}");
-        return list.objects.Count;
+        Debug.Log($"[HomeRoomObjectIO] {label}を {list.objects.Count} 個保存しました: {path}");
     }
 
-    private static void Collect(Transform node, HomeRoomObjectList list, string meshDir)
+    // underRoom: 部屋オブジェクトの下か。group: 対象物体の group(部屋オブジェクト側なら null)
+    private static void Collect(Transform node, SaveContext context, bool underRoom, string group)
     {
         GameObject go = node.gameObject;
 
@@ -62,43 +95,65 @@ public static class HomeRoomObjectIO
             node.GetComponentInParent<Canvas>() != null)
             return;
 
+        MeshFilter meshFilter = node.GetComponent<MeshFilter>();
+        MeshRenderer meshRenderer = node.GetComponent<MeshRenderer>();
+        bool hasMesh = meshFilter != null && meshFilter.sharedMesh != null &&
+                       meshRenderer != null && meshRenderer.enabled;
+
+        string assetPath = null;
+
         if (PrefabUtility.IsOutermostPrefabInstanceRoot(go))
         {
             GameObject source = PrefabUtility.GetCorrespondingObjectFromOriginalSource(go);
-            string assetPath = source != null ? AssetDatabase.GetAssetPath(source) : null;
+            assetPath = source != null ? AssetDatabase.GetAssetPath(source) : null;
 
-            if (!string.IsNullOrEmpty(assetPath) && assetPath.StartsWith("Assets/"))
-            {
-                if (HasVisibleMesh(node))
-                {
-                    list.objects.Add(new HomeRoomObjectData
-                    {
-                        name = go.name,
-                        sourceType = HomeRoomObjectData.SourceAsset,
-                        assetGuid = AssetDatabase.AssetPathToGUID(assetPath),
-                        assetPath = assetPath,
-                        position = node.position,
-                        rotation = node.rotation,
-                        scale = node.lossyScale
-                    });
-                }
-
-                // インスタンスの中身はアセットから再生成されるので子は見ない
-                return;
-            }
+            if (string.IsNullOrEmpty(assetPath) || !assetPath.StartsWith("Assets/"))
+                assetPath = null;
         }
 
-        MeshFilter meshFilter = node.GetComponent<MeshFilter>();
-        MeshRenderer meshRenderer = node.GetComponent<MeshRenderer>();
+        // 部屋オブジェクトの下で最初に見つかった物体が、対象物体の group になる
+        if (underRoom && group == null && (assetPath != null || hasMesh))
+            group = go.name;
 
-        if (meshFilter != null && meshFilter.sharedMesh != null &&
-            meshRenderer != null && meshRenderer.enabled)
+        HomeRoomObjectList list = group != null ? context.targets : context.rooms;
+        string meshFilePrefix = group != null ? "target_" : "";
+
+        if (assetPath != null)
+        {
+            if (HasVisibleMesh(node))
+            {
+                list.objects.Add(new HomeRoomObjectData
+                {
+                    name = go.name,
+                    group = group,
+                    sourceType = HomeRoomObjectData.SourceAsset,
+                    assetGuid = AssetDatabase.AssetPathToGUID(assetPath),
+                    assetPath = assetPath,
+                    position = node.position,
+                    rotation = node.rotation,
+                    scale = node.lossyScale
+                });
+            }
+
+            // インスタンスの中身はアセットから再生成されるので、元から入っている子は見ない。
+            // 後から追加した物体(Hierarchy で + が付く)だけを、この下に置いた物体として保存する。
+            foreach (Transform child in node.GetComponentsInChildren<Transform>(true))
+            {
+                if (child != node && PrefabUtility.IsAddedGameObjectOverride(child.gameObject))
+                    Collect(child, context, true, group);
+            }
+
+            return;
+        }
+
+        if (hasMesh)
         {
             Mesh mesh = meshFilter.sharedMesh;
 
             HomeRoomObjectData data = new HomeRoomObjectData
             {
                 name = go.name,
+                group = group,
                 sourceType = HomeRoomObjectData.SourceMesh,
                 position = node.position,
                 rotation = node.rotation,
@@ -115,9 +170,9 @@ public static class HomeRoomObjectIO
             }
             else if (mesh.isReadable)
             {
-                data.meshFile = $"{list.objects.Count:D3}_{MakeSafeFileName(go.name)}.json";
-                Directory.CreateDirectory(meshDir);
-                File.WriteAllText(Path.Combine(meshDir, data.meshFile), JsonUtility.ToJson(ToMeshData(mesh)));
+                data.meshFile = $"{meshFilePrefix}{list.objects.Count:D3}_{MakeSafeFileName(go.name)}.json";
+                Directory.CreateDirectory(context.meshDir);
+                File.WriteAllText(Path.Combine(context.meshDir, data.meshFile), JsonUtility.ToJson(ToMeshData(mesh)));
             }
             else
             {
@@ -134,8 +189,9 @@ public static class HomeRoomObjectIO
             }
         }
 
+        // メッシュを持つオブジェクトの子は、その下に置いた物体として扱う
         foreach (Transform child in node)
-            Collect(child, list, meshDir);
+            Collect(child, context, underRoom || hasMesh, group);
     }
 
     private static bool HasVisibleMesh(Transform node)
@@ -239,6 +295,23 @@ public static class HomeRoomObjectIO
             return null;
         }
 
+        return LoadList(experimentName, path, parent, "部屋オブジェクト");
+    }
+
+    // Env/TargetObjects.json を読み込み、parent の子として対象物体を再生成する。
+    // 各物体には group を持つ HomeTargetObject を付ける。ファイルが無い(対象物体を置いていない)場合は空のリストを返す。
+    public static List<GameObject> LoadTargets(string experimentName, Transform parent)
+    {
+        string path = HomeExperimentPaths.GetTargetObjectsPath(experimentName);
+
+        if (!File.Exists(path))
+            return new List<GameObject>();
+
+        return LoadList(experimentName, path, parent, "対象物体");
+    }
+
+    private static List<GameObject> LoadList(string experimentName, string path, Transform parent, string label)
+    {
         HomeRoomObjectList list = JsonUtility.FromJson<HomeRoomObjectList>(File.ReadAllText(path));
         List<GameObject> created = new List<GameObject>();
         string meshDir = HomeExperimentPaths.GetMeshDirectory(experimentName);
@@ -258,10 +331,13 @@ public static class HomeRoomObjectIO
             go.transform.localScale = DivideScale(data.scale, parent != null ? parent.lossyScale : Vector3.one);
             go.SetActive(true);
 
+            if (!string.IsNullOrEmpty(data.group))
+                go.AddComponent<HomeTargetObject>().group = data.group;
+
             created.Add(go);
         }
 
-        Debug.Log($"[HomeRoomObjectIO] 部屋オブジェクトを {created.Count}/{list.objects.Count} 個再生成しました: {path}");
+        Debug.Log($"[HomeRoomObjectIO] {label}を {created.Count}/{list.objects.Count} 個再生成しました: {path}");
         return created;
     }
 

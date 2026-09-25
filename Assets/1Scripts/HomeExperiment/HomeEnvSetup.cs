@@ -5,6 +5,7 @@ using UnityEngine;
 // シーン0(0HomeSetup)用。キャリブレーション後に Spaceキー で
 //   - 各キネクトの位置姿勢   → Env/Kinect<ID>_Transform.json
 //   - 表示中の部屋オブジェクト → Env/RoomObjects.json (+ Env/Meshes)
+//   - 部屋オブジェクトのさらに下に置いた物体 → Env/TargetObjects.json (注視などの対象物体。シーン4でスコアを数える)
 // を Assets/Data/HomeExperiment/<実験の名前>/Env/ に保存する。
 // キャリブレーション自体(ICP.cs / KinectPointCloudOnce.cs)は従来のまま。
 public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider
@@ -89,7 +90,12 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider
 
         foreach (HomeKinect kinect in GetKinects(false))
         {
-            kinect.SavePose(HomeExperimentPaths.GetKinectTransformPath(experimentName, kinect.KinectId));
+            // 点群を撮ったキネクト本体のシリアル番号も残す(記録するシーンで同じ個体か確認するため)
+            KinectPointCloudOnce pointCloud = kinect.GetComponentInChildren<KinectPointCloudOnce>();
+            int deviceIndex = pointCloud != null ? pointCloud.deviceIndex : -1;
+            string serialNumber = deviceIndex >= 0 ? TryReadSerialNumber(deviceIndex) : null;
+
+            kinect.SavePose(HomeExperimentPaths.GetKinectTransformPath(experimentName, kinect.KinectId), serialNumber, deviceIndex);
             kinectCount++;
         }
 
@@ -105,18 +111,34 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider
         }
 
         int roomObjectCount = 0;
+        int targetObjectCount = 0;
 
         if (roots.Count == 0)
             Debug.LogWarning("[HomeEnvSetup] roomRoots が設定されていないため、部屋オブジェクトは保存しません。");
         else
-            roomObjectCount = HomeRoomObjectIO.Save(experimentName, roots);
+            roomObjectCount = HomeRoomObjectIO.Save(experimentName, roots, out targetObjectCount);
 
         HomeExperimentPaths.RefreshAssetDatabase();
 
-        Debug.Log($"[HomeEnvSetup] 保存完了: キネクト {kinectCount} 台, 部屋オブジェクト {roomObjectCount} 個 → {envDir}");
+        Debug.Log($"[HomeEnvSetup] 保存完了: キネクト {kinectCount} 台, 部屋オブジェクト {roomObjectCount} 個, 対象物体 {targetObjectCount} 個 → {envDir}");
 #else
         Debug.LogError("[HomeEnvSetup] Envの保存はUnityエディタ上でのみ実行できます。");
 #endif
+    }
+
+    // KinectPointCloudOnce は点群を撮った後にデバイスを閉じているので、ここで開き直してシリアル番号だけ読む
+    private static string TryReadSerialNumber(int deviceIndex)
+    {
+        try
+        {
+            using (Microsoft.Azure.Kinect.Sensor.Device device = Microsoft.Azure.Kinect.Sensor.Device.Open(deviceIndex))
+                return device.SerialNum;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[HomeEnvSetup] device {deviceIndex} のシリアル番号を読めませんでした(シリアル番号なしで保存します)。\n{e.Message}");
+            return null;
+        }
     }
 
     private IEnumerable<HomeKinect> GetKinects(bool includeInactive)
