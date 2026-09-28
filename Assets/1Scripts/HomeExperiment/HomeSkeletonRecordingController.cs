@@ -4,9 +4,10 @@ using System.Text;
 using UnityEngine;
 
 // シーン1(1HeadDirRecording)用。Spaceキーで全キネクトの骨格データ記録を同時に開始/終了し、
-// Assets/Data/HomeExperiment/<実験の名前>/Skeleton/<実験対象者>/<ID>_skeleton.json に保存する。
+// Assets/Data/HomeExperiment/<実験の名前>/Skeleton/<実験対象者>/<ID>_skeleton.json に保存する(Record Skeleton オフのときは保存しない)。
 // Record Raw Mkv にチェックを入れると、同じタイミングで全キネクトの生データ(カラー・深度・赤外線の MKV)も
 // Raw~/ に記録する(画像での推定 Tools/GazePipeline 用)。
+// Record Skeleton をオフ・Record Raw Mkv をオンにすると「映像のみ」記録になる(Body Tracking をしないので複数台運用時の負荷が下がる)。
 // 実験の名前は同じGameObjectの HomeEnvLoader から取得する。
 [RequireComponent(typeof(HomeEnvLoader))]
 public class HomeSkeletonRecordingController : MonoBehaviour
@@ -25,6 +26,9 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     [SerializeField] private bool recordRawMkv = false;
     [Tooltip("Record Raw Mkv のときのカラー解像度。骨格推定は深度だけを使うので、上げても Kinect の骨格の精度は変わらない(離れた人の顔が大きく写る)。")]
     [SerializeField] private Microsoft.Azure.Kinect.Sensor.ColorResolution rawColorResolution = Microsoft.Azure.Kinect.Sensor.ColorResolution.R1080p;
+    [Tooltip("骨格推定(Body Tracking)を行い、skeleton.json を保存する。\n" +
+             "オフにして Record Raw Mkv だけオンにすると「映像のみ」記録になる。Body Tracking をしない分、キネクトを複数台同時に動かしたときの負荷が下がり安定しやすい。")]
+    [SerializeField] private bool recordSkeleton = true;
 
     [Header("Input")]
     [SerializeField] private KeyCode toggleKey = KeyCode.Space;
@@ -44,6 +48,10 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     private string lastMessage = "";
     private GUIStyle statusStyle;
 
+    // 他マシンと記録を同期するスクリプト(HomeMultiMachineRecordingSync)から、
+    // Spaceキーで実際に開始/終了できたかを確認するために使う。
+    public bool IsRecording => isRecording;
+
     private void Awake()
     {
         env = GetComponent<HomeEnvLoader>();
@@ -59,6 +67,7 @@ public class HomeSkeletonRecordingController : MonoBehaviour
 
             recorder.recordRawMkv = recordRawMkv;
             recorder.rawColorResolution = rawColorResolution;
+            recorder.recordSkeleton = recordSkeleton;
         }
     }
 
@@ -105,6 +114,12 @@ public class HomeSkeletonRecordingController : MonoBehaviour
         if (requireEnvLoaded && !env.IsLoaded)
         {
             SetMessage("Envを読み込めていないため記録を開始しません。コンソールのエラーを確認してください。", true);
+            return;
+        }
+
+        if (!recordSkeleton && !recordRawMkv)
+        {
+            SetMessage("Record Skeleton も Record Raw Mkv も無効です。どちらか一方は有効にしてください。", true);
             return;
         }
 
@@ -170,15 +185,32 @@ public class HomeSkeletonRecordingController : MonoBehaviour
 
         foreach (HomeSkeletonRecorder recorder in activeRecorders)
         {
+            // EndRecording は MKV の後処理(書き込みスレッドの終了待ち・ファイルの移動)も行うので、
+            // 1台の後処理で例外が起きても他のキネクトの後処理が飛ばないよう、必ず全台分呼ぶ。
             List<HomeSkeletonFrame> frames = recorder.EndRecording();
+
+            if (!recordSkeleton)
+            {
+                summary.Append($" {recorder.KinectId}:video-only");
+                continue;
+            }
+
             string path = HomeExperimentPaths.GetSkeletonPath(env.ExperimentName, subjectName, recorder.KinectId);
 
             // 同じ実験対象者で撮り直した場合、前のデータは上書きせず名前を変えて残す
             if (File.Exists(path))
             {
                 string backupPath = Path.Combine(subjectDir, $"{recorder.KinectId}_skeleton_old_{backupSuffix}.json");
-                File.Move(path, backupPath);
-                Debug.LogWarning($"[HomeSkeletonRecordingController] 既存のファイルを退避しました: {backupPath}");
+
+                try
+                {
+                    File.Move(path, backupPath);
+                    Debug.LogWarning($"[HomeSkeletonRecordingController] 既存のファイルを退避しました: {backupPath}");
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[HomeSkeletonRecordingController] 既存のファイルを退避できませんでした(上書きされます): {path}\n{e}");
+                }
             }
 
             HomeSkeletonFrameList data = new HomeSkeletonFrameList
@@ -225,7 +257,17 @@ public class HomeSkeletonRecordingController : MonoBehaviour
         Directory.CreateDirectory(backupDir);
 
         foreach (string file in files)
-            File.Move(file, Path.Combine(backupDir, Path.GetFileName(file)));
+        {
+            try
+            {
+                File.Move(file, Path.Combine(backupDir, Path.GetFileName(file)));
+            }
+            catch (System.Exception e)
+            {
+                // 1ファイルの退避に失敗しても記録の開始自体は止めない(ここで例外が飛ぶと StartRecording ごと失敗する)
+                Debug.LogError($"[HomeSkeletonRecordingController] 既存の生データを退避できませんでした: {file}\n{e}");
+            }
+        }
 
         Debug.LogWarning($"[HomeSkeletonRecordingController] 既存の生データを退避しました: {backupDir}");
     }
@@ -262,7 +304,7 @@ public class HomeSkeletonRecordingController : MonoBehaviour
                 continue;
 
             string state = !recorder.IsReady ? "未接続" :
-                isRecording ? $"{recorder.RecordedFrameCount} frames" : "準備完了";
+                isRecording && recordSkeleton ? $"{recorder.RecordedFrameCount} frames" : "準備完了";
 
             if (recorder.SerialMismatch)
                 state += " / シリアル番号がシーン0と違う";
@@ -272,7 +314,8 @@ public class HomeSkeletonRecordingController : MonoBehaviour
             else if (recorder.recordRawMkv)
                 state += " / MKV 記録あり";
 
-            text.AppendLine($"Kinect{recorder.KinectId}: {state} / 検出 {recorder.LatestBodyCount} 人");
+            string detected = recordSkeleton ? $" / 検出 {recorder.LatestBodyCount} 人" : "";
+            text.AppendLine($"Kinect{recorder.KinectId}: {state}{detected}");
         }
 
         if (!string.IsNullOrEmpty(lastMessage))

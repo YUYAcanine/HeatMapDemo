@@ -28,6 +28,8 @@ public class HomeSkeletonRecorder : MonoBehaviour
     // HomeSkeletonRecordingController のチェックボックス(Record Raw Mkv)で全キネクトまとめて決める(Start より前に設定される)。
     [NonSerialized] public bool recordRawMkv;
     [NonSerialized] public ColorResolution rawColorResolution = ColorResolution.R1080p;
+    // 骨格推定(Body Tracking)を行うか。false のときは Tracker を作らず、MKV(映像)だけを記録する。
+    [NonSerialized] public bool recordSkeleton = true;
 
     // 全キネクト共通の時計
     private static readonly Stopwatch clock = Stopwatch.StartNew();
@@ -88,7 +90,9 @@ public class HomeSkeletonRecorder : MonoBehaviour
 
             device.StartCameras(configuration);
 
-            tracker = Tracker.Create(device.GetCalibration(), TrackerConfiguration.Default);
+            // 映像のみ記録するとき(recordSkeleton=false)は Tracker を作らない。
+            // 複数台の Kinect で Body Tracking の GPU 負荷をかけない分、安定して撮れる。
+            tracker = recordSkeleton ? Tracker.Create(device.GetCalibration(), TrackerConfiguration.Default) : null;
         }
         catch (Exception e)
         {
@@ -118,10 +122,33 @@ public class HomeSkeletonRecorder : MonoBehaviour
     private void OnDestroy()
     {
         running = false;
+
+        // CaptureLoop が device.GetCapture() でブロックしていると running が false になっても抜けられないので、
+        // カメラを止めて GetCapture を例外で即座に抜けさせる(RealtimeView など他のスクリプトと同じ止め方)。
+        try
+        {
+            device?.StopCameras();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[HomeSkeletonRecorder] Kinect{KinectId}: StopCameras に失敗しました。\n{e}");
+        }
+
         CloseRawRecording();
 
-        if (worker != null && !worker.Join(3000))
-            Debug.LogWarning($"[HomeSkeletonRecorder] Kinect{KinectId}: キャプチャスレッドの終了を待ちきれませんでした。");
+        bool exited = worker == null || worker.Join(5000);
+
+        if (!exited)
+        {
+            // キャプチャスレッドがまだ device/tracker のネイティブ呼び出しの中にいる可能性がある。
+            // ここで Dispose すると、そのスレッドが解放済みのハンドルを使ってしまい Unity ごと落ちる
+            // (HomeMkvWriter.cs のコメント参照: 過去に同じ形の use-after-free で落ちたことがある)。
+            // 終了を待てない場合はハンドルを解放せずに残す(このプロセス内でこのKinectは使えなくなるが、
+            // 落とすより安全)。
+            Debug.LogError($"[HomeSkeletonRecorder] Kinect{KinectId}: キャプチャスレッドの終了を待ちきれなかったため、" +
+                           "クラッシュを避けてデバイスの解放をスキップしました。");
+            return;
+        }
 
         DisposeDevice();
     }
@@ -305,7 +332,13 @@ public class HomeSkeletonRecorder : MonoBehaviour
 
         // キューに残ったフレームを書き終えて MKV を閉じるまで待つ
         if (!session.thread.Join(60000))
-            Debug.LogError($"[HomeSkeletonRecorder] Kinect{KinectId}: MKV の書き込みが終わりません。");
+        {
+            // 書き込みスレッドがまだ MKV ファイルを開いたままの可能性がある。
+            // ここで File.Move/File.Delete するとファイルを壊したり例外で以降の後処理を止めてしまうので、何もしない。
+            Debug.LogError($"[HomeSkeletonRecorder] Kinect{KinectId}: MKV の書き込みが終わりません。" +
+                           $"このKinectの生データは {session.writer.Path} に残っています(手動で確認してください)。");
+            return;
+        }
 
         try
         {
@@ -457,10 +490,15 @@ public class HomeSkeletonRecorder : MonoBehaviour
                         continue;
 
                     double receivedClock = ClockSeconds;
-                    captureTimes.Enqueue(new KeyValuePair<long, double>(capture.Depth.DeviceTimestamp.Ticks, receivedClock));
 
                     // 骨格推定に渡す前に、生のキャプチャを MKV に書く(recordRawMkv で記録中のときだけ)
                     WriteRaw(capture, receivedClock);
+
+                    // 映像のみ記録(recordSkeleton=false)のときは Tracker が無いので、ここで抜ける
+                    if (!recordSkeleton)
+                        continue;
+
+                    captureTimes.Enqueue(new KeyValuePair<long, double>(capture.Depth.DeviceTimestamp.Ticks, receivedClock));
 
                     while (captureTimes.Count > 30)
                         captureTimes.Dequeue();
@@ -482,6 +520,9 @@ public class HomeSkeletonRecorder : MonoBehaviour
                         }
                     }
                 }
+
+                if (!recordSkeleton)
+                    continue;
 
                 // 通常は結果が出るまで待つ。生データの記録中は待たずに、出ている結果だけ受け取る
                 TimeSpan popTimeout = recordRawMkv ? TimeSpan.Zero : trackerTimeout;
@@ -513,11 +554,11 @@ public class HomeSkeletonRecorder : MonoBehaviour
             }
             catch (Exception e)
             {
+                // 終了処理中(running=false)の例外も握り潰さずログに残す。原因調査のため。
+                Debug.LogError($"[HomeSkeletonRecorder] Kinect{KinectId}: キャプチャ中にエラーが発生しました(running={running})。\n{e}");
+
                 if (running)
-                {
-                    Debug.LogError($"[HomeSkeletonRecorder] Kinect{KinectId}: キャプチャ中にエラーが発生しました。\n{e}");
                     Thread.Sleep(100);
-                }
             }
         }
     }

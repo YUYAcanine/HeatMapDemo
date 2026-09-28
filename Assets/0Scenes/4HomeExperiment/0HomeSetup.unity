@@ -406,7 +406,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8518186b09c645c6968fe66a5ce39f6e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: sansoken1
+  experimentName: chuorinkantest
   roomRoots:
   - {fileID: 1717023521}
   kinects:
@@ -435,7 +435,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!65 &431353220
 BoxCollider:
   m_ObjectHideFlags: 0
