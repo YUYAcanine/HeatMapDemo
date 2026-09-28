@@ -5,12 +5,25 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using Microsoft.Azure.Kinect.Sensor;
 using UnityEngine;
 
-// シーン1Multi(1HeadDirRecordingMulti)専用。同じLAN上で複数マシンにこのシーンを開いておき、
-// Master側の1台でSpaceキーを押すと、UDPブロードキャストで他の全マシン(Follower)にも
-// 記録の開始/終了を伝える。骨格・MKVの記録自体は今までと同じように各マシンがローカルに行う
-// (HomeSkeletonRecordingController が行う)。
+// シーン1Multi(1HeadDirRecordingMulti)専用。複数マシンにこのシーンを開いておき、
+// Master側の1台でSpaceキーを押すと、他の全マシン(Follower)も記録を開始/終了する。
+// 骨格・MKVの記録自体は今までと同じように各マシンがローカルに行う(HomeSkeletonRecordingController が行う)。
+//
+// 他のマシンへの伝え方(Trigger)は2通り:
+//   - Sync Cable(既定): キネクトの同期ケーブルだけで伝える。ネットワークは使わない。
+//       Master のマシン … 記録開始まで Master のキネクトのカメラを止めておき、Spaceキーで記録開始と同時に動かす。
+//                         もう一度 Spaceキーで記録を終了し、カメラを止める。
+//       Follower のマシン … Subordinate のキネクトにフレームが届き始めたら記録を開始し、
+//                         Sync Cable Stop Timeout 秒フレームが届かなければ終了して保存する。
+//       ・Follower のキネクトは必ず Subordinate にする(Standalone だと再生してすぐ記録が始まる)
+//       ・Master のマシンで Spaceキーを押す前に、Follower のマシンを再生しておく
+//         (Master のキネクトは Space まで動かないので、再生する順番自体はどちらが先でもよい)
+//       ・Master のキネクトは記録するまで動かないので、記録前の映像・骨格の確認はできない
+//       ・Follower は最初のフレームが届いてから記録を始めるので、先頭の数フレームを取りこぼすことがある
+//   - Network: UDPブロードキャストで開始/終了の信号を送る(同じLAN内・ファイアウォールでUDPを許可しておく)。
 //
 // 使い方:
 //   - Role で操作役(Master)を決める。既定の Auto なら、HomeExperiment の Kinects の表で
@@ -45,6 +58,21 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
              "同期ケーブルを使わない(全台 Standalone)ときや、キネクトをつながないマシンで操作するときは Master/Follower を選ぶ。")]
     [SerializeField] private Role role = Role.Auto;
 
+    public enum Trigger
+    {
+        // キネクトの同期ケーブルだけで記録の開始/終了を合わせる
+        SyncCable,
+        // UDPブロードキャストで記録の開始/終了を伝える
+        Network
+    }
+
+    [Header("Trigger")]
+    [Tooltip("Sync Cable: 同期ケーブルだけで合わせる(Master のキネクトは記録開始まで止めておき、Follower はフレームが届いたら記録する)。\n" +
+             "Network: UDPで開始/終了の信号を送る。\n全マシンで同じにする。")]
+    [SerializeField] private Trigger trigger = Trigger.SyncCable;
+    [Tooltip("Sync Cable のとき、Follower がこの秒数フレームを受け取らなかったら記録を終了して保存する。")]
+    [SerializeField] private float syncCableStopTimeoutSec = 2f;
+
     [Header("Network")]
     [Tooltip("全マシンで同じ値にする。他のUnityプロジェクト・アプリと被らない番号を選ぶ。")]
     [SerializeField] private int port = 50605;
@@ -69,32 +97,76 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
     private List<IPAddress> targets;
     private readonly string instanceId = Guid.NewGuid().ToString("N");
 
+    // Sync Cable 用
+    private readonly List<HomeSkeletonRecorder> deferredRecorders = new List<HomeSkeletonRecorder>();
+    private bool wasRecording;
+    private double lastAutoStopClock = -1;
+    private bool waitForFramesToStop;
+
     private void Awake()
     {
         controller = GetComponent<HomeSkeletonRecordingController>();
 
         // HomeSkeletonRecordingController(DefaultExecutionOrder -200)が Kinects の表を反映した後なので、
         // キネクトの表示状態と Sync Mode はここで確定している
-        isMaster = role == Role.Master || (role == Role.Auto && HasActiveMasterKinect());
+        isMaster = role == Role.Master || (role == Role.Auto && GetActiveRecorders(WiredSyncMode.Master).Count > 0);
 
-        // Follower は自分の Space キーでは記録を始めず、Master からの信号だけで開始/終了する
+        // Follower は自分の Space キーでは記録を始めず、Master からの信号(Sync Cable ではフレームの到着)だけで開始/終了する
         controller.KeyInputEnabled = isMaster;
 
-        Debug.Log($"[HomeMultiMachineRecordingSync] このマシンは {(isMaster ? "Master" : "Follower")} です (Role: {role})。");
+        Debug.Log($"[HomeMultiMachineRecordingSync] このマシンは {(isMaster ? "Master" : "Follower")} です (Role: {role}, Trigger: {trigger})。");
+
+        if (trigger == Trigger.SyncCable)
+            SetupSyncCable();
     }
 
-    private static bool HasActiveMasterKinect()
+    private void SetupSyncCable()
     {
+        if (isMaster)
+        {
+            // Master のキネクトは記録開始まで止めておく(Start より前に設定する)。
+            // 止めている間は同期信号が出ないので、Subordinate のキネクトにもフレームが来ない。
+            deferredRecorders.AddRange(GetActiveRecorders(WiredSyncMode.Master));
+
+            foreach (HomeSkeletonRecorder recorder in deferredRecorders)
+                recorder.deferCameraStart = true;
+
+            if (deferredRecorders.Count == 0)
+                Debug.LogWarning("[HomeMultiMachineRecordingSync] Sync Cable ですが、このマシンに Sync Mode が Master のキネクトがありません。" +
+                                 "他のマシンの記録は開始されません(Kinects の表を確認してください)。");
+        }
+        else
+        {
+            foreach (HomeSkeletonRecorder recorder in GetActiveRecorders(null))
+            {
+                if (recorder.syncMode != WiredSyncMode.Subordinate)
+                    Debug.LogError($"[HomeMultiMachineRecordingSync] Sync Cable の Follower ですが、Kinect{recorder.KinectId} の Sync Mode が {recorder.syncMode} です。" +
+                                   "Subordinate にしないと、Master を待たずに記録が始まります(Kinects の表を確認してください)。");
+            }
+        }
+    }
+
+    // syncMode が null なら表示中の全レコーダー
+    private static List<HomeSkeletonRecorder> GetActiveRecorders(WiredSyncMode? syncMode)
+    {
+        List<HomeSkeletonRecorder> result = new List<HomeSkeletonRecorder>();
+
         foreach (HomeSkeletonRecorder recorder in FindObjectsOfType<HomeSkeletonRecorder>())
         {
-            if (recorder.enabled && recorder.syncMode == Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Master)
-                return true;
+            if (recorder.enabled && (syncMode == null || recorder.syncMode == syncMode))
+                result.Add(recorder);
         }
 
-        return false;
+        return result;
     }
 
     private void Start()
+    {
+        if (trigger == Trigger.Network)
+            StartNetwork();
+    }
+
+    private void StartNetwork()
     {
         try
         {
@@ -131,13 +203,71 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
 
     private void Update()
     {
-        ReceiveCommands();
+        if (trigger == Trigger.Network)
+            ReceiveCommands();
+        else if (!isMaster)
+            WatchSyncCableFrames();
+    }
+
+    // Sync Cable の Follower: Subordinate のキネクトにフレームが届き始めたら記録を開始し、届かなくなったら終了する
+    private void WatchSyncCableFrames()
+    {
+        double now = HomeSkeletonRecorder.ClockSeconds;
+        double last = -1;
+
+        foreach (HomeSkeletonRecorder recorder in GetActiveRecorders(null))
+        {
+            if (recorder.IsReady)
+                last = Math.Max(last, recorder.LastCaptureClock);
+        }
+
+        if (!controller.IsRecording)
+        {
+            // 開始できなかった(実験対象者が未入力など)ときは、一度フレームが止まるまで試さない
+            if (waitForFramesToStop)
+            {
+                if (last < 0 || now - last > syncCableStopTimeoutSec)
+                    waitForFramesToStop = false;
+
+                return;
+            }
+
+            // 前の記録を終えた後に新しく届いたフレームだけを合図にする
+            if (last >= 0 && last > lastAutoStopClock && now - last < 0.5)
+            {
+                controller.StartRecording();
+
+                if (controller.IsRecording)
+                {
+                    SetStatus("Master のキネクトのフレームが届いたので記録を開始しました");
+                }
+                else
+                {
+                    waitForFramesToStop = true;
+                    SetStatus("フレームが届きましたが記録を開始できませんでした(コンソールのエラーを確認してください)");
+                }
+            }
+        }
+        else if (last < 0 || now - last > syncCableStopTimeoutSec)
+        {
+            controller.StopAndSave();
+            lastAutoStopClock = now;
+            SetStatus($"フレームが {syncCableStopTimeoutSec} 秒届かないので記録を終了しました");
+        }
     }
 
     // HomeSkeletonRecordingController.Update() (同じ toggleKey を見て Start/Stop する) が
     // 先に処理された後の状態を見て送るため、LateUpdate で行う。
     private void LateUpdate()
     {
+        if (trigger == Trigger.SyncCable)
+        {
+            if (isMaster)
+                UpdateSyncCableCameras();
+
+            return;
+        }
+
         if (!isMaster || !Input.GetKeyDown(toggleKey))
             return;
 
@@ -151,6 +281,29 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
             StartCoroutine(BroadcastRepeatedly(StopCommand));
             SetStatus("他マシンへ終了信号を送信しました");
         }
+    }
+
+    // Sync Cable の Master: 記録の開始/終了に合わせて Master のキネクトのカメラを動かす/止める
+    private void UpdateSyncCableCameras()
+    {
+        bool recording = controller.IsRecording;
+
+        if (recording == wasRecording)
+            return;
+
+        wasRecording = recording;
+
+        foreach (HomeSkeletonRecorder recorder in deferredRecorders)
+        {
+            if (recording)
+                recorder.StartCameras();
+            else
+                recorder.StopCameras();
+        }
+
+        SetStatus(recording
+            ? "Master のキネクトを動かしました(同期ケーブルで他のマシンの記録が始まります)"
+            : "Master のキネクトを止めました(他のマシンは数秒後に記録を終了します)");
     }
 
     private IEnumerator BroadcastRepeatedly(string command)
@@ -324,7 +477,8 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
             return;
 
         string roleName = (isMaster ? "Master" : "Follower") + (role == Role.Auto ? " (Auto)" : "");
-        string text = $"[Multi-Machine Sync: {roleName}, port {port}] {lastStatus}";
+        string triggerName = trigger == Trigger.SyncCable ? "Sync Cable" : $"Network port {port}";
+        string text = $"[Multi-Machine Sync: {roleName}, {triggerName}] {lastStatus}";
         GUI.Label(new Rect(10, 590, 700, 24), text);
     }
 }

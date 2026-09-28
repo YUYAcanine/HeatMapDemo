@@ -30,6 +30,9 @@ public class HomeSkeletonRecorder : MonoBehaviour
     [NonSerialized] public ColorResolution rawColorResolution = ColorResolution.R1080p;
     // 骨格推定(Body Tracking)を行うか。false のときは Tracker を作らず、MKV(映像)だけを記録する。
     [NonSerialized] public bool recordSkeleton = true;
+    // true のときは Start でカメラを動かさず、StartCameras() が呼ばれるまで待つ。
+    // 同期ケーブルだけで記録を合わせるとき(HomeMultiMachineRecordingSync の Sync Cable)、Master のキネクトを記録開始まで止めておくのに使う。
+    [NonSerialized] public bool deferCameraStart;
 
     // 全キネクト共通の時計
     private static readonly Stopwatch clock = Stopwatch.StartNew();
@@ -62,6 +65,13 @@ public class HomeSkeletonRecorder : MonoBehaviour
     public bool SerialMismatch { get; private set; }
     public int LatestBodyCount => latestBodyCount;
 
+    private volatile bool camerasRunning;
+    public bool CamerasRunning => camerasRunning;
+
+    // 最後にキャプチャを受け取った時刻(ClockSeconds)。まだ1枚も来ていなければ負の値
+    private long lastCaptureClockBits = BitConverter.DoubleToInt64Bits(-1.0);
+    public double LastCaptureClock => BitConverter.Int64BitsToDouble(Interlocked.Read(ref lastCaptureClockBits));
+
     public int RecordedFrameCount
     {
         get { lock (frameLock) return frames.Count; }
@@ -88,11 +98,18 @@ public class HomeSkeletonRecorder : MonoBehaviour
                 configuration.ColorResolution = rawColorResolution;
             }
 
-            device.StartCameras(configuration);
-
             // 映像のみ記録するとき(recordSkeleton=false)は Tracker を作らない。
             // 複数台の Kinect で Body Tracking の GPU 負荷をかけない分、安定して撮れる。
-            tracker = recordSkeleton ? Tracker.Create(device.GetCalibration(), TrackerConfiguration.Default) : null;
+            // (カメラを後から動かす場合もあるので、校正情報は設定から取る)
+            tracker = recordSkeleton
+                ? Tracker.Create(device.GetCalibration(configuration.DepthMode, configuration.ColorResolution), TrackerConfiguration.Default)
+                : null;
+
+            if (!deferCameraStart)
+            {
+                device.StartCameras(configuration);
+                camerasRunning = true;
+            }
         }
         catch (Exception e)
         {
@@ -117,7 +134,45 @@ public class HomeSkeletonRecorder : MonoBehaviour
 
         IsReady = true;
         Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId} (device {deviceIndex}, sync {syncMode}) 準備完了" +
-                  (syncMode == WiredSyncMode.Subordinate ? "。Master のキネクトが撮り始めるまでフレームは来ません" : ""));
+                  (deferCameraStart ? "。記録開始までカメラは止めておきます" :
+                   syncMode == WiredSyncMode.Subordinate ? "。Master のキネクトが撮り始めるまでフレームは来ません" : ""));
+    }
+
+    // deferCameraStart のときに記録開始に合わせて呼ぶ
+    public void StartCameras()
+    {
+        if (device == null || camerasRunning)
+            return;
+
+        try
+        {
+            device.StartCameras(configuration);
+            camerasRunning = true;
+            Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId}: カメラを動かしました");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[HomeSkeletonRecorder] Kinect{KinectId}: カメラを動かせませんでした。\n{e}");
+        }
+    }
+
+    public void StopCameras()
+    {
+        if (device == null || !camerasRunning)
+            return;
+
+        // 先にフラグを下ろしてから止める(GetCapture が止めたことによる例外で抜けるのを、エラー扱いしないため)
+        camerasRunning = false;
+
+        try
+        {
+            device.StopCameras();
+            Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId}: カメラを止めました");
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[HomeSkeletonRecorder] Kinect{KinectId}: カメラを止められませんでした。\n{e}");
+        }
     }
 
     private void OnDestroy()
@@ -483,6 +538,13 @@ public class HomeSkeletonRecorder : MonoBehaviour
 
         while (running)
         {
+            // カメラを後から動かす場合(deferCameraStart)、動くまで待つ
+            if (!camerasRunning)
+            {
+                Thread.Sleep(10);
+                continue;
+            }
+
             try
             {
                 using (Capture capture = device.GetCapture(captureTimeout))
@@ -491,6 +553,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
                         continue;
 
                     double receivedClock = ClockSeconds;
+                    Interlocked.Exchange(ref lastCaptureClockBits, BitConverter.DoubleToInt64Bits(receivedClock));
 
                     // 骨格推定に渡す前に、生のキャプチャを MKV に書く(recordRawMkv で記録中のときだけ)
                     WriteRaw(capture, receivedClock);
@@ -552,6 +615,10 @@ public class HomeSkeletonRecorder : MonoBehaviour
             catch (TimeoutException)
             {
                 // キャプチャが来なかっただけなので続ける
+            }
+            catch (Exception) when (running && !camerasRunning)
+            {
+                // StopCameras() でカメラを止めたため GetCapture が抜けただけ
             }
             catch (Exception e)
             {
