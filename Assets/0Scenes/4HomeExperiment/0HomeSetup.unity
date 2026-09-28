@@ -406,14 +406,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8518186b09c645c6968fe66a5ce39f6e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: chuorinkantest
+  experimentName: 0928sansouken
   roomRoots:
   - {fileID: 1717023521}
+  saveRoomObjects: 1
   kinects:
   - {fileID: 754533280}
   - {fileID: 431353224}
   - {fileID: 1865616047}
   - {fileID: 1723817907}
+  savePointClouds: 1
+  referenceKinectId: A
+  referencePointCloudSource: 0
   initialKinectPose: 0
   saveKey: 32
 --- !u!1 &431353219

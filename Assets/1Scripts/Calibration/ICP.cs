@@ -32,6 +32,13 @@ public class ICP : MonoBehaviour
     [SerializeField] private bool logProgress = true;
     [SerializeField] private bool logReferenceCandidates = true;
 
+    // 基準にする点群の親。HomeEnvSetup が Env に保存した点群へ差し替えるのに使う。
+    public Transform ReferenceRoot
+    {
+        get => referenceRoot;
+        set => referenceRoot = value;
+    }
+
     private void Reset()
     {
         sourcePointCloud = GetComponent<MeshFilter>();

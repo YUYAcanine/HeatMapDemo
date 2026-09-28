@@ -10,8 +10,13 @@ UserSettings/
 *.csproj
 *.sln
 
-# Data
-Assets/Data/
+# Data (家庭用実験の Env だけ複数マシンで共有する。Skeleton / Raw~ などの記録データは含めない)
+Assets/Data/**
+!Assets/Data/**/
+!Assets/Data/HomeExperiment.meta
+!Assets/Data/HomeExperiment/*.meta
+!Assets/Data/HomeExperiment/*/Env.meta
+!Assets/Data/HomeExperiment/*/Env/**
 
 # Kinect / ONNX
 Assets/Plugins/

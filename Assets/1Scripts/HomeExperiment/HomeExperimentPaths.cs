@@ -8,6 +8,7 @@ using UnityEngine.EventSystems;
 //   └ <実験の名前>/
 //       ├ Env/
 //       │   ├ KinectA_Transform.json  … キネクトの位置姿勢(1台1ファイル)
+//       │   ├ KinectA_PointCloud.ply  … シーン0で撮った点群(1台1ファイル, キネクトのローカル座標, メートル)
 //       │   ├ RoomObjects.json        … 部屋オブジェクトの一覧とTransform
 //       │   ├ TargetObjects.json      … 注視などの対象物体(シーン0で部屋オブジェクトの下に置いた物体)の一覧とTransform
 //       │   └ Meshes/                 … アセットを参照できない部屋オブジェクト/対象物体のメッシュ
@@ -57,6 +58,9 @@ public static class HomeExperimentPaths
 
     public static string GetKinectTransformPath(string experimentName, string kinectId) =>
         Path.Combine(GetEnvDirectory(experimentName), $"Kinect{kinectId}_Transform.json");
+
+    public static string GetKinectPointCloudPath(string experimentName, string kinectId) =>
+        Path.Combine(GetEnvDirectory(experimentName), $"Kinect{kinectId}_PointCloud.ply");
 
     public static string GetSkeletonRootDirectory(string experimentName) =>
         Path.Combine(GetExperimentDirectory(experimentName), SkeletonFolderName);

@@ -122,6 +122,24 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!114 &284719530
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 548478051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4a20c438e3d4f0b5879a5d7ce0e8d61, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  isMaster: 0
+  port: 50605
+  sendRepeatCount: 5
+  sendRepeatIntervalSec: 0.02
+  toggleKey: 32
+  showStatus: 1
 --- !u!1 &431353219
 GameObject:
   m_ObjectHideFlags: 0
@@ -833,24 +851,6 @@ MonoBehaviour:
   recordSkeleton: 1
   toggleKey: 32
   requireEnvLoaded: 1
-  showStatus: 1
---- !u!114 &284719530
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 548478051}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4a20c438e3d4f0b5879a5d7ce0e8d61, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
-  isMaster: 0
-  port: 50605
-  sendRepeatCount: 5
-  sendRepeatIntervalSec: 0.02
-  toggleKey: 32
   showStatus: 1
 --- !u!1 &1865616042
 GameObject:
