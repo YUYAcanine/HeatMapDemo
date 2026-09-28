@@ -116,7 +116,8 @@ public class HomeSkeletonRecorder : MonoBehaviour
         worker.Start();
 
         IsReady = true;
-        Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId} (device {deviceIndex}) 準備完了");
+        Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId} (device {deviceIndex}, sync {syncMode}) 準備完了" +
+                  (syncMode == WiredSyncMode.Subordinate ? "。Master のキネクトが撮り始めるまでフレームは来ません" : ""));
     }
 
     private void OnDestroy()

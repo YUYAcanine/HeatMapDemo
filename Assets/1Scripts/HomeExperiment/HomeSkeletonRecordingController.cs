@@ -21,8 +21,9 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     [SerializeField] private HomeSkeletonRecorder[] recorders;
 
     [Header("Devices")]
-    [Tooltip("キネクトIDごとの deviceIndex(このPCにつながっている台数の中での通し番号 0〜)。マシンごとに設定する。\n" +
-             "プレイ開始時に各キネクトの HomeSkeletonRecorder に配る。表に無いキネクトはそのコンポーネントの値のまま。")]
+    [Tooltip("キネクトIDごとの deviceIndex(このPCにつながっている台数の中での通し番号 0〜)と syncMode。マシンごとに設定する。\n" +
+             "プレイ開始時に各キネクトの HomeSkeletonRecorder に配る。表に無いキネクトはそのコンポーネントの値のまま。\n" +
+             "同期ケーブルでつなぐときは、同期信号を出す1台を Master、それ以外を Subordinate にする(Standalone だと Master を待たずに撮り始める)。")]
     [SerializeField] private HomeKinectDeviceIndex[] kinectDeviceIndices = HomeKinectDeviceIndex.CreateDefault();
 
     [Header("Raw Recording")]
@@ -57,6 +58,9 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     // Spaceキーで実際に開始/終了できたかを確認するために使う。
     public bool IsRecording => isRecording;
 
+    // false にすると toggleKey で開始/終了しない(HomeMultiMachineRecordingSync の Follower は Master の信号だけで動く)
+    public bool KeyInputEnabled { get; set; } = true;
+
     private void Awake()
     {
         env = GetComponent<HomeEnvLoader>();
@@ -72,8 +76,15 @@ public class HomeSkeletonRecordingController : MonoBehaviour
             if (recorder == null)
                 continue;
 
-            if (HomeKinectDeviceIndex.TryFind(kinectDeviceIndices, recorder.KinectId, out int deviceIndex))
-                recorder.deviceIndex = deviceIndex;
+            HomeKinectDeviceIndex entry = HomeKinectDeviceIndex.Find(kinectDeviceIndices, recorder.KinectId);
+
+            if (entry != null)
+            {
+                recorder.deviceIndex = entry.deviceIndex;
+
+                if (entry.syncMode != HomeKinectDeviceIndex.SyncMode.KeepComponent)
+                    recorder.syncMode = ToWiredSyncMode(entry.syncMode);
+            }
 
             if (recorder.enabled && recorder.gameObject.activeInHierarchy)
                 used.Add(new KeyValuePair<string, int>(recorder.KinectId, recorder.deviceIndex));
@@ -86,9 +97,22 @@ public class HomeSkeletonRecordingController : MonoBehaviour
         HomeKinectDeviceIndex.WarnDuplicates(used, nameof(HomeSkeletonRecordingController));
     }
 
+    private static Microsoft.Azure.Kinect.Sensor.WiredSyncMode ToWiredSyncMode(HomeKinectDeviceIndex.SyncMode mode)
+    {
+        switch (mode)
+        {
+            case HomeKinectDeviceIndex.SyncMode.Master:
+                return Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Master;
+            case HomeKinectDeviceIndex.SyncMode.Subordinate:
+                return Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Subordinate;
+            default:
+                return Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Standalone;
+        }
+    }
+
     private void Update()
     {
-        if (!Input.GetKeyDown(toggleKey))
+        if (!KeyInputEnabled || !Input.GetKeyDown(toggleKey))
             return;
 
         if (isRecording)

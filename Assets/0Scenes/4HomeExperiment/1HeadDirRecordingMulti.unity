@@ -134,7 +134,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4a20c438e3d4f0b5879a5d7ce0e8d61, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  isMaster: 0
+  isMaster: 1
   port: 50605
   sendRepeatCount: 5
   sendRepeatIntervalSec: 0.02
@@ -291,7 +291,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: chuorinkantest
+  experimentName: 0928sansouken
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1217085267}
   kinects:
@@ -590,7 +590,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   deviceIndex: 0
-  syncMode: 0
+  syncMode: 1
 --- !u!1 &1422476024
 GameObject:
   m_ObjectHideFlags: 0
@@ -844,8 +844,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4d102865fa54dc9ab7b2a30057bf041, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: none2
+  subjectName: test1
   recorders: []
+  kinectDeviceIndices:
+  - kinectId: A
+    deviceIndex: 0
+    syncMode: 0
+  - kinectId: B
+    deviceIndex: 1
+    syncMode: 0
+  - kinectId: C
+    deviceIndex: 2
+    syncMode: 0
+  - kinectId: D
+    deviceIndex: 3
+    syncMode: 0
   recordRawMkv: 1
   rawColorResolution: 2
   recordSkeleton: 1

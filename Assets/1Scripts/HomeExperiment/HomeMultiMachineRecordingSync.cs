@@ -47,6 +47,9 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
     private void Awake()
     {
         controller = GetComponent<HomeSkeletonRecordingController>();
+
+        // Follower は自分の Space キーでは記録を始めず、Master からの信号だけで開始/終了する
+        controller.KeyInputEnabled = isMaster;
     }
 
     private void Start()
