@@ -9,6 +9,8 @@ using UnityEngine;
 // Raw~/ に記録する(画像での推定 Tools/GazePipeline 用)。
 // Record Skeleton をオフ・Record Raw Mkv をオンにすると「映像のみ」記録になる(Body Tracking をしないので複数台運用時の負荷が下がる)。
 // 実験の名前は同じGameObjectの HomeEnvLoader から取得する。
+// キネクトの表示/非表示を HomeEnvLoader(DefaultExecutionOrder -100)が見る前に反映するため、それより先に Awake を実行する。
+[DefaultExecutionOrder(-200)]
 [RequireComponent(typeof(HomeEnvLoader))]
 public class HomeSkeletonRecordingController : MonoBehaviour
 {
@@ -20,10 +22,12 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     [Tooltip("空の場合はシーン内の表示中の HomeSkeletonRecorder を自動で集める。")]
     [SerializeField] private HomeSkeletonRecorder[] recorders;
 
-    [Header("Devices")]
-    [Tooltip("キネクトIDごとの deviceIndex(このPCにつながっている台数の中での通し番号 0〜)と syncMode。マシンごとに設定する。\n" +
-             "プレイ開始時に各キネクトの HomeSkeletonRecorder に配る。表に無いキネクトはそのコンポーネントの値のまま。\n" +
-             "同期ケーブルでつなぐときは、同期信号を出す1台を Master、それ以外を Subordinate にする(Standalone だと Master を待たずに撮り始める)。")]
+    [Header("Kinects")]
+    [Tooltip("キネクトごとの設定。マシンごとに設定する。表を変えるとシーンのキネクトにすぐ反映される。\n" +
+             "Use: オフでそのキネクトのオブジェクトを非表示にする(このマシンにつないでいないキネクト)\n" +
+             "Device Index: このPCにつながっている台数の中での通し番号 0〜\n" +
+             "Sync Mode: 同期ケーブルでつなぐときは、同期信号を出す1台を Master、それ以外を Subordinate にする(Standalone だと Master を待たずに撮り始める)\n" +
+             "表に無いキネクトは触らない。")]
     [SerializeField] private HomeKinectDeviceIndex[] kinectDeviceIndices = HomeKinectDeviceIndex.CreateDefault();
 
     [Header("Raw Recording")]
@@ -65,50 +69,33 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     {
         env = GetComponent<HomeEnvLoader>();
 
+        // 各キネクトはカメラを Start で開くので、それより前(Awake)に表示/非表示・deviceIndex・syncMode を反映する。
+        // HomeEnvLoader(Awake で表示中のキネクトの位置姿勢を読む)より先に実行されるよう DefaultExecutionOrder を下げてある。
+        HomeKinectDeviceIndex.ApplyToScene(kinectDeviceIndices);
+        HomeKinectDeviceIndex.WarnDuplicates(nameof(HomeSkeletonRecordingController));
+
         if (recorders == null || recorders.Length == 0)
             recorders = FindObjectsOfType<HomeSkeletonRecorder>();
 
-        List<KeyValuePair<string, int>> used = new List<KeyValuePair<string, int>>();
-
-        // 各キネクトはカメラを Start で開くので、それより前(Awake)に deviceIndex と記録の設定を渡す
         foreach (HomeSkeletonRecorder recorder in recorders)
         {
             if (recorder == null)
                 continue;
 
-            HomeKinectDeviceIndex entry = HomeKinectDeviceIndex.Find(kinectDeviceIndices, recorder.KinectId);
-
-            if (entry != null)
-            {
-                recorder.deviceIndex = entry.deviceIndex;
-
-                if (entry.syncMode != HomeKinectDeviceIndex.SyncMode.KeepComponent)
-                    recorder.syncMode = ToWiredSyncMode(entry.syncMode);
-            }
-
-            if (recorder.enabled && recorder.gameObject.activeInHierarchy)
-                used.Add(new KeyValuePair<string, int>(recorder.KinectId, recorder.deviceIndex));
-
             recorder.recordRawMkv = recordRawMkv;
             recorder.rawColorResolution = rawColorResolution;
             recorder.recordSkeleton = recordSkeleton;
         }
-
-        HomeKinectDeviceIndex.WarnDuplicates(used, nameof(HomeSkeletonRecordingController));
     }
 
-    private static Microsoft.Azure.Kinect.Sensor.WiredSyncMode ToWiredSyncMode(HomeKinectDeviceIndex.SyncMode mode)
+#if UNITY_EDITOR
+    [System.NonSerialized] private bool kinectTableLoaded;
+
+    private void OnValidate()
     {
-        switch (mode)
-        {
-            case HomeKinectDeviceIndex.SyncMode.Master:
-                return Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Master;
-            case HomeKinectDeviceIndex.SyncMode.Subordinate:
-                return Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Subordinate;
-            default:
-                return Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Standalone;
-        }
+        HomeKinectDeviceIndex.ApplyToSceneInEditor(kinectDeviceIndices, this, ref kinectTableLoaded);
     }
+#endif
 
     private void Update()
     {

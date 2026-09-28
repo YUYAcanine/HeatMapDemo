@@ -14,6 +14,9 @@ using UnityEngine;
 // ICPの基準にするキネクト(referenceKinectId, 既定は A)は、Env に点群が保存済みなら
 // ライブで撮らずに保存済みの点群を表示し、各 ICP の referenceRoot をそれに差し替える。
 // (Aをつないでいないマシンでも B/C/D の位置合わせができる。保存時は基準キネクトのファイルを上書きしない)
+// キネクトの表示/非表示・deviceIndex は Kinects の表(HomeKinectDeviceIndex)で一括管理する。
+// キネクトの表示状態を見る他のスクリプトより先に反映するため、先に Awake を実行する。
+[DefaultExecutionOrder(-200)]
 public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider
 {
     public enum ReferencePointCloudSource
@@ -48,9 +51,12 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider
     [Tooltip("位置姿勢を保存するキネクト。空の場合はシーン内の HomeKinect を自動で集める。非表示のキネクトは保存しない。")]
     [SerializeField] private HomeKinect[] kinects;
 
-    [Header("Devices")]
-    [Tooltip("キネクトIDごとの deviceIndex(このPCにつながっている台数の中での通し番号 0〜)。マシンごとに設定する。\n" +
-             "プレイ開始時に各キネクトの KinectPointCloudOnce に配る。表に無いキネクトはそのコンポーネントの値のまま。")]
+    [Header("Kinects")]
+    [Tooltip("キネクトごとの設定。マシンごとに設定する。表を変えるとシーンのキネクトにすぐ反映される。\n" +
+             "Use: オフでそのキネクトのオブジェクトを非表示にする(このマシンにつないでいないキネクト)\n" +
+             "Device Index: このPCにつながっている台数の中での通し番号 0〜\n" +
+             "Sync Mode: シーン0では使わない\n" +
+             "表に無いキネクトは触らない。")]
     [SerializeField] private HomeKinectDeviceIndex[] kinectDeviceIndices = HomeKinectDeviceIndex.CreateDefault();
 
     [Header("Point Cloud")]
@@ -75,32 +81,22 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider
 
     private void Awake()
     {
+        // KinectPointCloudOnce はデバイスを Start で開くので、その前に表示/非表示と deviceIndex を反映する
+        HomeKinectDeviceIndex.ApplyToScene(kinectDeviceIndices);
         PrepareSavedReferencePointCloud();
-        ApplyDeviceIndices();
+
+        // 保存済みの点群を使う基準キネクトはデバイスを開かないので重なりの確認から外す
+        HomeKinectDeviceIndex.WarnDuplicates(nameof(HomeEnvSetup), savedReferenceKinect);
     }
 
-    // KinectPointCloudOnce はデバイスを Start で開くので、その前に deviceIndex を配る
-    private void ApplyDeviceIndices()
+#if UNITY_EDITOR
+    [System.NonSerialized] private bool kinectTableLoaded;
+
+    private void OnValidate()
     {
-        List<KeyValuePair<string, int>> used = new List<KeyValuePair<string, int>>();
-
-        foreach (HomeKinect kinect in GetKinects(true))
-        {
-            KinectPointCloudOnce[] pointClouds = kinect.GetComponentsInChildren<KinectPointCloudOnce>(true);
-
-            if (HomeKinectDeviceIndex.TryFind(kinectDeviceIndices, kinect.KinectId, out int deviceIndex))
-            {
-                foreach (KinectPointCloudOnce pointCloud in pointClouds)
-                    pointCloud.deviceIndex = deviceIndex;
-            }
-
-            // 保存済みの点群を使う基準キネクトはデバイスを開かないので重なりの確認から外す
-            if (kinect.gameObject.activeInHierarchy && kinect != savedReferenceKinect && pointClouds.Length > 0)
-                used.Add(new KeyValuePair<string, int>(kinect.KinectId, pointClouds[0].deviceIndex));
-        }
-
-        HomeKinectDeviceIndex.WarnDuplicates(used, nameof(HomeEnvSetup));
+        HomeKinectDeviceIndex.ApplyToSceneInEditor(kinectDeviceIndices, this, ref kinectTableLoaded);
     }
+#endif
 
     private void PrepareSavedReferencePointCloud()
     {

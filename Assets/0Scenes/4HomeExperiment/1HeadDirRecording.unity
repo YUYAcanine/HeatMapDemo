@@ -827,6 +827,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   subjectName: none2
   recorders: []
+  kinectDeviceIndices:
+  - kinectId: A
+    use: 1
+    deviceIndex: 0
+    syncMode: 0
+  - kinectId: B
+    use: 0
+    deviceIndex: 1
+    syncMode: 0
+  - kinectId: C
+    use: 0
+    deviceIndex: 2
+    syncMode: 0
+  - kinectId: D
+    use: 0
+    deviceIndex: 3
+    syncMode: 0
   recordRawMkv: 1
   rawColorResolution: 2
   recordSkeleton: 1

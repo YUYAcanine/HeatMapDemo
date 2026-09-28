@@ -415,6 +415,23 @@ MonoBehaviour:
   - {fileID: 431353224}
   - {fileID: 1865616047}
   - {fileID: 1723817907}
+  kinectDeviceIndices:
+  - kinectId: A
+    use: 1
+    deviceIndex: 0
+    syncMode: 0
+  - kinectId: B
+    use: 0
+    deviceIndex: 1
+    syncMode: 0
+  - kinectId: C
+    use: 0
+    deviceIndex: 2
+    syncMode: 0
+  - kinectId: D
+    use: 0
+    deviceIndex: 3
+    syncMode: 0
   savePointClouds: 1
   referenceKinectId: A
   referencePointCloudSource: 0

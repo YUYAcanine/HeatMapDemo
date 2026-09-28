@@ -8,10 +8,14 @@ using UnityEngine;
 // シーン1Multi(1HeadDirRecordingMulti)専用。同じLAN上で複数マシンにこのシーンを開いておき、
 // Master側の1台でSpaceキーを押すと、UDPブロードキャストで他の全マシン(Follower)にも
 // 記録の開始/終了を伝える。骨格・MKVの記録自体は今までと同じように各マシンがローカルに行う
-// (HomeSkeletonRecordingController は無変更)。
+// (HomeSkeletonRecordingController が行う)。
 //
 // 使い方:
-//   - Master役の1台だけ isMaster にチェックを入れる(それ以外は外す)
+//   - Role で操作役(Master)を決める。既定の Auto なら、HomeExperiment の Kinects の表で
+//     Sync Mode を Master にしたキネクトを表示しているマシンが操作役になる(それ以外は Follower)。
+//     同期ケーブルを使わないとき(全台 Standalone)や、キネクトをつながないマシンで操作するときは Master/Follower を手で選ぶ。
+//     操作役は全マシンで1台だけにする。
+//   - ここでの Master/Follower は「記録の開始/終了を伝える側/受ける側」で、キネクトの同期(Sync Mode)とは別の役割
 //   - 全マシンで同じ port を使う(同じLAN/スイッチ内であること)
 //   - 実験の名前・実験対象者は各マシンで同じ値を手動で入力しておく(このスクリプトはそこは同期しない)
 //   - 撮影後、各マシンの Skeleton/<実験対象者>/ フォルダの中身を1つにまとめれば、
@@ -22,9 +26,22 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
     private const string StartCommand = "HOME_REC_START";
     private const string StopCommand = "HOME_REC_STOP";
 
+    public enum Role
+    {
+        // 表示中のキネクトに Sync Mode が Master のものがあれば Master、無ければ Follower
+        Auto,
+        // Spaceキーで記録を開始/終了し、他の全マシンに伝える(全マシンで1台だけ)
+        Master,
+        // 自分のSpaceキーでは記録せず、Master からの信号だけで開始/終了する
+        Follower
+    }
+
     [Header("Role")]
-    [Tooltip("このマシンでSpaceキーを押して、他の全マシンにも開始/終了を伝える側にする。他のマシンは必ずオフにする。")]
-    [SerializeField] private bool isMaster = false;
+    [Tooltip("Auto: 表示中のキネクトに Sync Mode が Master のものがあれば Master、無ければ Follower。\n" +
+             "Master: Spaceキーで記録を開始/終了し、他の全マシンに伝える(全マシンで1台だけ)。\n" +
+             "Follower: Master からの信号だけで記録を開始/終了する。\n" +
+             "同期ケーブルを使わない(全台 Standalone)ときや、キネクトをつながないマシンで操作するときは Master/Follower を選ぶ。")]
+    [SerializeField] private Role role = Role.Auto;
 
     [Header("Network")]
     [Tooltip("全マシンで同じ値にする。他のUnityプロジェクト・アプリと被らない番号を選ぶ。")]
@@ -43,13 +60,31 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
     private UdpClient sender;
     private UdpClient receiver;
     private string lastStatus = "";
+    private bool isMaster;
 
     private void Awake()
     {
         controller = GetComponent<HomeSkeletonRecordingController>();
 
+        // HomeSkeletonRecordingController(DefaultExecutionOrder -200)が Kinects の表を反映した後なので、
+        // キネクトの表示状態と Sync Mode はここで確定している
+        isMaster = role == Role.Master || (role == Role.Auto && HasActiveMasterKinect());
+
         // Follower は自分の Space キーでは記録を始めず、Master からの信号だけで開始/終了する
         controller.KeyInputEnabled = isMaster;
+
+        Debug.Log($"[HomeMultiMachineRecordingSync] このマシンは {(isMaster ? "Master" : "Follower")} です (Role: {role})。");
+    }
+
+    private static bool HasActiveMasterKinect()
+    {
+        foreach (HomeSkeletonRecorder recorder in FindObjectsOfType<HomeSkeletonRecorder>())
+        {
+            if (recorder.enabled && recorder.syncMode == Microsoft.Azure.Kinect.Sensor.WiredSyncMode.Master)
+                return true;
+        }
+
+        return false;
     }
 
     private void Start()
@@ -182,8 +217,8 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
         if (!showStatus)
             return;
 
-        string role = isMaster ? "Master" : "Follower";
-        string text = $"[Multi-Machine Sync: {role}, port {port}] {lastStatus}";
+        string roleName = (isMaster ? "Master" : "Follower") + (role == Role.Auto ? " (Auto)" : "");
+        string text = $"[Multi-Machine Sync: {roleName}, port {port}] {lastStatus}";
         GUI.Label(new Rect(10, 590, 700, 24), text);
     }
 }
