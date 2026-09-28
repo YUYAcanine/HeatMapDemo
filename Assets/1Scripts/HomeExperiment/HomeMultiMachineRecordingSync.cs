@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
@@ -49,6 +51,9 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
     [Tooltip("UDPは取りこぼす可能性があるため、同じコマンドを複数回送って備える(Start/StopはSkeletonRecordingController側で二重に呼んでも無害)。")]
     [SerializeField] private int sendRepeatCount = 5;
     [SerializeField] private float sendRepeatIntervalSec = 0.02f;
+    [Tooltip("ブロードキャストが届かないネットワーク(Wi-Fiの設定などで止められている)向けに、直接送る他マシンのIPアドレス(Masterのみ使う)。\n" +
+             "各マシンのIPは再生開始時のログ「このマシンのIP」で確認できる。")]
+    [SerializeField] private string[] additionalTargets;
 
     [Header("Input (Masterのみ使う)")]
     [SerializeField] private KeyCode toggleKey = KeyCode.Space;
@@ -61,6 +66,8 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
     private UdpClient receiver;
     private string lastStatus = "";
     private bool isMaster;
+    private List<IPAddress> targets;
+    private readonly string instanceId = Guid.NewGuid().ToString("N");
 
     private void Awake()
     {
@@ -101,11 +108,18 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
         try
         {
             receiver = new UdpClient(port);
+            Debug.Log($"[HomeMultiMachineRecordingSync] port {port} で受信待ちしています。このマシンのIP: {string.Join(", ", GetLocalAddresses())}");
         }
         catch (Exception e)
         {
             Debug.LogError($"[HomeMultiMachineRecordingSync] 受信用ソケット(port {port})を開けませんでした。" +
                            $"他のアプリが同じポートを使っていないか確認してください。\n{e}");
+        }
+
+        if (isMaster)
+        {
+            targets = GetSendTargets();
+            Debug.Log($"[HomeMultiMachineRecordingSync] 開始/終了の信号の送り先: {string.Join(", ", targets)} (port {port})");
         }
     }
 
@@ -141,7 +155,8 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
 
     private IEnumerator BroadcastRepeatedly(string command)
     {
-        byte[] data = Encoding.UTF8.GetBytes(command);
+        // 自分が送った信号を自分で受け取ったときに無視できるよう、送り主の識別子を付ける
+        byte[] data = Encoding.UTF8.GetBytes($"{command}|{instanceId}");
         int count = Mathf.Max(1, sendRepeatCount);
 
         for (int i = 0; i < count; i++)
@@ -158,14 +173,92 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
         if (sender == null)
             return;
 
+        foreach (IPAddress target in targets ?? (targets = GetSendTargets()))
+        {
+            try
+            {
+                sender.Send(data, data.Length, new IPEndPoint(target, port));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[HomeMultiMachineRecordingSync] {target} への送信に失敗しました。\n{e.Message}");
+            }
+        }
+    }
+
+    // 255.255.255.255 だけだと、ネットワークが複数(有線+Wi-Fi など)あるマシンでは1つにしか出ないことがあるので、
+    // 各ネットワークのブロードキャストアドレス(192.168.1.255 など)と、手で指定したIPにも送る
+    private List<IPAddress> GetSendTargets()
+    {
+        List<IPAddress> result = new List<IPAddress> { IPAddress.Broadcast };
+
         try
         {
-            sender.Send(data, data.Length, new IPEndPoint(IPAddress.Broadcast, port));
+            foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus != OperationalStatus.Up ||
+                    nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                    continue;
+
+                foreach (UnicastIPAddressInformation info in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (info.Address.AddressFamily != AddressFamily.InterNetwork)
+                        continue;
+
+                    byte[] address = info.Address.GetAddressBytes();
+                    byte[] mask = info.IPv4Mask != null && !info.IPv4Mask.Equals(IPAddress.Any)
+                        ? info.IPv4Mask.GetAddressBytes()
+                        : new byte[] { 255, 255, 255, 0 };
+
+                    for (int i = 0; i < 4; i++)
+                        address[i] = (byte)(address[i] | ~mask[i]);
+
+                    AddUnique(result, new IPAddress(address));
+                }
+            }
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[HomeMultiMachineRecordingSync] ブロードキャストの送信に失敗しました。\n{e}");
+            Debug.LogWarning($"[HomeMultiMachineRecordingSync] ネットワークの一覧を取得できませんでした(255.255.255.255 にだけ送ります)。\n{e.Message}");
         }
+
+        if (additionalTargets != null)
+        {
+            foreach (string text in additionalTargets)
+            {
+                if (IPAddress.TryParse(text?.Trim() ?? "", out IPAddress address))
+                    AddUnique(result, address);
+                else if (!string.IsNullOrWhiteSpace(text))
+                    Debug.LogWarning($"[HomeMultiMachineRecordingSync] Additional Targets のIPアドレスが読めません: {text}");
+            }
+        }
+
+        return result;
+    }
+
+    private static void AddUnique(List<IPAddress> list, IPAddress address)
+    {
+        if (!list.Contains(address))
+            list.Add(address);
+    }
+
+    private static List<string> GetLocalAddresses()
+    {
+        List<string> result = new List<string>();
+
+        try
+        {
+            foreach (IPAddress address in Dns.GetHostAddresses(Dns.GetHostName()))
+            {
+                if (address.AddressFamily == AddressFamily.InterNetwork)
+                    result.Add(address.ToString());
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return result;
     }
 
     private void ReceiveCommands()
@@ -180,7 +273,7 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
             try
             {
                 byte[] data = receiver.Receive(ref remote);
-                HandleCommand(Encoding.UTF8.GetString(data));
+                HandleCommand(Encoding.UTF8.GetString(data), remote);
             }
             catch (Exception e)
             {
@@ -190,18 +283,31 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
         }
     }
 
-    private void HandleCommand(string command)
+    private void HandleCommand(string message, IPEndPoint remote)
     {
+        string[] parts = message.Split('|');
+        string command = parts[0];
+
+        // 自分が送ったブロードキャストは自分にも届くので無視する
+        if (parts.Length > 1 && parts[1] == instanceId)
+            return;
+
         switch (command)
         {
             case StartCommand:
+                if (controller.IsRecording)
+                    return;
+
                 controller.StartRecording();
-                SetStatus("他マシンからの開始信号を受信しました");
+                SetStatus($"{remote.Address} からの開始信号を受信しました");
                 break;
 
             case StopCommand:
+                if (!controller.IsRecording)
+                    return;
+
                 controller.StopAndSave();
-                SetStatus("他マシンからの終了信号を受信しました");
+                SetStatus($"{remote.Address} からの終了信号を受信しました");
                 break;
         }
     }
