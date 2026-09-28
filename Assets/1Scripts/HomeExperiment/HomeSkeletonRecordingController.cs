@@ -20,6 +20,11 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     [Tooltip("空の場合はシーン内の表示中の HomeSkeletonRecorder を自動で集める。")]
     [SerializeField] private HomeSkeletonRecorder[] recorders;
 
+    [Header("Devices")]
+    [Tooltip("キネクトIDごとの deviceIndex(このPCにつながっている台数の中での通し番号 0〜)。マシンごとに設定する。\n" +
+             "プレイ開始時に各キネクトの HomeSkeletonRecorder に配る。表に無いキネクトはそのコンポーネントの値のまま。")]
+    [SerializeField] private HomeKinectDeviceIndex[] kinectDeviceIndices = HomeKinectDeviceIndex.CreateDefault();
+
     [Header("Raw Recording")]
     [Tooltip("骨格と一緒に、全キネクトのカラー(MJPG)・深度・赤外線をそのまま MKV に記録する(Skeleton/<実験対象者>/Raw~/)。\n" +
              "あとから Tools/GazePipeline で画像から骨格・頭の向き・視線を推定するため。プレイ開始前に設定する。")]
@@ -59,16 +64,26 @@ public class HomeSkeletonRecordingController : MonoBehaviour
         if (recorders == null || recorders.Length == 0)
             recorders = FindObjectsOfType<HomeSkeletonRecorder>();
 
-        // 各キネクトはカメラを Start で開くので、それより前(Awake)に記録の設定を渡す
+        List<KeyValuePair<string, int>> used = new List<KeyValuePair<string, int>>();
+
+        // 各キネクトはカメラを Start で開くので、それより前(Awake)に deviceIndex と記録の設定を渡す
         foreach (HomeSkeletonRecorder recorder in recorders)
         {
             if (recorder == null)
                 continue;
 
+            if (HomeKinectDeviceIndex.TryFind(kinectDeviceIndices, recorder.KinectId, out int deviceIndex))
+                recorder.deviceIndex = deviceIndex;
+
+            if (recorder.enabled && recorder.gameObject.activeInHierarchy)
+                used.Add(new KeyValuePair<string, int>(recorder.KinectId, recorder.deviceIndex));
+
             recorder.recordRawMkv = recordRawMkv;
             recorder.rawColorResolution = rawColorResolution;
             recorder.recordSkeleton = recordSkeleton;
         }
+
+        HomeKinectDeviceIndex.WarnDuplicates(used, nameof(HomeSkeletonRecordingController));
     }
 
     private void Update()
