@@ -27,6 +27,27 @@ cd Tools/GazePipeline
   `--time-base device` でキネクト本体の時刻で合わせることもできる(確認用)
 - 速さの目安: RTX 3080 Laptop で 1台 5〜7 fps (写っている人数による)。2台 × 10分 ≒ 1.5時間
 
+## キネクトの骨格データを後から作る (run_body_tracking.py)
+
+記録中にキネクトの骨格推定を動かすと、Unity の描画・深度計算と GPU を取り合い、Body Tracking SDK (k4abt 1.1.2) の
+不具合で Unity ごと落ちることがある。そのため、**記録はシーン1で `Record Skeleton` をオフ・`Record Raw Mkv` をオン**
+(映像だけ) にして、キネクトの骨格データは記録の後にこのスクリプトで MKV から作る。
+
+```
+cd Tools/GazePipeline
+.venv\Scripts\python.exe run_body_tracking.py
+```
+
+- 出力: `Assets/Data/HomeExperiment/<実験>/Skeleton/<対象者>/<ID>_skeleton.json`
+  (シーン1で記録していたものと同じ形式・同じ時間軸 `recordingTimeSec`。シーン2〜4 でそのまま使える。
+  同じ名前のファイルがあれば `<ID>_skeleton_old_<日時>.json` に名前を変えて残す)
+- Unity とは別のプログラムとして動くので、万一 SDK の不具合で落ちても記録には影響しない(やり直せばよい)
+- `--kinects B C` … 指定したキネクトだけ作る(途中で落ちたときの続きなど)
+- `--mode cuda` (既定) / `directml` / `cpu` … 骨格推定を動かす方法
+- `--lite` … 軽い骨格推定モデルを使う(速いが精度が少し落ちる)
+- 必要なもの: Azure Kinect Body Tracking SDK 1.1.x のインストール
+  (`C:\Program Files\Azure Kinect Body Tracking SDK\tools` の DLL・モデル・CUDA の DLL を使う。別の場所なら `--sdk-tools`)
+
 ## 使うデータ (Raw~/ にキネクトごと)
 
 | ファイル | 中身 |

@@ -848,7 +848,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4d102865fa54dc9ab7b2a30057bf041, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: testgpu
+  subjectName: testlong
   recorders: []
   kinectDeviceIndices:
   - kinectId: A
@@ -869,7 +869,7 @@ MonoBehaviour:
     syncMode: 0
   recordRawMkv: 1
   rawColorResolution: 2
-  recordSkeleton: 1
+  recordSkeleton: 0
   toggleKey: 32
   requireEnvLoaded: 1
   showStatus: 1
