@@ -33,6 +33,11 @@ public class HomeSkeletonRecorder : MonoBehaviour
     // true のときは Start でカメラを動かさず、StartCameras() が呼ばれるまで待つ。
     // 同期ケーブルだけで記録を合わせるとき(HomeMultiMachineRecordingSync の Sync Cable)、Master のキネクトを記録開始まで止めておくのに使う。
     [NonSerialized] public bool deferCameraStart;
+    // true のとき recordingTimeSec を「カメラが動き出して最初に届いたフレーム」を0としたキネクト本体の経過時間にする。
+    // 同期ケーブルでつないだキネクトは Master が動き出した同じ瞬間に最初のフレームを撮るので、
+    // 別々のマシンで記録しても全キネクトの0秒がそろう(本体の時計そのものがずれている個体でも、経過時間なのでそろう)。
+    // HomeMultiMachineRecordingSync の Sync Cable で使う。false のときは Spaceキーで記録を開始した瞬間が0。
+    [NonSerialized] public bool alignToStreamStart;
 
     // 全キネクト共通の時計
     private static readonly Stopwatch clock = Stopwatch.StartNew();
@@ -71,6 +76,11 @@ public class HomeSkeletonRecorder : MonoBehaviour
     // 最後にキャプチャを受け取った時刻(ClockSeconds)。まだ1枚も来ていなければ負の値
     private long lastCaptureClockBits = BitConverter.DoubleToInt64Bits(-1.0);
     public double LastCaptureClock => BitConverter.Int64BitsToDouble(Interlocked.Read(ref lastCaptureClockBits));
+
+    // alignToStreamStart 用: カメラが動き出して最初に届いたフレームのキネクト本体のタイムスタンプ(TimeSpan の tick = 100ns)
+    private long streamStartDeviceTicks = -1;
+    // フレームがこの秒数届かなかった後に届いたフレームは、Master が動き直したとみなして0秒を取り直す
+    private const double StreamRestartGapSec = 0.5;
 
     public int RecordedFrameCount
     {
@@ -146,6 +156,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
 
         try
         {
+            Interlocked.Exchange(ref streamStartDeviceTicks, -1);
             device.StartCameras(configuration);
             camerasRunning = true;
             Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId}: カメラを動かしました");
@@ -321,6 +332,8 @@ public class HomeSkeletonRecorder : MonoBehaviour
             info.colorResolution = configuration.ColorResolution.ToString();
             info.depthMode = configuration.DepthMode.ToString();
             info.cameraFps = configuration.CameraFPS.ToString();
+            info.wiredSyncMode = configuration.WiredSyncMode.ToString();
+            info.timeBase = alignToStreamStart ? HomeRawIndex.TimeBaseStreamStart : HomeRawIndex.TimeBaseRecordingStart;
             info.kinectPosition = transform.position;
             info.kinectRotation = transform.rotation;
 
@@ -418,6 +431,18 @@ public class HomeSkeletonRecorder : MonoBehaviour
         }
     }
 
+    // 骨格データ・生データ共通の recordingTimeSec。
+    // deviceTicks: キネクト本体のタイムスタンプ(深度, 100ns) / captureClock: キャプチャを受け取った時刻(ClockSeconds)
+    private double ToRecordingTime(long deviceTicks, double captureClock)
+    {
+        long streamStart = Interlocked.Read(ref streamStartDeviceTicks);
+
+        if (alignToStreamStart && streamStart >= 0)
+            return (deviceTicks - streamStart) * 1e-7;
+
+        return captureClock - recordingStartClock;
+    }
+
     // キャプチャのスレッドから呼ぶ。フレームをコピーして記録用のキューに入れる
     private void WriteRaw(Capture capture, double captureClock)
     {
@@ -430,7 +455,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
 
             RawItem item = new RawItem
             {
-                recordingTimeSec = (float)(captureClock - recordingStartClock)
+                recordingTimeSec = (float)ToRecordingTime(capture.Depth.DeviceTimestamp.Ticks, captureClock)
             };
 
             try
@@ -553,6 +578,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
                         continue;
 
                     double receivedClock = ClockSeconds;
+                    UpdateStreamStart(capture.Depth.DeviceTimestamp.Ticks, receivedClock);
                     Interlocked.Exchange(ref lastCaptureClockBits, BitConverter.DoubleToInt64Bits(receivedClock));
 
                     // 骨格推定に渡す前に、生のキャプチャを MKV に書く(recordRawMkv で記録中のときだけ)
@@ -631,6 +657,28 @@ public class HomeSkeletonRecorder : MonoBehaviour
         }
     }
 
+    // キャプチャのスレッドから呼ぶ。カメラが動き出して最初のフレーム(alignToStreamStart の0秒)を決める。
+    // 記録していないときにフレームがしばらく途切れてから届いた場合は、Master が動き直したとみなして取り直す
+    // (記録中は取り直さない。一瞬途切れただけで時刻が飛ばないように)。
+    private void UpdateStreamStart(long deviceTicks, double receivedClock)
+    {
+        double previous = LastCaptureClock;
+        bool recording;
+
+        lock (frameLock)
+            recording = isRecording;
+
+        bool restarted = previous >= 0 && receivedClock - previous > StreamRestartGapSec && !recording && rawSession == null;
+
+        if (Interlocked.Read(ref streamStartDeviceTicks) >= 0 && !restarted)
+            return;
+
+        Interlocked.Exchange(ref streamStartDeviceTicks, deviceTicks);
+
+        if (alignToStreamStart)
+            Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId}: 最初のフレームを受け取りました(このフレームを記録の0秒にします。本体の時刻 {deviceTicks * 1e-7:F3} 秒)");
+    }
+
     private static double FindCaptureClock(Queue<KeyValuePair<long, double>> captureTimes, long deviceTimestamp)
     {
         foreach (KeyValuePair<long, double> pair in captureTimes)
@@ -653,7 +701,8 @@ public class HomeSkeletonRecorder : MonoBehaviour
             deviceTimestampTicks = deviceTimestamp,
             normalizedTimestampTicks = deviceTimestamp - firstDeviceTimestamp,
             unityTime = (float)captureClock,
-            recordingTimeSec = (float)(captureClock - recordingStartClock)
+            // 骨格の DeviceTimestamp は元になった深度のタイムスタンプと同じなので、生データ(MKV)の recordingTimeSec とそろう
+            recordingTimeSec = (float)ToRecordingTime(deviceTimestamp, captureClock)
         };
 
         for (uint bodyIndex = 0; bodyIndex < frame.NumberOfBodies; bodyIndex++)

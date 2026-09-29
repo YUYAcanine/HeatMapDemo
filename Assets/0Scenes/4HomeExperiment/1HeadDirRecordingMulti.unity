@@ -135,9 +135,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   role: 0
+  trigger: 0
+  syncCableStopTimeoutSec: 2
   port: 50605
   sendRepeatCount: 5
   sendRepeatIntervalSec: 0.02
+  additionalTargets: []
   toggleKey: 32
   showStatus: 1
 --- !u!1 &431353219
@@ -844,7 +847,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4d102865fa54dc9ab7b2a30057bf041, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: test1
+  subjectName: test3
   recorders: []
   kinectDeviceIndices:
   - kinectId: A

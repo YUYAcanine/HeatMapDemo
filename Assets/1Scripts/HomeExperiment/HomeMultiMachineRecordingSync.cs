@@ -23,6 +23,8 @@ using UnityEngine;
 //         (Master のキネクトは Space まで動かないので、再生する順番自体はどちらが先でもよい)
 //       ・Master のキネクトは記録するまで動かないので、記録前の映像・骨格の確認はできない
 //       ・Follower は最初のフレームが届いてから記録を始めるので、先頭の数フレームを取りこぼすことがある
+//       ・記録の0秒(骨格・MKV の recordingTimeSec)は、各キネクトの「カメラが動き出して最初に届いたフレーム」にする。
+//         Master が動き出した同じ瞬間なので、全マシンの骨格・映像の0秒がそろう
 //   - Network: UDPブロードキャストで開始/終了の信号を送る(同じLAN内・ファイアウォールでUDPを許可しておく)。
 //
 // 使い方:
@@ -122,6 +124,15 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
 
     private void SetupSyncCable()
     {
+        // 記録の0秒を「カメラが動き出して最初に届いたフレーム」にする(Master が動き出した同じ瞬間なので、全マシンでそろう)。
+        // Master は Spaceキーを押してからカメラを動かし、Follower は最初のフレームが届いてから記録を始めるので、
+        // 「記録を開始した瞬間」を0秒にするとマシンごとにずれる。
+        foreach (HomeSkeletonRecorder recorder in GetActiveRecorders(null))
+        {
+            if (recorder.syncMode != WiredSyncMode.Standalone)
+                recorder.alignToStreamStart = true;
+        }
+
         if (isMaster)
         {
             // Master のキネクトは記録開始まで止めておく(Start より前に設定する)。
@@ -480,5 +491,20 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
         string triggerName = trigger == Trigger.SyncCable ? "Sync Cable" : $"Network port {port}";
         string text = $"[Multi-Machine Sync: {roleName}, {triggerName}] {lastStatus}";
         GUI.Label(new Rect(10, 590, 700, 24), text);
+
+        // Sync Cable の Follower: フレームが届いているかを確認できるようにする
+        if (trigger == Trigger.SyncCable && !isMaster)
+        {
+            double now = HomeSkeletonRecorder.ClockSeconds;
+            StringBuilder frames = new StringBuilder("最後のフレームから:");
+
+            foreach (HomeSkeletonRecorder recorder in GetActiveRecorders(null))
+            {
+                double last = recorder.LastCaptureClock;
+                frames.Append(last < 0 ? $" Kinect{recorder.KinectId}=未受信" : $" Kinect{recorder.KinectId}={now - last:F1}秒");
+            }
+
+            GUI.Label(new Rect(10, 614, 700, 24), frames.ToString());
+        }
     }
 }

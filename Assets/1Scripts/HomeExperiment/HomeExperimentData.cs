@@ -130,8 +130,9 @@ public class HomeSkeletonFrame
     // キネクトからキャプチャを受け取った時刻(全キネクト共通の時計, 秒)
     public float unityTime;
 
-    // Spaceキーで記録を開始した瞬間を0とした時刻(秒)。全キネクトで共通の時計なので、
-    // 複数キネクトのデータを並べて再生するときはこちらを使う。
+    // 記録の0秒からの時刻(秒)。全キネクトで共通の時間軸なので、複数キネクトのデータを並べて再生するときはこちらを使う。
+    // 0秒は通常 Spaceキーで記録を開始した瞬間。同期ケーブルだけで合わせる記録(Sync Cable)では、
+    // カメラが動き出して最初に届いたフレーム(全キネクトで同じ瞬間)。生データ(MKV)の recordingTimeSec と同じ。
     public float recordingTimeSec;
 
     public List<HomeSkeletonBody> bodies = new List<HomeSkeletonBody>();
@@ -365,6 +366,15 @@ public class HomeRawIndex
     public string colorResolution;
     public string depthMode;
     public string cameraFps;
+    // 同期ケーブルでの役割(Standalone / Master / Subordinate)
+    public string wiredSyncMode;
+
+    // recordingTimeSec の0秒の決め方(骨格データの recordingTimeSec も同じ)
+    //   StreamStart    … カメラが動き出して最初に届いたフレーム(同期ケーブルでつないだ全キネクトで同じ瞬間)
+    //   RecordingStart … Spaceキーで記録を開始した瞬間(古い記録では空)
+    public const string TimeBaseStreamStart = "StreamStart";
+    public const string TimeBaseRecordingStart = "RecordingStart";
+    public string timeBase;
 
     // 深度カメラ座標(Azure Kinect の座標, mm, X右 Y下 Z前)→ 部屋座標(Unity, m, Y上)の 4x4 行列(行優先)。
     // Y を反転して mm→m にする変換と、シーン0で合わせたキネクトの位置姿勢(記録開始時点)を含む。
@@ -385,6 +395,6 @@ public class HomeRawFrame
     // キネクト本体のタイムスタンプ(マイクロ秒, MKV 内の時刻と同じ)
     public long colorTimestampUsec;
     public long depthTimestampUsec;
-    // Spaceキーで記録を開始した瞬間を0とした時刻(秒, 骨格データの recordingTimeSec と同じ時計)
+    // 記録の0秒からの時刻(秒, 骨格データの recordingTimeSec と同じ)。0秒の決め方は HomeRawIndex.timeBase
     public float recordingTimeSec;
 }

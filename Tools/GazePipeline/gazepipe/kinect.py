@@ -143,6 +143,23 @@ class RawRecording:
     def serial(self) -> str:
         return self.index.get("serialNumber", "")
 
+    @property
+    def wired_sync_mode(self) -> str:
+        """記録したときの同期ケーブルの役割 (MASTER / SUBORDINATE / STANDALONE). MKV のタグから読む."""
+        if not hasattr(self, "_wired_sync_mode"):
+            try:
+                with av.open(str(self.mkv_path)) as container:
+                    self._wired_sync_mode = container.metadata.get("K4A_WIRED_SYNC_MODE", "STANDALONE").upper()
+            except Exception:
+                self._wired_sync_mode = "STANDALONE"
+        return self._wired_sync_mode
+
+    def device_time_sec(self, frame_index: int) -> float | None:
+        """フレームのキネクト本体の時刻 (秒). 同期ケーブルでつないだキネクトどうしでは同じ時計になる."""
+        info = self.index["frames"][frame_index]
+        usec = info["colorTimestampUsec"] if info["colorTimestampUsec"] >= 0 else info["depthTimestampUsec"]
+        return usec / 1_000_000 if usec >= 0 else None
+
     # ---- 座標変換 ----
     def depth_to_room_points(self, points_mm: np.ndarray) -> np.ndarray:
         p = np.asarray(points_mm, dtype=np.float64)

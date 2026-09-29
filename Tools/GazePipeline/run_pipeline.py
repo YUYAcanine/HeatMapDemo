@@ -31,12 +31,16 @@ def main() -> int:
     parser.add_argument("--reuse", action="store_true", help="保存済みの画像解析の結果があれば使う")
     parser.add_argument("--min-views", type=int, default=2, help="何台以上のカメラに写った人を使うか(2以上)")
     parser.add_argument("--output-name", default="Image", help="filtered_<名前>.json の名前")
+    parser.add_argument("--time-base", choices=["recording", "device"], default="recording",
+                        help="キネクトどうしの時刻の合わせ方. recording (既定): 骨格データと同じ recordingTimeSec "
+                             "(シーン2の骨格の再生と0秒・時間軸がそろう), device: キネクト本体の時刻 (確認用)")
     args = parser.parse_args()
 
     import torch  # noqa: F401  CUDA の DLL を onnxruntime より先に読み込む
     from gazepipe.fuse import Settings, fuse, write_json
     from gazepipe.kinect import RawRecording
     from gazepipe.process import load_cache, process_recording, save_cache
+    from gazepipe.timebase import align_to_device_clock, describe_recording_time
 
     subject_dir = DATA_ROOT / args.experiment / "Skeleton" / args.subject
     raw_dir = subject_dir / "Raw~"
@@ -50,9 +54,11 @@ def main() -> int:
         return 1
 
     per_kinect = {}
+    recs = {}
     shared = {}
     for kid in kinect_ids:
         rec = RawRecording.load(raw_dir, kid)
+        recs[kid] = rec
         frames = load_cache(rec, args.step) if args.reuse else None
         if frames is None:
             print(f"Kinect{kid} (serial {rec.serial}): {len(rec.index['frames'])} frames を解析します", flush=True)
@@ -71,6 +77,12 @@ def main() -> int:
     if len(per_kinect) < 2:
         print("三角測量には2台以上のキネクトの生データが必要です。")
         return 1
+
+    if args.time_base == "device":
+        per_kinect = align_to_device_clock(per_kinect, recs)
+    else:
+        describe_recording_time(recs)
+
     settings = Settings(sample_interval=args.step / 30.0, min_views=max(2, args.min_views))
     output = fuse(per_kinect, settings)
     out_path = subject_dir / "Filtered" / f"filtered_{args.output_name}.json"
