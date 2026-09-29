@@ -81,6 +81,8 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider
 
     private void Awake()
     {
+        HomeGpuCheck.LogOnce(nameof(HomeEnvSetup));
+
         // KinectPointCloudOnce はデバイスを Start で開くので、その前に表示/非表示と deviceIndex を反映する
         HomeKinectDeviceIndex.ApplyToScene(kinectDeviceIndices);
         PrepareSavedReferencePointCloud();

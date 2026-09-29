@@ -68,6 +68,7 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     private void Awake()
     {
         env = GetComponent<HomeEnvLoader>();
+        HomeGpuCheck.LogOnce(nameof(HomeSkeletonRecordingController));
 
         // 各キネクトはカメラを Start で開くので、それより前(Awake)に表示/非表示・deviceIndex・syncMode を反映する。
         // HomeEnvLoader(Awake で表示中のキネクトの位置姿勢を読む)より先に実行されるよう DefaultExecutionOrder を下げてある。
