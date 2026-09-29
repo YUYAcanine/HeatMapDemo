@@ -38,6 +38,10 @@ public class HomeSkeletonRecorder : MonoBehaviour
     // 別々のマシンで記録しても全キネクトの0秒がそろう(本体の時計そのものがずれている個体でも、経過時間なのでそろう)。
     // HomeMultiMachineRecordingSync の Sync Cable で使う。false のときは Spaceキーで記録を開始した瞬間が0。
     [NonSerialized] public bool alignToStreamStart;
+    // alignToStreamStart のとき recordingTimeSec に足す秒数。
+    // Master のキネクトは動き出してから最初の数フレームを渡さない(Subordinate より数フレーム遅いフレームが最初に届く)ので、
+    // Master の最初のフレームを0秒ではなくこの秒数にして Subordinate とそろえる。HomeMultiMachineRecordingSync が設定する。
+    [NonSerialized] public double streamStartOffsetSec;
 
     // 全キネクト共通の時計
     private static readonly Stopwatch clock = Stopwatch.StartNew();
@@ -334,6 +338,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
             info.cameraFps = configuration.CameraFPS.ToString();
             info.wiredSyncMode = configuration.WiredSyncMode.ToString();
             info.timeBase = alignToStreamStart ? HomeRawIndex.TimeBaseStreamStart : HomeRawIndex.TimeBaseRecordingStart;
+            info.streamStartOffsetSec = alignToStreamStart ? (float)streamStartOffsetSec : 0f;
             info.kinectPosition = transform.position;
             info.kinectRotation = transform.rotation;
 
@@ -438,7 +443,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
         long streamStart = Interlocked.Read(ref streamStartDeviceTicks);
 
         if (alignToStreamStart && streamStart >= 0)
-            return (deviceTicks - streamStart) * 1e-7;
+            return (deviceTicks - streamStart) * 1e-7 + streamStartOffsetSec;
 
         return captureClock - recordingStartClock;
     }

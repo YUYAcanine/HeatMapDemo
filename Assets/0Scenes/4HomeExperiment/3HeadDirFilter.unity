@@ -134,7 +134,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3f7c35e62a474047afac2892be954c27, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: test3
+  subjectName: test1
   confidenceMode: 1
   headJoints: 1a0000001b0000001c0000001e0000001d0000001f000000
   sameBodyDistance: 0.2

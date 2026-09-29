@@ -10,8 +10,11 @@
 
 ```
 cd Tools/GazePipeline
-.venv\Scripts\python.exe run_pipeline.py --experiment sansoken1 --subject Yoshi
+.venv\Scripts\python.exe run_pipeline.py
 ```
+
+実験の名前と実験対象者は、生データ (Raw~) があるものの一覧から番号で選ぶ(名前を入力してもよい)。
+`--experiment sansoken1 --subject Yoshi` のように指定すれば、選ばずにそのまま解析する。
 
 - 出力: `Assets/Data/HomeExperiment/<実験>/Skeleton/<対象者>/Filtered/filtered_Image.json`
 - シーン4 で `Skeleton Source = Image` にすると使える (`Image Direction` で目の視線 / 頭の向きを選ぶ)

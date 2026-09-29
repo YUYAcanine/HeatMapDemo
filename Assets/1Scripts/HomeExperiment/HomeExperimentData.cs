@@ -375,6 +375,8 @@ public class HomeRawIndex
     public const string TimeBaseStreamStart = "StreamStart";
     public const string TimeBaseRecordingStart = "RecordingStart";
     public string timeBase;
+    // StreamStart のとき recordingTimeSec に足した秒数(Master のキネクトの最初のフレームが Subordinate より遅い分。Subordinate は0)
+    public float streamStartOffsetSec;
 
     // 深度カメラ座標(Azure Kinect の座標, mm, X右 Y下 Z前)→ 部屋座標(Unity, m, Y上)の 4x4 行列(行優先)。
     // Y を反転して mm→m にする変換と、シーン0で合わせたキネクトの位置姿勢(記録開始時点)を含む。

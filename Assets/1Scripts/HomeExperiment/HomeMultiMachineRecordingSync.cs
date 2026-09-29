@@ -25,6 +25,7 @@ using UnityEngine;
 //       ・Follower は最初のフレームが届いてから記録を始めるので、先頭の数フレームを取りこぼすことがある
 //       ・記録の0秒(骨格・MKV の recordingTimeSec)は、各キネクトの「カメラが動き出して最初に届いたフレーム」にする。
 //         Master が動き出した同じ瞬間なので、全マシンの骨格・映像の0秒がそろう
+//         (Master のキネクトは最初の数フレームを渡さないので、Master の時刻には Master Stream Start Offset Sec を足して保存する)
 //   - Network: UDPブロードキャストで開始/終了の信号を送る(同じLAN内・ファイアウォールでUDPを許可しておく)。
 //
 // 使い方:
@@ -74,6 +75,10 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
     [SerializeField] private Trigger trigger = Trigger.SyncCable;
     [Tooltip("Sync Cable のとき、Follower がこの秒数フレームを受け取らなかったら記録を終了して保存する。")]
     [SerializeField] private float syncCableStopTimeoutSec = 2f;
+    [Tooltip("Sync Cable のとき、Master のキネクトの記録の時刻(骨格・MKV の recordingTimeSec)に足す秒数。\n" +
+             "Master のキネクトは動き出してから最初の数フレームを渡さないため、そのままだと Master だけ Subordinate より遅れる。\n" +
+             "初期値 0.125 秒は 2026-09-29 の test1 で測ったずれ(骨格 0.100/0.133 秒, 画像 0.167/0.100 秒)の平均。Master のマシンで使う。")]
+    [SerializeField] private float masterStreamStartOffsetSec = 0.125f;
 
     [Header("Network")]
     [Tooltip("全マシンで同じ値にする。他のUnityプロジェクト・アプリと被らない番号を選ぶ。")]
@@ -129,8 +134,17 @@ public class HomeMultiMachineRecordingSync : MonoBehaviour
         // 「記録を開始した瞬間」を0秒にするとマシンごとにずれる。
         foreach (HomeSkeletonRecorder recorder in GetActiveRecorders(null))
         {
-            if (recorder.syncMode != WiredSyncMode.Standalone)
-                recorder.alignToStreamStart = true;
+            if (recorder.syncMode == WiredSyncMode.Standalone)
+                continue;
+
+            recorder.alignToStreamStart = true;
+
+            // Master は最初の数フレームを渡さないので、その分だけ時刻を足して Subordinate とそろえる
+            if (recorder.syncMode == WiredSyncMode.Master)
+            {
+                recorder.streamStartOffsetSec = masterStreamStartOffsetSec;
+                Debug.Log($"[HomeMultiMachineRecordingSync] Kinect{recorder.KinectId} (Master) の記録の時刻に {masterStreamStartOffsetSec:F3} 秒足して保存します。");
+            }
         }
 
         if (isMaster)
