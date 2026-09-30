@@ -83,6 +83,10 @@ public static class HomeExperimentPaths
     public static string GetGazeHeatMapPath(string experimentName, string subjectName, string sourceName) =>
         Path.Combine(GetAnalysisDirectory(experimentName, subjectName), $"heatmap_{sourceName}.json");
 
+    // シーン4で同じ人の人物IDをまとめたグループ(人物IDは骨格データごとに違うので、骨格データごとに持つ)
+    public static string GetPersonGroupsPath(string experimentName, string subjectName, string personIdSource) =>
+        Path.Combine(GetAnalysisDirectory(experimentName, subjectName), $"person_groups_{personIdSource}.json");
+
     public static string GetGazeScorePath(string experimentName, string subjectName, string sourceName) =>
         Path.Combine(GetAnalysisDirectory(experimentName, subjectName), $"score_{sourceName}.json");
 

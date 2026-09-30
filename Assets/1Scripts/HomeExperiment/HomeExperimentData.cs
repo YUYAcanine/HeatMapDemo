@@ -239,6 +239,10 @@ public class HomeGazeParameters
     public float coneDistance;
     public bool useCenterWeightedHeat;
     public float heatPerHit;
+
+    // ヒートマップ・スコアに数えた時間範囲(秒, 骨格データの時刻)
+    public float heatRangeStartSec;
+    public float heatRangeEndSec;
 }
 
 // heatmap_<骨格>.json … 部屋メッシュの頂点ごとのヒート
@@ -270,6 +274,54 @@ public class HomeGazeHeatMapMesh
     public float[] heat;
     // 人物ごとのヒート
     public List<HomeGazePersonHeat> persons = new List<HomeGazePersonHeat>();
+    // 人物のグループ(シーン4でまとめた人物ID)ごとのヒート
+    public List<HomeGazeGroupHeat> groups = new List<HomeGazeGroupHeat>();
+}
+
+[Serializable]
+public class HomeGazeGroupHeat
+{
+    public string name;
+    public List<int> personIds = new List<int>();
+    public float maxHeat;
+    public float totalHeat;
+    // メッシュの頂点と同じ並び
+    public float[] heat;
+}
+
+// Analysis/person_groups_<人物IDの元の骨格>.json … シーン4で同じ人の人物IDをまとめたグループ
+[Serializable]
+public class HomePersonGroupList
+{
+    // 人物IDの元になった骨格データ(filtered_HeadJoints / filtered_Image / KinectA など)
+    public string skeletonSource;
+    public List<HomePersonGroup> groups = new List<HomePersonGroup>();
+}
+
+[Serializable]
+public class HomePersonGroup
+{
+    public string name;
+    public List<int> personIds = new List<int>();
+}
+
+// 人物(グループにまとめたものは1人)ごとのスコア
+[Serializable]
+public class HomeGazePersonScore
+{
+    // グループ名、またはグループに入っていない人物は person_<ID>
+    public string name;
+    public bool isGroup;
+    public List<int> personIds = new List<int>();
+
+    public int frameCount;
+    public int gazeFrames;
+    public int noTargetFrames;
+    public int noDataFrames;
+    public float gazeSeconds;
+    public float noTargetSeconds;
+
+    public List<HomeGazeTargetScore> targets = new List<HomeGazeTargetScore>();
 }
 
 [Serializable]
@@ -308,6 +360,8 @@ public class HomeGazeScoreList
     public float noTargetSeconds;
 
     public List<HomeGazeTargetScore> targets = new List<HomeGazeTargetScore>();
+    // 人物(グループにまとめたものは1人)ごとの集計
+    public List<HomeGazePersonScore> people = new List<HomeGazePersonScore>();
     public List<HomeGazeFrameRecord> frames = new List<HomeGazeFrameRecord>();
 }
 
@@ -331,6 +385,8 @@ public class HomeGazeFrameRecord
     // このフレームが代表する時間(次の時刻までの間隔)
     public float durationSec;
     public int personId;
+    // personId が入っているグループ(シーン4でまとめたもの)。グループに入っていなければ空
+    public string groupName;
 
     // 対象名 / noHitLabel / noDataLabel のいずれか
     public string gazeTarget;

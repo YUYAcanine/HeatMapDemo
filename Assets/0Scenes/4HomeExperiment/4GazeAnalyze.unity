@@ -134,8 +134,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b8ee9896908741af8ed4d5529e424cb9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: test1
-  skeletonSource: 2
+  subjectName: 0929hanekun
+  skeletonSource: 0
   filteredMode: 1
   kinectId: A
   imageDirection: 0
@@ -171,8 +171,13 @@ MonoBehaviour:
   showGaze: 1
   gazeLineLength: 1.5
   gazeLineWidth: 0.015
+  skeletonPersonId: -1
   playbackSpeed: 1
   playStopKey: 32
+  showTimeline: 1
+  heatRangeStart: 0
+  heatRangeEnd: -1
+  heatFollowsPlayhead: 1
   outputLabel: 
   saveOnFinish: 1
   playButton: {fileID: 605979555}

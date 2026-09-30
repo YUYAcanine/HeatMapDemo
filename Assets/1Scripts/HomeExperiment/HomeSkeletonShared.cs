@@ -245,6 +245,31 @@ public class HomeSkeletonBodyVisual
             headDirection = CreateLine(root, "HeadDirection", 2, style.headDirectionWidth, Color.Lerp(color, Color.white, 0.5f));
     }
 
+    // 骨格の色を変える(人物をグループにまとめたときに色をそろえる)
+    public void SetColor(Color color)
+    {
+        foreach (GameObject joint in joints.Values)
+        {
+            Renderer renderer = joint.GetComponentInChildren<Renderer>();
+
+            if (renderer != null)
+                renderer.material.color = color;
+        }
+
+        foreach (LineRenderer line in lines)
+        {
+            line.startColor = color;
+            line.endColor = color;
+        }
+
+        if (headDirection != null)
+        {
+            Color headColor = Color.Lerp(color, Color.white, 0.5f);
+            headDirection.startColor = headColor;
+            headDirection.endColor = headColor;
+        }
+    }
+
     public void Apply(List<HomeSkeletonJoint> bodyJoints)
     {
         foreach (GameObject joint in joints.Values)

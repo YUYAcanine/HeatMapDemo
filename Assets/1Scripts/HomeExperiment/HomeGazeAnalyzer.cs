@@ -20,9 +20,16 @@ using UnityEngine.UI;
 // それ以外に数えたいものは名前で指定する(シーンに置いたオブジェクトも指定できる)。
 //
 // 操作:
-//   Play(Space) … 記録と同じ速さで再生しながらヒートを溜める(最後まで再生すると保存)
-//   Analyze All … 再生せずに全フレームを一括で解析して保存
-//   Save        … その時点の結果を保存
+//   Play / Stop(Space) … 今の再生位置から再生 / 一時停止(最後まで再生すると保存)
+//   再生バー(画面下)    … ドラッグでその時刻の骨格を表示する
+//   Heat from / to      … ヒートマップ・スコアに数える時間範囲。Follow playhead がオンなら範囲の始まりから再生位置まで、
+//                         オフなら再生位置に関係なく範囲全体を数える(Full で全体に戻す)
+//   Analyze All         … 再生せずにヒートの時間範囲全体を一括で解析して保存
+//   Save                … その時点の結果を保存(数えた時間範囲は parameters の heatRangeStartSec / EndSec)
+//   Normalize           … 停止中に押すと、その時点で表示中のヒート(選んだ人物・時間範囲)を面積で重み付けした合計で割って正規化し、
+//                         最も見られた場所を最大の色にして表示する。部屋オブジェクト・対象物体ごとの割合も出す。
+//                         押した時点で一度だけ計算する。もう一度押す・再生する・人物や時間範囲を変えると元の表示
+//                         (maxHeatDisplay 基準)に戻るので、正規化し直すときはもう一度押す
 [RequireComponent(typeof(HomeEnvLoader))]
 public class HomeGazeAnalyzer : MonoBehaviour
 {
@@ -136,10 +143,24 @@ public class HomeGazeAnalyzer : MonoBehaviour
     [SerializeField] private bool showGaze = true;
     [SerializeField] private float gazeLineLength = 1.5f;
     [SerializeField] private float gazeLineWidth = 0.015f;
+    [Tooltip("骨格と視線の線を表示する人物ID(1人だけ)。-1 なら全員。画面右上の「Skeleton」の一覧でも選べ、選ぶとその人が最初に出てくる時刻へ移動する。\n" +
+             "ヒートマップの人物の選択(Heat Map)とは別。")]
+    [SerializeField] private int skeletonPersonId = -1;
 
     [Header("Playback")]
     [SerializeField] private float playbackSpeed = 1f;
     [SerializeField] private KeyCode playStopKey = KeyCode.Space;
+
+    [Header("Timeline")]
+    [Tooltip("画面下に再生バー(ドラッグで再生位置を動かす)とヒートマップの時間範囲のスライダーを出す")]
+    [SerializeField] private bool showTimeline = true;
+    [Tooltip("ヒートマップ・スコアに数える時間範囲の始まり(秒)")]
+    [SerializeField] private float heatRangeStart = 0f;
+    [Tooltip("ヒートマップ・スコアに数える時間範囲の終わり(秒)。負の値ならデータの最後まで")]
+    [SerializeField] private float heatRangeEnd = -1f;
+    [Tooltip("オン: 範囲の始まりから再生位置までを数える(再生するとヒートが溜まっていく)\n" +
+             "オフ: 再生位置に関係なく、範囲全体を数える")]
+    [SerializeField] private bool heatFollowsPlayhead = true;
 
     [Header("Output")]
     [Tooltip("出力ファイル名の末尾に付ける文字(パラメータ違いで保存し分けるとき)。例: heatmap_filtered_HeadJoints_<label>.json")]
@@ -163,10 +184,34 @@ public class HomeGazeAnalyzer : MonoBehaviour
     private HeatMapDisplay appliedDisplay;
     // 骨格データに出てくる人物IDとそのフレーム数(画面右上の一覧の選択肢)
     private readonly SortedDictionary<int, int> personFrameCounts = new SortedDictionary<int, int>();
+    // 人物IDが最初に出てくる時刻(秒)
+    private readonly Dictionary<int, float> personFirstTimes = new Dictionary<int, float>();
+    // 同じ人の人物IDをまとめたグループ(Analysis/person_groups_<骨格>.json に保存する)
+    private readonly List<HomePersonGroup> personGroups = new List<HomePersonGroup>();
+    // ヒートマップの人物の一覧
+    private RectTransform heatListRect;
+    private RectTransform heatListContent;
+    private Toggle heatAllToggle;
+    private readonly List<KeyValuePair<DisplayUnit, Toggle>> heatUnitToggles = new List<KeyValuePair<DisplayUnit, Toggle>>();
+    // 骨格を表示する人物の一覧(1人・1グループだけ選ぶ)
+    private RectTransform skeletonListRect;
+    private RectTransform skeletonListContent;
+    private Toggle skeletonAllToggle;
+    private readonly List<KeyValuePair<DisplayUnit, Toggle>> skeletonUnitToggles = new List<KeyValuePair<DisplayUnit, Toggle>>();
+    private TMP_Text skeletonHeaderText;
+    // 骨格を表示する人物ID(null なら全員)と、その表示名
+    private HashSet<int> skeletonIds;
+    private string skeletonLabel = "All";
+    private int appliedSkeletonPersonId = -1;
+    // グループを作る一覧
+    private RectTransform groupListRect;
+    private RectTransform groupListContent;
+    private TMP_Text groupHeaderText;
+    private TMP_InputField groupNameInput;
+    private readonly HashSet<int> groupCandidateIds = new HashSet<int>();
     // ヒートマップに表示する人物(空なら全員)
     private readonly SortedSet<int> selectedPersonIds = new SortedSet<int>();
     private int[] appliedPersonIds = new int[0];
-    private readonly Dictionary<int, Toggle> personToggles = new Dictionary<int, Toggle>();
     private TMP_Text personHeaderText;
     private Sprite uiSprite;
     private Sprite checkmarkSprite;
@@ -180,9 +225,46 @@ public class HomeGazeAnalyzer : MonoBehaviour
     private float duration;
     private float playbackTime;
     private bool isPlaying;
+    // 今のヒート・スコアに数えているフレーム: samples[analyzedStart] 〜 samples[nextSample - 1]
+    private int analyzedStart;
     private int nextSample;
     private int shownSample = -1;
     private float colorTimer;
+    private bool colorsDirty;
+
+    // 全フレームの視線コーンの結果(別スレッドで最初に一度だけ作る。コーンの設定を変えたら作り直す)
+    private HeatCache cache;
+    private volatile HeatCache builtCache;
+    private volatile float buildProgress;
+    private volatile int buildGeneration;
+    private ConeParams activeParams;
+    // 表示中のヒートを作り直す必要がある(キャッシュができた・人物の選択を変えた など)
+    private bool displayDirty = true;
+    // キャッシュができたら行う
+    private bool pendingAnalyzeAll;
+    private bool pendingSave;
+
+    // 再生バー(画面下)
+    private Slider timelineSlider;
+    private Slider rangeStartSlider;
+    private Slider rangeEndSlider;
+    private Toggle followToggle;
+    private TMP_Text playPauseText;
+    private TMP_Text timeText;
+    private TMP_Text rangeStartText;
+    private TMP_Text rangeEndText;
+    private RectTransform rangeHighlight;
+    private RectTransform analyzedHighlight;
+    // スライダーをドラッグしている間はヒートを計算せず、離したときに反映する
+    private bool isScrubbing;
+    // 正規化表示(停止中に Normalize を押したとき)。押した時点のヒートで一度だけ計算し、ヒートが変わったら元の表示に戻す
+    private bool normalizeHeat;
+    private Image normalizeButtonImage;
+    // 面積で重み付けしたヒートの合計 Σ heat × 面積 と、色が最大になるヒート
+    private float normalizedTotalHeat;
+    private float normalizedMaxHeat;
+    // 正規化表示のときの、部屋オブジェクト/対象物体ごとのヒートの割合(大きい順)
+    private readonly List<KeyValuePair<string, float>> normalizedMeshShares = new List<KeyValuePair<string, float>>();
 
     private int gazeFrames;
     private int noTargetFrames;
@@ -217,11 +299,16 @@ public class HomeGazeAnalyzer : MonoBehaviour
         };
 
         LoadSamples();
+        LoadPersonGroups();
         SetupHeatMeshes();
         SetupScoreTargets();
         ApplyDisplayMode();
         SetupPersonSelector();
-        ResetAnalysis();
+        SetupSkeletonSelector();
+        SetupGroupPanel();
+        StartCacheBuild();
+        SetupTimeline();
+        ShowSample(FindSampleIndex(playbackTime));
 
         if (playButton != null)
             playButton.onClick.AddListener(Play);
@@ -247,7 +334,10 @@ public class HomeGazeAnalyzer : MonoBehaviour
         if (DisplayPersonsChanged())
             SetDisplayPersons(displayPersonIds);
 
-        if (Input.GetKeyDown(playStopKey))
+        if (skeletonPersonId != appliedSkeletonPersonId)
+            SetSkeletonPerson(skeletonPersonId);
+
+        if (Input.GetKeyDown(playStopKey) && !IsTypingText())
         {
             if (isPlaying)
                 Stop();
@@ -255,44 +345,57 @@ public class HomeGazeAnalyzer : MonoBehaviour
                 Play();
         }
 
-        if (!isPlaying)
-            return;
+        bool reachedEnd = false;
 
-        playbackTime += Time.deltaTime * playbackSpeed;
-
-        while (nextSample < samples.Count && samples[nextSample].time <= playbackTime)
+        if (isPlaying)
         {
-            ProcessSample(samples[nextSample]);
-            nextSample++;
+            playbackTime += Time.deltaTime * playbackSpeed;
+
+            if (playbackTime >= duration)
+            {
+                playbackTime = duration;
+                isPlaying = false;
+                reachedEnd = true;
+            }
         }
 
-        ShowSample(nextSample - 1);
+        ShowSample(FindSampleIndex(playbackTime));
+        UpdateCache();
+        UpdateAnalysis(false);
 
+        // 再生中は頂点カラーの更新を間引く(止まっているときはすぐ反映する)
         colorTimer += Time.deltaTime;
 
-        if (colorTimer >= colorUpdateInterval)
+        if (colorsDirty && (!isPlaying || colorTimer >= colorUpdateInterval))
         {
             colorTimer = 0f;
             ApplyColors();
         }
 
-        if (nextSample >= samples.Count)
-        {
-            isPlaying = false;
+        if (reachedEnd)
             Finish();
-        }
 
+        UpdateTimelineUI();
         UpdateText();
     }
 
     private void LateUpdate()
     {
-        HomeExperimentPaths.ClearUISelection();
+        // グループ名を入力中は選択を外さない(外すと入力できない)
+        if (!IsTypingText())
+            HomeExperimentPaths.ClearUISelection();
+    }
+
+    private void OnDestroy()
+    {
+        // 計算中の別スレッドを止める(世代が変わると途中で抜ける)
+        buildGeneration++;
     }
 
     // ------------------------------------------------------------
     // Controls
     // ------------------------------------------------------------
+    // 今の再生位置から再生する(最後まで再生し終わっていたら最初から)
     public void Play()
     {
         if (samples.Count == 0)
@@ -301,19 +404,72 @@ public class HomeGazeAnalyzer : MonoBehaviour
             return;
         }
 
-        ResetAnalysis();
-        playbackTime = 0f;
+        if (playbackTime >= duration - 0.001f)
+            playbackTime = 0f;
+
+        // 正規化は停止中の表示なので、再生したら元の表示に戻す
+        SetNormalizeHeat(false);
         isPlaying = true;
-        Debug.Log("[HomeGazeAnalyzer] Playback started");
     }
 
-    // 再生を止める。溜まったヒートとスコアは次に Play / Analyze All するまで残す。
+    // 一時停止する(再生位置・骨格・ヒートはそのまま)
     public void Stop()
     {
         isPlaying = false;
-        ShowSample(-1);
-        ApplyColors();
         UpdateText();
+    }
+
+    public void TogglePlay()
+    {
+        if (isPlaying)
+            Stop();
+        else
+            Play();
+    }
+
+    // 再生位置を動かす(再生中ならそこから再生を続ける)
+    public void Seek(float time)
+    {
+        playbackTime = Mathf.Clamp(time, 0f, duration);
+        ShowSample(FindSampleIndex(playbackTime));
+    }
+
+    // 停止中なら、今表示しているヒートを正規化して表示する(もう一度押すと元の表示に戻す。再生中はオンにできない)
+    public void ToggleNormalizeHeat()
+    {
+        if (normalizeHeat)
+        {
+            SetNormalizeHeat(false);
+            return;
+        }
+
+        if (isPlaying)
+        {
+            Debug.LogWarning("[HomeGazeAnalyzer] 正規化は停止中にだけできます。");
+            return;
+        }
+
+        ComputeNormalization();
+        SetNormalizeHeat(true);
+    }
+
+    private void SetNormalizeHeat(bool on)
+    {
+        if (normalizeHeat == on)
+            return;
+
+        normalizeHeat = on;
+        colorsDirty = true;
+
+        if (normalizeButtonImage != null)
+            normalizeButtonImage.color = on ? new Color(1f, 0.75f, 0.4f) : Color.white;
+    }
+
+    // ヒートマップ・スコアに数える時間範囲を決める(end が負ならデータの最後まで)
+    public void SetHeatRange(float start, float end)
+    {
+        heatRangeStart = Mathf.Max(0f, start);
+        heatRangeEnd = end;
     }
 
     [ContextMenu("Analyze All")]
@@ -325,20 +481,22 @@ public class HomeGazeAnalyzer : MonoBehaviour
             return;
         }
 
+        // 再生位置を最後にして、ヒートの時間範囲全体を解析する
         isPlaying = false;
-        ResetAnalysis();
-
-        System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-        foreach (Sample sample in samples)
-            ProcessSample(sample);
-
-        nextSample = samples.Count;
         playbackTime = duration;
-        Debug.Log($"[HomeGazeAnalyzer] {samples.Count} samples を {stopwatch.ElapsedMilliseconds} ms で解析しました。");
+        ShowSample(FindSampleIndex(playbackTime));
 
-        ShowSample(-1);
+        if (cache == null)
+        {
+            // 視線コーンの計算(別スレッド)が終わったら続きを行う
+            pendingAnalyzeAll = true;
+            Debug.Log("[HomeGazeAnalyzer] ヒートの準備が終わったら解析して保存します。");
+            return;
+        }
+
+        UpdateAnalysis(true);
         Finish();
+        UpdateTimelineUI();
         UpdateText();
     }
 
@@ -352,8 +510,16 @@ public class HomeGazeAnalyzer : MonoBehaviour
             return;
         }
 
-        if (nextSample < samples.Count)
-            Debug.LogWarning($"[HomeGazeAnalyzer] 解析の途中({nextSample}/{samples.Count})の結果を保存します。");
+        if (cache == null)
+        {
+            pendingSave = true;
+            Debug.Log("[HomeGazeAnalyzer] ヒートの準備が終わったら保存します。");
+            return;
+        }
+
+        UpdateAnalysis(true);
+        GetHeatWindow(out float windowStart, out float windowEnd);
+        Debug.Log($"[HomeGazeAnalyzer] {windowStart:F1}〜{windowEnd:F1} 秒の結果を保存します。");
 
         string heatMapPath = HomeExperimentPaths.GetGazeHeatMapPath(env.ExperimentName, subjectName, OutputName);
         string scorePath = HomeExperimentPaths.GetGazeScorePath(env.ExperimentName, subjectName, OutputName);
@@ -388,6 +554,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
     {
         samples.Clear();
         personFrameCounts.Clear();
+        personFirstTimes.Clear();
 
         if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out string error))
         {
@@ -423,6 +590,9 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
                 personFrameCounts.TryGetValue(person.id, out int count);
                 personFrameCounts[person.id] = count + 1;
+
+                if (!personFirstTimes.ContainsKey(person.id))
+                    personFirstTimes[person.id] = samples[i].time;
             }
         }
 
@@ -935,42 +1105,193 @@ public class HomeGazeAnalyzer : MonoBehaviour
     // ------------------------------------------------------------
     // Analysis
     // ------------------------------------------------------------
-    private void ResetAnalysis()
+    // ヒートマップ・スコアに数える時間範囲(秒)。heatFollowsPlayhead なら終わりは再生位置まで
+    private void GetHeatWindow(out float start, out float end)
     {
-        nextSample = 0;
-        playbackTime = 0f;
-        colorTimer = 0f;
-        records.Clear();
-        gazeFrames = 0;
-        noTargetFrames = 0;
-        noDataFrames = 0;
-        gazeSeconds = 0f;
-        noTargetSeconds = 0f;
-
-        foreach (HeatMesh heatMesh in heatMeshes)
-        {
-            System.Array.Clear(heatMesh.heat, 0, heatMesh.heat.Length);
-            heatMesh.personHeat.Clear();
-        }
-
-        foreach (ScoreTarget target in targets)
-        {
-            target.totalHeat = 0f;
-            target.hitFrames = 0;
-            target.hitSeconds = 0f;
-            target.gazeFrames = 0;
-            target.gazeSeconds = 0f;
-        }
-
-        ApplyColors();
+        float rangeEnd = heatRangeEnd < 0f ? duration : Mathf.Min(heatRangeEnd, duration);
+        start = Mathf.Clamp(heatRangeStart, 0f, rangeEnd);
+        end = heatFollowsPlayhead ? Mathf.Clamp(playbackTime, start, rangeEnd) : rangeEnd;
     }
 
-    private void ProcessSample(Sample sample)
+    // time 以下で最も新しいフレームの番号(無ければ -1)
+    private int FindSampleIndex(float time)
     {
-        Cone cone = new Cone(coneAngle, coneDistance);
+        int low = 0;
+        int high = samples.Count - 1;
+        int result = -1;
 
-        foreach (Person person in sample.persons)
+        while (low <= high)
         {
+            int mid = (low + high) / 2;
+
+            if (samples[mid].time <= time)
+            {
+                result = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return result;
+    }
+
+    // ------------------------------------------------------------
+    // 視線コーンのキャッシュ(別スレッドで全フレームを一度だけ計算する)
+    // ------------------------------------------------------------
+    // 小計を作るフレーム数(30 = 約1秒)。時間範囲のヒートは、範囲に丸ごと入る小計を足し、端のフレームだけコーンを計算する
+    private const int CacheChunkSize = 30;
+    // 範囲の変化がこのフレーム数以下なら、出入りしたフレームだけを足し引きする(それより多いと小計から作り直す)
+    private const int DifferentialLimit = CacheChunkSize * 3;
+    // 正規化表示のとき、画面に割合を出す部屋オブジェクト/対象物体の数(割合の大きい順)
+    private const int NormalizedShareLines = 8;
+
+    private ConeParams CurrentConeParams()
+    {
+        return new ConeParams(coneAngle, coneDistance, useCenterWeightedHeat, heatPerHit);
+    }
+
+    private void StartCacheBuild()
+    {
+        activeParams = CurrentConeParams();
+        int generation = ++buildGeneration;
+        cache = null;
+        builtCache = null;
+        buildProgress = 0f;
+        displayDirty = true;
+        ClearDisplayedAnalysis();
+
+        // 別スレッドからは読むだけ(読み込み後に変わらないもの)
+        List<Sample> sampleList = samples;
+        ConeParams parameters = activeParams;
+        VertexCloud[] heatClouds = new VertexCloud[heatMeshes.Count];
+
+        for (int m = 0; m < heatMeshes.Count; m++)
+            heatClouds[m] = heatMeshes[m].cloud;
+
+        List<VertexCloud>[] targetClouds = new List<VertexCloud>[targets.Count];
+        string[] targetNames = new string[targets.Count];
+
+        for (int t = 0; t < targets.Count; t++)
+        {
+            targetClouds[t] = targets[t].clouds;
+            targetNames[t] = targets[t].name;
+        }
+
+        System.Threading.Thread thread = new System.Threading.Thread(
+            () => BuildCache(generation, parameters, sampleList, heatClouds, targetClouds, targetNames))
+        {
+            IsBackground = true,
+            Name = "HomeGazeAnalyzer_HeatCache",
+            Priority = System.Threading.ThreadPriority.BelowNormal
+        };
+        thread.Start();
+    }
+
+    // 毎フレーム呼ぶ。コーンの設定が変わったら作り直し、キャッシュができたら表示に使う
+    private void UpdateCache()
+    {
+        if (!CurrentConeParams().Equals(activeParams))
+        {
+            Debug.Log("[HomeGazeAnalyzer] コーンの設定が変わったので、ヒートを計算し直します。");
+            StartCacheBuild();
+            return;
+        }
+
+        HeatCache built = builtCache;
+
+        if (built == null || built.generation != buildGeneration)
+            return;
+
+        cache = built;
+        builtCache = null;
+        displayDirty = true;
+        Debug.Log($"[HomeGazeAnalyzer] ヒートの準備ができました ({samples.Count} samples, {built.buildMilliseconds} ms)。");
+
+        UpdateAnalysis(true);
+
+        if (pendingAnalyzeAll)
+        {
+            pendingAnalyzeAll = false;
+            pendingSave = false;
+            AnalyzeAll();
+        }
+        else if (pendingSave)
+        {
+            pendingSave = false;
+            Save();
+        }
+    }
+
+    // 別スレッド。全フレームの注視記録と、CacheChunkSize フレームごとの人物別ヒートの小計(当たった頂点だけ)を作る
+    private void BuildCache(int generation, ConeParams parameters, List<Sample> sampleList, VertexCloud[] heatClouds,
+                            List<VertexCloud>[] targetClouds, string[] targetNames)
+    {
+        try
+        {
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            int count = sampleList.Count;
+            int chunkCount = (count + CacheChunkSize - 1) / CacheChunkSize;
+
+            HeatCache result = new HeatCache
+            {
+                generation = generation,
+                parameters = parameters,
+                chunks = new HeatChunk[chunkCount],
+                records = new HomeGazeFrameRecord[count][],
+                bestTargets = new int[count][]
+            };
+
+            Dictionary<int, ScratchHeat> scratch = new Dictionary<int, ScratchHeat>();
+            Cone cone = new Cone(parameters.angleDeg, parameters.distance);
+
+            for (int c = 0; c < chunkCount; c++)
+            {
+                if (generation != buildGeneration)
+                    return; // 設定が変わって作り直しになった
+
+                int start = c * CacheChunkSize;
+                int end = Mathf.Min(start + CacheChunkSize, count);
+
+                for (int i = start; i < end; i++)
+                    ComputeSample(i, sampleList[i], ref cone, parameters, heatClouds, targetClouds, targetNames, scratch, result);
+
+                HeatChunk chunk = new HeatChunk();
+
+                foreach (KeyValuePair<int, ScratchHeat> pair in scratch)
+                {
+                    if (pair.Value.HasData)
+                        chunk.persons[pair.Key] = pair.Value.Flush();
+                }
+
+                result.chunks[c] = chunk;
+                buildProgress = (float)end / Mathf.Max(count, 1);
+            }
+
+            result.buildMilliseconds = stopwatch.ElapsedMilliseconds;
+
+            if (generation == buildGeneration)
+                builtCache = result;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[HomeGazeAnalyzer] ヒートの計算に失敗しました。\n{e}");
+        }
+    }
+
+    // 1フレーム分の注視記録を作り、人物ごとのヒートを scratch に足す(別スレッドから呼ぶ)
+    private static void ComputeSample(int index, Sample sample, ref Cone cone, ConeParams parameters, VertexCloud[] heatClouds,
+                                      List<VertexCloud>[] targetClouds, string[] targetNames,
+                                      Dictionary<int, ScratchHeat> scratch, HeatCache result)
+    {
+        HomeGazeFrameRecord[] frameRecords = new HomeGazeFrameRecord[sample.persons.Count];
+        int[] best = new int[sample.persons.Count];
+
+        for (int p = 0; p < sample.persons.Count; p++)
+        {
+            Person person = sample.persons[p];
             HomeGazeFrameRecord record = new HomeGazeFrameRecord
             {
                 timeSec = sample.time,
@@ -980,37 +1301,40 @@ public class HomeGazeAnalyzer : MonoBehaviour
                 gazeAngle = -1f
             };
 
-            for (int t = 0; t < targets.Count; t++)
+            for (int t = 0; t < targetClouds.Length; t++)
             {
                 record.heats.Add(0f);
                 record.angles.Add(-1f);
             }
 
-            records.Add(record);
+            frameRecords[p] = record;
+            best[p] = -1;
 
             if (!person.hasGaze)
-            {
-                noDataFrames++;
                 continue;
-            }
 
             cone.Set(person.origin, person.direction);
 
-            foreach (HeatMesh heatMesh in heatMeshes)
-                AccumulateCone(heatMesh.cloud, cone, heatMesh.heat, heatMesh.GetPersonHeat(person.id), out _, out _);
+            if (!scratch.TryGetValue(person.id, out ScratchHeat personScratch))
+            {
+                personScratch = new ScratchHeat(heatClouds);
+                scratch[person.id] = personScratch;
+            }
+
+            for (int m = 0; m < heatClouds.Length; m++)
+                AccumulateCone(heatClouds[m], cone, parameters, personScratch.values[m], 1f, personScratch.touched[m], false, out _, out _);
 
             float bestAngle = float.MaxValue;
             int bestIndex = -1;
 
-            for (int t = 0; t < targets.Count; t++)
+            for (int t = 0; t < targetClouds.Length; t++)
             {
-                ScoreTarget target = targets[t];
                 float heat = 0f;
                 float minAngle = float.MaxValue;
 
-                foreach (VertexCloud cloud in target.clouds)
+                foreach (VertexCloud cloud in targetClouds[t])
                 {
-                    if (AccumulateCone(cloud, cone, null, null, out float cloudHeat, out float cloudAngle))
+                    if (AccumulateCone(cloud, cone, parameters, null, 1f, null, true, out float cloudHeat, out float cloudAngle))
                     {
                         heat += cloudHeat;
                         minAngle = Mathf.Min(minAngle, cloudAngle);
@@ -1023,11 +1347,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
                 float minAngleDeg = minAngle * Mathf.Rad2Deg;
                 record.heats[t] = heat;
                 record.angles[t] = minAngleDeg;
-                record.hitTargets.Add(target.name);
-
-                target.totalHeat += heat;
-                target.hitFrames++;
-                target.hitSeconds += sample.duration;
+                record.hitTargets.Add(targetNames[t]);
 
                 if (minAngleDeg < bestAngle)
                 {
@@ -1036,28 +1356,234 @@ public class HomeGazeAnalyzer : MonoBehaviour
                 }
             }
 
-            gazeFrames++;
-            gazeSeconds += sample.duration;
-
             if (bestIndex >= 0)
             {
-                record.gazeTarget = targets[bestIndex].name;
+                record.gazeTarget = targetNames[bestIndex];
                 record.gazeAngle = bestAngle;
-                targets[bestIndex].gazeFrames++;
-                targets[bestIndex].gazeSeconds += sample.duration;
             }
             else
             {
                 record.gazeTarget = NoHitLabel;
-                noTargetFrames++;
-                noTargetSeconds += sample.duration;
+            }
+
+            best[p] = bestIndex;
+        }
+
+        result.records[index] = frameRecords;
+        result.bestTargets[index] = best;
+    }
+
+    // ------------------------------------------------------------
+    // 表示中のヒート・スコア(ヒートの時間範囲に合わせる)
+    // ------------------------------------------------------------
+    private void ClearDisplayedAnalysis()
+    {
+        analyzedStart = 0;
+        nextSample = 0;
+
+        foreach (HeatMesh heatMesh in heatMeshes)
+            System.Array.Clear(heatMesh.heat, 0, heatMesh.heat.Length);
+
+        RecomputeScores();
+        colorsDirty = true;
+        SetNormalizeHeat(false);
+    }
+
+    // 表示中のヒートとスコアを、ヒートの時間範囲に合わせる。
+    //   ・範囲が少し動いただけ(再生で進んだ など)… 出入りしたフレームだけ足し引きする
+    //   ・大きく動いた・人物の選択を変えた … 小計から作り直す
+    //   ・スライダーをドラッグしている間 … 何もしない(離したときに force で呼ぶ)
+    private void UpdateAnalysis(bool force)
+    {
+        if (cache == null)
+            return;
+
+        if (isScrubbing && !force)
+            return;
+
+        GetHeatWindow(out float windowStart, out float windowEnd);
+
+        int start = FindSampleIndex(windowStart - 0.0001f) + 1; // windowStart 以上の最初のフレーム
+        int end = Mathf.Max(start, FindSampleIndex(windowEnd) + 1);  // windowEnd 以下の最後のフレームの次
+
+        if (!displayDirty && start == analyzedStart && end == nextSample)
+            return;
+
+        bool overlap = start < nextSample && analyzedStart < end;
+        int change = Mathf.Abs(start - analyzedStart) + Mathf.Abs(end - nextSample);
+        float[][] display = GetDisplayArrays();
+        ICollection<int> persons = GetDisplayPersonFilter();
+
+        if (displayDirty || !overlap || change > DifferentialLimit)
+        {
+            foreach (float[] heat in display)
+                System.Array.Clear(heat, 0, heat.Length);
+
+            AddWindowHeat(start, end, display, persons);
+        }
+        else
+        {
+            if (start > analyzedStart)
+                AddSamplesHeat(analyzedStart, start, -1f, display, persons);
+            else if (start < analyzedStart)
+                AddSamplesHeat(start, analyzedStart, 1f, display, persons);
+
+            if (end > nextSample)
+                AddSamplesHeat(nextSample, end, 1f, display, persons);
+            else if (end < nextSample)
+                AddSamplesHeat(end, nextSample, -1f, display, persons);
+        }
+
+        analyzedStart = start;
+        nextSample = end;
+        displayDirty = false;
+        RecomputeScores();
+        colorsDirty = true;
+        // 正規化は押した時点のヒートで計算しているので、ヒートが変わったら元の表示に戻す
+        SetNormalizeHeat(false);
+    }
+
+    private float[][] GetDisplayArrays()
+    {
+        float[][] arrays = new float[heatMeshes.Count][];
+
+        for (int m = 0; m < heatMeshes.Count; m++)
+            arrays[m] = heatMeshes[m].heat;
+
+        return arrays;
+    }
+
+    // 表示する人物(null なら全員)
+    private ICollection<int> GetDisplayPersonFilter()
+    {
+        return selectedPersonIds.Count == 0 ? null : selectedPersonIds;
+    }
+
+    // samples[start] 〜 samples[end - 1] のヒートを arrays に足す。範囲に丸ごと入る小計はそのまま足し、端のフレームだけコーンを計算する
+    private void AddWindowHeat(int start, int end, float[][] arrays, ICollection<int> persons)
+    {
+        int firstChunk = (start + CacheChunkSize - 1) / CacheChunkSize;
+        int lastChunk = end / CacheChunkSize; // [firstChunk, lastChunk) が範囲に丸ごと入る
+
+        if (firstChunk >= lastChunk)
+        {
+            AddSamplesHeat(start, end, 1f, arrays, persons);
+            return;
+        }
+
+        AddSamplesHeat(start, firstChunk * CacheChunkSize, 1f, arrays, persons);
+
+        for (int c = firstChunk; c < lastChunk; c++)
+        {
+            foreach (KeyValuePair<int, SparseHeat[]> pair in cache.chunks[c].persons)
+            {
+                if (persons != null && !persons.Contains(pair.Key))
+                    continue;
+
+                for (int m = 0; m < arrays.Length; m++)
+                {
+                    SparseHeat sparse = pair.Value[m];
+                    float[] heat = arrays[m];
+
+                    for (int k = 0; k < sparse.indices.Length; k++)
+                        heat[sparse.indices[k]] += sparse.values[k];
+                }
+            }
+        }
+
+        AddSamplesHeat(lastChunk * CacheChunkSize, end, 1f, arrays, persons);
+    }
+
+    // samples[start] 〜 samples[end - 1] の視線コーンを計算して、ヒートに sign 倍して足す(-1 で引く)
+    private void AddSamplesHeat(int start, int end, float sign, float[][] arrays, ICollection<int> persons)
+    {
+        Cone cone = new Cone(cache.parameters.angleDeg, cache.parameters.distance);
+
+        for (int i = start; i < end; i++)
+        {
+            foreach (Person person in samples[i].persons)
+            {
+                if (!person.hasGaze || (persons != null && !persons.Contains(person.id)))
+                    continue;
+
+                cone.Set(person.origin, person.direction);
+
+                for (int m = 0; m < arrays.Length; m++)
+                    AccumulateCone(heatMeshes[m].cloud, cone, cache.parameters, arrays[m], sign, null, false, out _, out _);
             }
         }
     }
 
-    // ScoreHeat.AddConeScores / ConeHeatMapShow.AddConeHeat と同じ判定。
-    // heat / personHeat が null でなければ頂点ごとのヒートを足す(全員の合計と人物ごと)。コーンに入った頂点があれば true。
-    private bool AccumulateCone(VertexCloud cloud, Cone cone, float[] heat, float[] personHeat, out float totalHeat, out float minAngleRad)
+    // 今の時間範囲の注視記録からスコアを数え直す(キャッシュの記録を足すだけなので軽い)
+    private void RecomputeScores()
+    {
+        records.Clear();
+        gazeFrames = 0;
+        noTargetFrames = 0;
+        noDataFrames = 0;
+        gazeSeconds = 0f;
+        noTargetSeconds = 0f;
+
+        foreach (ScoreTarget target in targets)
+        {
+            target.totalHeat = 0f;
+            target.hitFrames = 0;
+            target.hitSeconds = 0f;
+            target.gazeFrames = 0;
+            target.gazeSeconds = 0f;
+        }
+
+        if (cache == null)
+            return;
+
+        for (int i = analyzedStart; i < nextSample; i++)
+        {
+            HomeGazeFrameRecord[] frameRecords = cache.records[i];
+            int[] best = cache.bestTargets[i];
+
+            for (int p = 0; p < frameRecords.Length; p++)
+            {
+                HomeGazeFrameRecord record = frameRecords[p];
+                records.Add(record);
+
+                if (record.gazeTarget == NoDataLabel)
+                {
+                    noDataFrames++;
+                    continue;
+                }
+
+                gazeFrames++;
+                gazeSeconds += record.durationSec;
+
+                for (int t = 0; t < targets.Count && t < record.angles.Count; t++)
+                {
+                    if (record.angles[t] < 0f)
+                        continue;
+
+                    targets[t].totalHeat += record.heats[t];
+                    targets[t].hitFrames++;
+                    targets[t].hitSeconds += record.durationSec;
+                }
+
+                if (best[p] >= 0 && best[p] < targets.Count)
+                {
+                    targets[best[p]].gazeFrames++;
+                    targets[best[p]].gazeSeconds += record.durationSec;
+                }
+                else
+                {
+                    noTargetFrames++;
+                    noTargetSeconds += record.durationSec;
+                }
+            }
+        }
+    }
+
+    // ScoreHeat.AddConeScores / ConeHeatMapShow.AddConeHeat と同じ判定(別スレッドからも呼ぶので、インスタンスのフィールドは使わない)。
+    // heat が null でなければ頂点ごとのヒートを scale 倍して足す(touched があれば、0 から増えた頂点の番号を入れる)。
+    // needAngle のときだけコーン軸との最小角度を求める。コーンに入った頂点があれば true。
+    private static bool AccumulateCone(VertexCloud cloud, Cone cone, ConeParams parameters, float[] heat, float scale,
+                                       List<int> touched, bool needAngle, out float totalHeat, out float minAngleRad)
     {
         totalHeat = 0f;
         minAngleRad = float.MaxValue;
@@ -1066,6 +1592,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
             return false;
 
         bool hit = false;
+        float bestDot = -1f;
         Vector3[] positions = cloud.positions;
 
         foreach (VertexCloud.Cell cell in cloud.cells)
@@ -1086,64 +1613,51 @@ public class HomeGazeAnalyzer : MonoBehaviour
                 if (dot < cone.cosAngle)
                     continue;
 
-                float angle = Mathf.Acos(Mathf.Clamp(dot, -1f, 1f));
                 float weight = 1f;
 
-                if (useCenterWeightedHeat)
+                // 角度(Acos)は中心ほど重くするときだけ頂点ごとに求める
+                if (parameters.centerWeighted)
                 {
+                    float angle = Mathf.Acos(Mathf.Clamp(dot, -1f, 1f));
                     weight = 1f - angle / cone.angleRad;
                     weight *= weight;
                 }
 
-                float added = heatPerHit * weight;
+                float added = parameters.heatPerHit * weight;
                 totalHeat += added;
 
                 if (heat != null)
-                    heat[i] += added;
+                {
+                    if (touched != null && heat[i] == 0f)
+                        touched.Add(i);
 
-                if (personHeat != null)
-                    personHeat[i] += added;
+                    heat[i] += added * scale;
+                }
 
-                if (angle < minAngleRad)
-                    minAngleRad = angle;
+                if (dot > bestDot)
+                    bestDot = dot;
 
                 hit = true;
             }
         }
 
+        if (hit && needAngle)
+            minAngleRad = Mathf.Acos(Mathf.Clamp(bestDot, -1f, 1f));
+
         return hit;
     }
 
-
     private void ApplyColors()
     {
-        float max = Mathf.Max(maxHeatDisplay, 0.0001f);
-        bool showAll = selectedPersonIds.Count == 0;
+        colorsDirty = false;
+        float max = normalizeHeat ? normalizedMaxHeat : Mathf.Max(maxHeatDisplay, 0.0001f);
 
         foreach (HeatMesh heatMesh in heatMeshes)
         {
-            // 選んだ人物のヒートの合計(まだ視線が無い人物は 0)。誰も選んでいなければ全員の合計
+            // heat は選んだ人物(誰も選んでいなければ全員)の今の時間範囲のヒート
+            // RedOverlay も Palette も α をヒート量として使う(ConeHeatMapShow と同じ色)
             float[] heat = heatMesh.heat;
 
-            if (!showAll)
-            {
-                if (heatMesh.displayHeat == null)
-                    heatMesh.displayHeat = new float[heatMesh.heat.Length];
-
-                heat = heatMesh.displayHeat;
-                System.Array.Clear(heat, 0, heat.Length);
-
-                foreach (int id in selectedPersonIds)
-                {
-                    if (!heatMesh.personHeat.TryGetValue(id, out float[] personHeat))
-                        continue;
-
-                    for (int i = 0; i < heat.Length; i++)
-                        heat[i] += personHeat[i];
-                }
-            }
-
-            // RedOverlay も Palette も α をヒート量として使う(ConeHeatMapShow と同じ色)
             for (int i = 0; i < heatMesh.colors.Length; i++)
                 heatMesh.colors[i] = new Color(1f, 0f, 0f, Mathf.Clamp01(heat[i] / max));
 
@@ -1151,11 +1665,305 @@ public class HomeGazeAnalyzer : MonoBehaviour
         }
     }
 
+    // 正規化: 今表示しているヒートを、面積で重み付けした合計で割る(Normalize を押したときに一度だけ計算する)。
+    //   頂点 i の面積 A_i = その頂点を含む三角形の面積(ワールド座標)の 1/3 の合計
+    //   合計 H = Σ heat_i × A_i                … 部屋全体で見られた量(頂点の細かさに左右されない)
+    //   密度 d_i = heat_i / H                  … 単位面積あたりの見られた割合(全体で積分すると 1)
+    //   部屋オブジェクト/対象物体の割合 = Σ(そのメッシュ) heat_i × A_i / H
+    // 色は d_i / (d の最大) = heat_i / (heat の最大) で、最も見られた場所が最大の色になる
+    private void ComputeNormalization()
+    {
+        double total = 0.0;
+        float maxHeat = 0f;
+        normalizedMeshShares.Clear();
+
+        foreach (HeatMesh heatMesh in heatMeshes)
+        {
+            // 頂点の面積は最初に正規化したときに一度だけ求める
+            if (heatMesh.vertexAreas == null)
+                heatMesh.vertexAreas = ComputeVertexAreas(heatMesh);
+
+            double meshTotal = 0.0;
+            float[] heat = heatMesh.heat;
+
+            for (int i = 0; i < heat.Length; i++)
+            {
+                // 差分で足し引きした誤差で少しだけ負になることがあるので数えない
+                if (heat[i] <= 0f)
+                    continue;
+
+                meshTotal += heat[i] * heatMesh.vertexAreas[i];
+
+                if (heat[i] > maxHeat)
+                    maxHeat = heat[i];
+            }
+
+            total += meshTotal;
+            normalizedMeshShares.Add(new KeyValuePair<string, float>(heatMesh.name, (float)meshTotal));
+        }
+
+        normalizedTotalHeat = (float)total;
+
+        for (int i = 0; i < normalizedMeshShares.Count; i++)
+        {
+            float share = total > 0.0 ? (float)(normalizedMeshShares[i].Value / total) : 0f;
+            normalizedMeshShares[i] = new KeyValuePair<string, float>(normalizedMeshShares[i].Key, share);
+        }
+
+        normalizedMeshShares.Sort((a, b) => b.Value.CompareTo(a.Value));
+
+        // 誰も見ていなければ何も塗らない
+        normalizedMaxHeat = maxHeat > 0f ? maxHeat : float.MaxValue;
+    }
+
+    // 頂点ごとの面積(m²): 頂点を含む三角形の面積(ワールド座標)の 1/3 を足す
+    private static float[] ComputeVertexAreas(HeatMesh heatMesh)
+    {
+        Mesh mesh = heatMesh.mesh;
+        Vector3[] vertices = mesh.vertices;
+        Matrix4x4 toWorld = heatMesh.overlayRenderer.transform.localToWorldMatrix;
+        float[] areas = new float[vertices.Length];
+
+        for (int i = 0; i < vertices.Length; i++)
+            vertices[i] = toWorld.MultiplyPoint3x4(vertices[i]);
+
+        for (int sub = 0; sub < mesh.subMeshCount; sub++)
+        {
+            if (mesh.GetTopology(sub) != MeshTopology.Triangles)
+                continue;
+
+            int[] indices = mesh.GetIndices(sub);
+
+            for (int t = 0; t + 2 < indices.Length; t += 3)
+            {
+                int a = indices[t];
+                int b = indices[t + 1];
+                int c = indices[t + 2];
+                float third = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).magnitude / 6f;
+                areas[a] += third;
+                areas[b] += third;
+                areas[c] += third;
+            }
+        }
+
+        return areas;
+    }
+
     // ------------------------------------------------------------
-    // Person selection
+    // Person groups (同じ人に付いた複数の人物IDをまとめる)
+    // ------------------------------------------------------------
+    // 人物IDの元になった骨格データ(グループのファイル名に使う。Image の向きの違いでは人物IDは変わらない)
+    private string PersonIdSourceName =>
+        skeletonSource == SkeletonSource.Filtered ? $"filtered_{filteredMode}" :
+        skeletonSource == SkeletonSource.Image ? "filtered_Image" :
+        $"Kinect{kinectId.Trim()}";
+
+    // 一覧に出す単位: グループ(複数の人物ID)と、グループに入っていない人物
+    private class DisplayUnit
+    {
+        public string name;
+        public bool isGroup;
+        public int[] ids;
+    }
+
+    private List<DisplayUnit> GetDisplayUnits()
+    {
+        List<DisplayUnit> units = new List<DisplayUnit>();
+        HashSet<int> grouped = new HashSet<int>();
+
+        foreach (HomePersonGroup group in personGroups)
+        {
+            units.Add(new DisplayUnit { name = group.name, isGroup = true, ids = group.personIds.ToArray() });
+            grouped.UnionWith(group.personIds);
+        }
+
+        foreach (int id in personFrameCounts.Keys)
+        {
+            if (!grouped.Contains(id))
+                units.Add(new DisplayUnit { name = $"person_{id}", ids = new[] { id } });
+        }
+
+        return units;
+    }
+
+    private HomePersonGroup FindGroup(int personId)
+    {
+        foreach (HomePersonGroup group in personGroups)
+        {
+            if (group.personIds.Contains(personId))
+                return group;
+        }
+
+        return null;
+    }
+
+    private string GetUnitLabel(DisplayUnit unit, bool withFirstTime)
+    {
+        int frames = 0;
+        float firstTime = float.MaxValue;
+
+        foreach (int id in unit.ids)
+        {
+            if (personFrameCounts.TryGetValue(id, out int count))
+                frames += count;
+
+            if (personFirstTimes.TryGetValue(id, out float time))
+                firstTime = Mathf.Min(firstTime, time);
+        }
+
+        string members = unit.isGroup ? $" [{string.Join(",", unit.ids)}]" : "";
+        string first = firstTime == float.MaxValue ? "-" : $"{firstTime:F1} s -";
+        return withFirstTime ? $"{unit.name}{members} ({first}, {frames} frames)" : $"{unit.name}{members} ({frames} frames)";
+    }
+
+    // 人物の色。グループはメンバーの一番小さいIDの色にそろえる
+    private Color GetPersonColor(int personId)
+    {
+        int key = personId;
+        HomePersonGroup group = FindGroup(personId);
+
+        if (group != null)
+        {
+            foreach (int id in group.personIds)
+                key = Mathf.Min(key, id);
+        }
+
+        return personColors.Length > 0 ? personColors[Mathf.Abs(key) % personColors.Length] : Color.white;
+    }
+
+    private void LoadPersonGroups()
+    {
+        personGroups.Clear();
+
+        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
+            !HomeExperimentPaths.IsValidFolderName(subjectName, out _))
+            return;
+
+        string path = HomeExperimentPaths.GetPersonGroupsPath(env.ExperimentName, subjectName, PersonIdSourceName);
+
+        if (!File.Exists(path))
+            return;
+
+        try
+        {
+            HomePersonGroupList list = JsonUtility.FromJson<HomePersonGroupList>(File.ReadAllText(path));
+
+            if (list != null && list.groups != null)
+            {
+                foreach (HomePersonGroup group in list.groups)
+                {
+                    if (group != null && group.personIds != null && group.personIds.Count > 0)
+                        personGroups.Add(group);
+                }
+            }
+
+            Debug.Log($"[HomeGazeAnalyzer] 人物のグループを {personGroups.Count} 個読み込みました: {path}");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[HomeGazeAnalyzer] 人物のグループを読み込めませんでした: {path}\n{e.Message}");
+        }
+    }
+
+    private void SavePersonGroups()
+    {
+        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
+            !HomeExperimentPaths.IsValidFolderName(subjectName, out _))
+            return;
+
+        string path = HomeExperimentPaths.GetPersonGroupsPath(env.ExperimentName, subjectName, PersonIdSourceName);
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            HomePersonGroupList list = new HomePersonGroupList { skeletonSource = PersonIdSourceName, groups = personGroups };
+            File.WriteAllText(path, JsonUtility.ToJson(list, true));
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[HomeGazeAnalyzer] 人物のグループを保存できませんでした: {path}\n{e}");
+        }
+    }
+
+    // ids を1つのグループにする。ほかのグループに入っていたIDは移す。
+    // 同じ名前のグループがあればそこに足す。name が空なら group_<番号>
+    public void CreatePersonGroup(string name, IEnumerable<int> ids)
+    {
+        List<int> members = new List<int>();
+
+        foreach (int id in ids)
+        {
+            if (id >= 0 && !members.Contains(id))
+                members.Add(id);
+        }
+
+        if (members.Count == 0)
+        {
+            Debug.LogWarning("[HomeGazeAnalyzer] グループにする人物IDを選んでください。");
+            return;
+        }
+
+        foreach (HomePersonGroup group in personGroups)
+            group.personIds.RemoveAll(members.Contains);
+
+        personGroups.RemoveAll(group => group.personIds.Count == 0);
+
+        name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+
+        if (name == null)
+        {
+            int number = personGroups.Count + 1;
+
+            while (personGroups.Exists(group => group.name == $"group_{number}"))
+                number++;
+
+            name = $"group_{number}";
+        }
+
+        HomePersonGroup target = personGroups.Find(group => group.name == name);
+
+        if (target == null)
+        {
+            target = new HomePersonGroup { name = name };
+            personGroups.Add(target);
+        }
+
+        target.personIds.AddRange(members);
+        target.personIds.Sort();
+        OnPersonGroupsChanged();
+    }
+
+    public void RemovePersonGroup(string name)
+    {
+        if (personGroups.RemoveAll(group => group.name == name) > 0)
+            OnPersonGroupsChanged();
+    }
+
+    // グループを変えたら保存し、一覧と骨格の色を作り直す
+    private void OnPersonGroupsChanged()
+    {
+        SavePersonGroups();
+        RebuildHeatRows();
+        RebuildSkeletonRows();
+        RebuildGroupPanel();
+
+        foreach (KeyValuePair<int, PersonVisual> pair in visuals)
+        {
+            Color color = GetPersonColor(pair.Key);
+            pair.Value.body.SetColor(color);
+            pair.Value.headColor = Color.Lerp(color, Color.white, 0.5f);
+        }
+
+        shownSample = -2; // 視線の線の色も描き直す
+        ShowSample(FindSampleIndex(playbackTime));
+        UpdateText();
+    }
+
+    // ------------------------------------------------------------
+    // Person selection (ヒートマップ。複数選べる)
     // ------------------------------------------------------------
     // 表示するヒートマップの人物をまとめて指定する(空なら全員)。
-    // 追跡が途切れて同じ人に別のIDが付いたときは、そのIDをまとめて選ぶと1人分のヒートマップになる。
+    // 画面の一覧でグループを選ぶと、そのグループの人物IDがまとめて選ばれる。
     public void SetDisplayPersons(IEnumerable<int> ids)
     {
         selectedPersonIds.Clear();
@@ -1174,27 +1982,31 @@ public class HomeGazeAnalyzer : MonoBehaviour
         appliedPersonIds = (int[])displayPersonIds.Clone();
 
         RefreshPersonToggles();
+
+        // 表示中のヒートを、選んだ人物の分でキャッシュから作り直す
+        displayDirty = true;
+        UpdateAnalysis(true);
         ApplyColors();
         UpdateText();
     }
 
-    private void OnPersonToggle(int id, bool isOn)
+    private void OnHeatUnitToggle(DisplayUnit unit, bool isOn)
     {
         HashSet<int> ids = new HashSet<int>(selectedPersonIds);
 
-        if (id < 0)
+        if (unit == null)
         {
-            // All を選んだら個別の選択を外す
+            // All を選んだら個別の選択を外す(All を外そうとしたときは何もしない)
             if (isOn)
                 ids.Clear();
         }
         else if (isOn)
         {
-            ids.Add(id);
+            ids.UnionWith(unit.ids);
         }
         else
         {
-            ids.Remove(id);
+            ids.ExceptWith(unit.ids);
         }
 
         SetDisplayPersons(ids);
@@ -1220,34 +2032,59 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     private void RefreshPersonToggles()
     {
-        foreach (KeyValuePair<int, Toggle> pair in personToggles)
-        {
-            bool isOn = pair.Key < 0 ? selectedPersonIds.Count == 0 : selectedPersonIds.Contains(pair.Key);
-            pair.Value.SetIsOnWithoutNotify(isOn);
-        }
+        if (heatAllToggle != null)
+            heatAllToggle.SetIsOnWithoutNotify(selectedPersonIds.Count == 0);
+
+        foreach (KeyValuePair<DisplayUnit, Toggle> pair in heatUnitToggles)
+            pair.Value.SetIsOnWithoutNotify(selectedPersonIds.Count > 0 && ContainsAll(selectedPersonIds, pair.Key.ids));
 
         if (personHeaderText != null)
             personHeaderText.text = $"Heat Map : {GetDisplayPersonsLabel()}";
     }
 
+    private static bool ContainsAll(ICollection<int> set, int[] ids)
+    {
+        foreach (int id in ids)
+        {
+            if (!set.Contains(id))
+                return false;
+        }
+
+        return ids.Length > 0;
+    }
+
+    // 選んでいる人物の表示名(グループを丸ごと選んでいればグループ名)
     private string GetDisplayPersonsLabel()
     {
         if (selectedPersonIds.Count == 0)
             return "All";
 
         List<string> names = new List<string>();
+        HashSet<int> named = new HashSet<int>();
+
+        foreach (DisplayUnit unit in GetDisplayUnits())
+        {
+            if (ContainsAll(selectedPersonIds, unit.ids))
+            {
+                names.Add(unit.name);
+                named.UnionWith(unit.ids);
+            }
+        }
 
         foreach (int id in selectedPersonIds)
-            names.Add($"person_{id}");
+        {
+            if (!named.Contains(id))
+                names.Add($"person_{id}");
+        }
 
         return string.Join(", ", names);
     }
 
-    // 骨格を読み込んだ後に、出てきた人物でチェックボックスの一覧を作る(画面右上)
+    // 骨格を読み込んだ後に、ヒートマップの人物の一覧を作る(画面右上)
     //   [Heat Map : All  v]   … 押すと一覧を開閉する
     //   [x] All (123 frames)
-    //   [ ] person_0 (100 frames)
-    //   [ ] person_3 (23 frames)
+    //   [ ] mother [0,3,7] (100 frames)   … グループ
+    //   [ ] person_5 (23 frames)          … グループに入っていない人物
     private void SetupPersonSelector()
     {
         Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
@@ -1265,75 +2102,671 @@ public class HomeGazeAnalyzer : MonoBehaviour
         checkmarkSprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Checkmark.psd");
 #endif
 
-        const float width = 320f;
-        const float rowHeight = 30f;
-        const int maxVisibleRows = 12;
+        RectTransform root = CreateDropdown(canvas, "PersonSelector", 0, out personHeaderText, out heatListRect, out heatListContent);
+        root.GetComponent<Button>().onClick.AddListener(() => heatListRect.gameObject.SetActive(!heatListRect.gameObject.activeSelf));
+        heatListRect.gameObject.SetActive(false);
 
-        RectTransform root = CreateRect("PersonSelector", canvas.transform);
-        root.anchorMin = root.anchorMax = root.pivot = new Vector2(1f, 1f);
-        root.anchoredPosition = new Vector2(-20f, -20f);
-        root.sizeDelta = new Vector2(width, 40f);
+        RebuildHeatRows();
+        SetDisplayPersons(displayPersonIds);
+    }
 
-        // 見出し(押すと一覧を開閉)
-        Button header = root.gameObject.AddComponent<Button>();
-        header.targetGraphic = AddImage(root.gameObject, uiSprite, Color.white);
-        personHeaderText = CreateText("Label", root, TextAlignmentOptions.MidlineLeft);
-        SetStretch(personHeaderText.rectTransform, new Vector2(10f, 0f), new Vector2(-10f, 0f));
+    private void RebuildHeatRows()
+    {
+        if (heatListContent == null)
+            return;
 
-        // 一覧(人数が多いときはスクロール)
-        List<int> ids = new List<int> { -1 };
-        ids.AddRange(personFrameCounts.Keys);
+        ClearChildren(heatListContent);
+        heatUnitToggles.Clear();
 
-        foreach (int id in displayPersonIds)
+        List<DisplayUnit> units = GetDisplayUnits();
+        int total = 0;
+
+        foreach (int count in personFrameCounts.Values)
+            total += count;
+
+        heatAllToggle = CreateToggleRow(heatListContent, $"All ({total} frames)", 0f, DropdownRowHeight);
+        heatAllToggle.onValueChanged.AddListener(isOn => OnHeatUnitToggle(null, isOn));
+
+        for (int i = 0; i < units.Count; i++)
         {
-            if (id >= 0 && !ids.Contains(id))
-                ids.Add(id);
+            DisplayUnit unit = units[i];
+            Toggle toggle = CreateToggleRow(heatListContent, GetUnitLabel(unit, false), (i + 1) * DropdownRowHeight, DropdownRowHeight);
+            toggle.onValueChanged.AddListener(isOn => OnHeatUnitToggle(unit, isOn));
+            heatUnitToggles.Add(new KeyValuePair<DisplayUnit, Toggle>(unit, toggle));
         }
 
-        RectTransform list = CreateRect("List", root);
+        SetDropdownRows(heatListRect, heatListContent, units.Count + 1);
+        RefreshPersonToggles();
+    }
+
+    // ------------------------------------------------------------
+    // Skeleton selection (1人・1グループだけ)
+    // ------------------------------------------------------------
+    // 骨格と視線の線を表示する人物を1人選ぶ(-1 なら全員)。インスペクターの skeletonPersonId から呼ばれる
+    public void SetSkeletonPerson(int id)
+    {
+        SetSkeletonUnit(id < 0 ? null : new DisplayUnit { name = $"person_{id}", ids = new[] { id } });
+    }
+
+    // 骨格と視線の線を表示する人物(グループなら全員)を選ぶ(null なら全員)。
+    // 選ぶと、その人(グループなら誰か)が最初に出てくる時刻へ移動する
+    private void SetSkeletonUnit(DisplayUnit unit)
+    {
+        skeletonIds = unit == null ? null : new HashSet<int>(unit.ids);
+        skeletonLabel = unit == null ? "All" : unit.name;
+        skeletonPersonId = unit != null && !unit.isGroup && unit.ids.Length == 1 ? unit.ids[0] : -1;
+        appliedSkeletonPersonId = skeletonPersonId;
+
+        if (unit != null)
+        {
+            float firstTime = float.MaxValue;
+
+            foreach (int id in unit.ids)
+            {
+                if (personFirstTimes.TryGetValue(id, out float time))
+                    firstTime = Mathf.Min(firstTime, time);
+            }
+
+            if (firstTime != float.MaxValue)
+                Seek(firstTime);
+        }
+
+        shownSample = -2; // 同じフレームでも描き直す
+        ShowSample(FindSampleIndex(playbackTime));
+        RefreshSkeletonToggles();
+        UpdateTimelineUI();
+        UpdateText();
+    }
+
+    private bool IsSkeletonUnit(DisplayUnit unit)
+    {
+        return skeletonIds != null && skeletonIds.Count == unit.ids.Length && ContainsAll(skeletonIds, unit.ids);
+    }
+
+    private void RefreshSkeletonToggles()
+    {
+        if (skeletonAllToggle != null)
+            skeletonAllToggle.SetIsOnWithoutNotify(skeletonIds == null);
+
+        foreach (KeyValuePair<DisplayUnit, Toggle> pair in skeletonUnitToggles)
+            pair.Value.SetIsOnWithoutNotify(IsSkeletonUnit(pair.Key));
+
+        if (skeletonHeaderText != null)
+            skeletonHeaderText.text = $"Skeleton : {skeletonLabel}";
+    }
+
+    // ヒートマップの一覧の左隣に、骨格を表示する人物の一覧を作る(1つだけ選ぶ)
+    //   [Skeleton : All  v]
+    //   (o) All
+    //   ( ) mother [0,3,7] (0.1 s -, 100 frames)
+    //   ( ) person_5 (12.3 s -, 23 frames)
+    private void SetupSkeletonSelector()
+    {
+        Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
+
+        if (canvas == null)
+            return;
+
+        RectTransform root = CreateDropdown(canvas, "SkeletonSelector", 1, out skeletonHeaderText, out skeletonListRect, out skeletonListContent);
+        root.GetComponent<Button>().onClick.AddListener(() => skeletonListRect.gameObject.SetActive(!skeletonListRect.gameObject.activeSelf));
+        skeletonListRect.gameObject.SetActive(false);
+
+        RebuildSkeletonRows();
+    }
+
+    private void RebuildSkeletonRows()
+    {
+        if (skeletonListContent == null)
+            return;
+
+        ClearChildren(skeletonListContent);
+        skeletonUnitToggles.Clear();
+
+        List<DisplayUnit> units = GetDisplayUnits();
+
+        skeletonAllToggle = CreateToggleRow(skeletonListContent, "All", 0f, DropdownRowHeight);
+        skeletonAllToggle.onValueChanged.AddListener(isOn => OnSkeletonToggle(null, isOn));
+
+        for (int i = 0; i < units.Count; i++)
+        {
+            DisplayUnit unit = units[i];
+            Toggle toggle = CreateToggleRow(skeletonListContent, GetUnitLabel(unit, true), (i + 1) * DropdownRowHeight, DropdownRowHeight);
+            toggle.onValueChanged.AddListener(isOn => OnSkeletonToggle(unit, isOn));
+            skeletonUnitToggles.Add(new KeyValuePair<DisplayUnit, Toggle>(unit, toggle));
+        }
+
+        SetDropdownRows(skeletonListRect, skeletonListContent, units.Count + 1);
+        RefreshSkeletonToggles();
+    }
+
+    private void OnSkeletonToggle(DisplayUnit unit, bool isOn)
+    {
+        // 1つだけ選ぶ。選び直すと一覧を閉じる(選んでいるものを外そうとしたときは選んだままにする)
+        if (isOn)
+        {
+            SetSkeletonUnit(unit);
+            skeletonListRect.gameObject.SetActive(false);
+        }
+        else
+        {
+            RefreshSkeletonToggles();
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Group panel (人物IDをまとめる)
+    // ------------------------------------------------------------
+    //   [Groups (1)  - click to edit]            … 押すと下を開閉する
+    //   ┌ 固定(スクロールしない) ───────────────┐
+    //   │ 1. Check IDs below  2. Name  3. Make    │
+    //   │ [group name (optional)_____] [Make group]│ … 青いボタン
+    //   └──────────────────────────────┘
+    //   Groups:
+    //     mother: 0, 3, 7                [Ungroup]  … 赤いボタンで解除
+    //   Person IDs (check to group):
+    //   [x] person_0 (0.1 s -, 100 frames)  [mother]
+    //   [ ] person_5 (12.3 s -, 23 frames)
+    private void SetupGroupPanel()
+    {
+        Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
+
+        if (canvas == null)
+            return;
+
+        RectTransform root = CreateDropdown(canvas, "GroupPanel", 2, out groupHeaderText, out groupListRect, out groupListContent);
+
+        // 見出しのすぐ下に、スクロールしない入力欄とボタンを置き、一覧はその下にずらす
+        const float toolsHeight = DropdownRowHeight * 2f + 8f;
+        RectTransform tools = CreateRect("Tools", root);
+        tools.anchorMin = new Vector2(0f, 0f);
+        tools.anchorMax = new Vector2(1f, 0f);
+        tools.pivot = new Vector2(0.5f, 1f);
+        tools.anchoredPosition = new Vector2(0f, -2f);
+        tools.sizeDelta = new Vector2(0f, toolsHeight);
+        AddImage(tools.gameObject, uiSprite, new Color(0.85f, 0.92f, 1f, 0.98f));
+        groupListRect.anchoredPosition = new Vector2(0f, -2f - toolsHeight);
+
+        RectTransform hintRow = CreateLabelRow(tools, "1. Check IDs below  2. Name  3. Make group", 0, 0f);
+        hintRow.GetComponentInChildren<TMP_Text>().fontSize = 16f;
+
+        RectTransform inputRow = CreateLabelRow(tools, "", 1, 0f);
+        groupNameInput = CreateInputField(inputRow, "group name (optional)", 8f, DropdownWidth - 138f);
+        Button make = CreateButton(inputRow, "Make group", DropdownWidth - 125f, 118f, out _,
+                                   new Color(0.2f, 0.45f, 0.9f), Color.white);
+        make.onClick.AddListener(OnMakeGroup);
+
+        GameObject toolsObject = tools.gameObject;
+        root.GetComponent<Button>().onClick.AddListener(() =>
+        {
+            bool open = !groupListRect.gameObject.activeSelf;
+            groupListRect.gameObject.SetActive(open);
+            toolsObject.SetActive(open);
+        });
+        groupListRect.gameObject.SetActive(false);
+        toolsObject.SetActive(false);
+
+        RebuildGroupPanel();
+    }
+
+    private void RebuildGroupPanel()
+    {
+        if (groupListContent == null)
+            return;
+
+        ClearChildren(groupListContent);
+        int row = 0;
+
+        // 今あるグループ(右の赤いボタンで解除)
+        TMP_Text groupsTitle = CreateLabelRow(groupListContent, personGroups.Count > 0 ? "Groups:" : "Groups: (none yet)", row++, 0f)
+            .GetComponentInChildren<TMP_Text>();
+        groupsTitle.fontStyle = FontStyles.Bold;
+
+        foreach (HomePersonGroup group in personGroups)
+        {
+            RectTransform line = CreateLabelRow(groupListContent, $"  {group.name}: {string.Join(", ", group.personIds)}", row++, 100f);
+            string name = group.name;
+            Button ungroup = CreateButton(line, "Ungroup", DropdownWidth - 95f, 88f, out _,
+                                          new Color(0.85f, 0.3f, 0.3f), Color.white);
+            ungroup.onClick.AddListener(() => RemovePersonGroup(name));
+        }
+
+        TMP_Text idsTitle = CreateLabelRow(groupListContent, "Person IDs (check to group):", row++, 0f).GetComponentInChildren<TMP_Text>();
+        idsTitle.fontStyle = FontStyles.Bold;
+
+        // まとめる人物を選ぶ
+        foreach (int id in personFrameCounts.Keys)
+        {
+            personFrameCounts.TryGetValue(id, out int frames);
+            personFirstTimes.TryGetValue(id, out float firstTime);
+            HomePersonGroup group = FindGroup(id);
+            string label = $"person_{id} ({firstTime:F1} s -, {frames} frames){(group != null ? $"  [{group.name}]" : "")}";
+
+            Toggle toggle = CreateToggleRow(groupListContent, label, row++ * DropdownRowHeight, DropdownRowHeight);
+            toggle.SetIsOnWithoutNotify(groupCandidateIds.Contains(id));
+            toggle.onValueChanged.AddListener(isOn =>
+            {
+                if (isOn)
+                    groupCandidateIds.Add(id);
+                else
+                    groupCandidateIds.Remove(id);
+            });
+        }
+
+        SetDropdownRows(groupListRect, groupListContent, row);
+        groupHeaderText.text = $"Groups ({personGroups.Count})  - click to edit";
+    }
+
+    private void OnMakeGroup()
+    {
+        if (groupCandidateIds.Count == 0)
+        {
+            Debug.LogWarning("[HomeGazeAnalyzer] まとめる人物IDに、下の一覧でチェックを入れてください。");
+            return;
+        }
+
+        string groupName = groupNameInput != null ? groupNameInput.text : "";
+        List<int> ids = new List<int>(groupCandidateIds);
+        groupCandidateIds.Clear();
+
+        if (groupNameInput != null)
+            groupNameInput.text = "";
+
+        CreatePersonGroup(groupName, ids);
+    }
+
+    // ------------------------------------------------------------
+    // Dropdown helpers (画面右上に右から並べる一覧)
+    // ------------------------------------------------------------
+    private const float DropdownWidth = 320f;
+    private const float DropdownRowHeight = 30f;
+    private const int DropdownMaxVisibleRows = 14;
+
+    // slot: 右から何番目か(0 = 一番右)。見出しのボタンと、開閉する一覧(スクロール)を作る
+    private RectTransform CreateDropdown(Canvas canvas, string name, int slot, out TMP_Text headerText,
+                                         out RectTransform list, out RectTransform content)
+    {
+        RectTransform root = CreateRect(name, canvas.transform);
+        root.anchorMin = root.anchorMax = root.pivot = new Vector2(1f, 1f);
+        root.anchoredPosition = new Vector2(-20f - slot * (DropdownWidth + 10f), -20f);
+        root.sizeDelta = new Vector2(DropdownWidth, 40f);
+
+        Button header = root.gameObject.AddComponent<Button>();
+        header.targetGraphic = AddImage(root.gameObject, uiSprite, Color.white);
+        headerText = CreateText("Label", root, TextAlignmentOptions.MidlineLeft);
+        SetStretch(headerText.rectTransform, new Vector2(10f, 0f), new Vector2(-10f, 0f));
+
+        list = CreateRect("List", root);
         list.anchorMin = new Vector2(0f, 0f);
         list.anchorMax = new Vector2(1f, 0f);
         list.pivot = new Vector2(0.5f, 1f);
         list.anchoredPosition = new Vector2(0f, -2f);
-        list.sizeDelta = new Vector2(0f, Mathf.Min(ids.Count, maxVisibleRows) * rowHeight);
         AddImage(list.gameObject, uiSprite, new Color(0.95f, 0.95f, 0.95f, 0.95f));
         list.gameObject.AddComponent<RectMask2D>();
 
-        RectTransform content = CreateRect("Content", list);
+        content = CreateRect("Content", list);
         content.anchorMin = new Vector2(0f, 1f);
         content.anchorMax = new Vector2(1f, 1f);
         content.pivot = new Vector2(0.5f, 1f);
-        content.sizeDelta = new Vector2(0f, ids.Count * rowHeight);
 
         ScrollRect scroll = list.gameObject.AddComponent<ScrollRect>();
         scroll.content = content;
         scroll.viewport = list;
         scroll.horizontal = false;
         scroll.movementType = ScrollRect.MovementType.Clamped;
-        scroll.scrollSensitivity = rowHeight;
+        scroll.scrollSensitivity = DropdownRowHeight;
+        return root;
+    }
 
-        int total = 0;
+    private static void SetDropdownRows(RectTransform list, RectTransform content, int rows)
+    {
+        list.sizeDelta = new Vector2(0f, Mathf.Min(rows, DropdownMaxVisibleRows) * DropdownRowHeight);
+        content.sizeDelta = new Vector2(0f, rows * DropdownRowHeight);
+    }
 
-        foreach (int count in personFrameCounts.Values)
-            total += count;
+    // 文字だけの行(rightMargin: 右に置くボタンの分だけ文字を短くする)
+    private RectTransform CreateLabelRow(RectTransform parent, string label, int row, float rightMargin)
+    {
+        RectTransform line = CreateRect("Row", parent);
+        line.anchorMin = new Vector2(0f, 1f);
+        line.anchorMax = new Vector2(1f, 1f);
+        line.pivot = new Vector2(0.5f, 1f);
+        line.anchoredPosition = new Vector2(0f, -row * DropdownRowHeight);
+        line.sizeDelta = new Vector2(0f, DropdownRowHeight);
 
-        personToggles.Clear();
+        TMP_Text text = CreateText("Label", line, TextAlignmentOptions.MidlineLeft);
+        SetStretch(text.rectTransform, new Vector2(10f, 0f), new Vector2(-10f - rightMargin, 0f));
+        text.text = label;
+        return line;
+    }
 
-        for (int i = 0; i < ids.Count; i++)
+    private TMP_InputField CreateInputField(RectTransform parent, string placeholderText, float x, float width)
+    {
+        RectTransform rect = CreateRect("Input", parent);
+        PlaceLeft(rect, x, width, 3f);
+        AddImage(rect.gameObject, uiSprite, Color.white);
+
+        // 背景と見分けやすいように枠線を付ける
+        Outline outline = rect.gameObject.AddComponent<Outline>();
+        outline.effectColor = new Color(0.35f, 0.35f, 0.35f);
+        outline.effectDistance = new Vector2(1.5f, -1.5f);
+
+        RectTransform area = CreateRect("Text Area", rect);
+        SetStretch(area, new Vector2(8f, 2f), new Vector2(-8f, -2f));
+        area.gameObject.AddComponent<RectMask2D>();
+
+        TMP_Text placeholder = CreateText("Placeholder", area, TextAlignmentOptions.MidlineLeft);
+        SetStretch(placeholder.rectTransform, Vector2.zero, Vector2.zero);
+        placeholder.text = placeholderText;
+        placeholder.fontStyle = FontStyles.Italic;
+        placeholder.color = new Color(0.5f, 0.5f, 0.5f);
+
+        TMP_Text text = CreateText("Text", area, TextAlignmentOptions.MidlineLeft);
+        SetStretch(text.rectTransform, Vector2.zero, Vector2.zero);
+        // 入力中の文字は省略記号(…)にせず、はみ出した分は入力欄の中でスクロールさせる
+        text.overflowMode = TextOverflowModes.Overflow;
+
+        // TMP_InputField は有効になったとき(OnEnable)に textComponent を使ってカーソルなどを準備する。
+        // 追加した直後に有効になると textComponent がまだ無く準備されずに、カーソルの描画でエラーになるので、
+        // いったん無効にしてから設定し、最後に有効にする
+        bool wasActive = rect.gameObject.activeSelf;
+        rect.gameObject.SetActive(false);
+
+        TMP_InputField input = rect.gameObject.AddComponent<TMP_InputField>();
+        input.textViewport = area;
+        input.textComponent = text;
+        input.placeholder = placeholder;
+        input.fontAsset = text.font;
+        input.pointSize = text.fontSize;
+        input.text = "";
+
+        rect.gameObject.SetActive(wasActive);
+        return input;
+    }
+
+    private static void ClearChildren(RectTransform parent)
+    {
+        for (int i = parent.childCount - 1; i >= 0; i--)
         {
-            int id = ids[i];
-            personFrameCounts.TryGetValue(id, out int frames);
-            string label = id < 0 ? $"All ({total} frames)" : $"person_{id} ({frames} frames)";
+            Transform child = parent.GetChild(i);
+            child.SetParent(null, false);
+            Destroy(child.gameObject);
+        }
+    }
 
-            Toggle toggle = CreateToggleRow(content, label, i * rowHeight, rowHeight);
-            toggle.onValueChanged.AddListener(isOn => OnPersonToggle(id, isOn));
-            personToggles[id] = toggle;
+    // 文字を入力中か(入力中は Space で再生しない・選択を外さない)
+    private static bool IsTypingText()
+    {
+        GameObject selected = UnityEngine.EventSystems.EventSystem.current != null
+            ? UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject
+            : null;
+
+        return selected != null && selected.GetComponent<TMP_InputField>() != null;
+    }
+
+    // ------------------------------------------------------------
+    // Timeline (画面下)
+    // ------------------------------------------------------------
+    //   [>]  12.3 / 60.0 s  [=========o-----------------]   … 再生バー。ドラッグで再生位置を動かす
+    //                        (オレンジ: ヒートの時間範囲 / 赤: 今ヒートに数えている部分)
+    //   Heat from [--o------] 5.0 s   to [-------o--] 40.0 s   [x] Follow playhead   [Full]
+    private void SetupTimeline()
+    {
+        if (!showTimeline)
+            return;
+
+        Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
+
+        if (canvas == null)
+        {
+            Debug.LogWarning("[HomeGazeAnalyzer] Canvas が無いため、再生バーを作れません。");
+            return;
         }
 
-        header.onClick.AddListener(() => list.gameObject.SetActive(!list.gameObject.activeSelf));
-        list.gameObject.SetActive(false);
+        if (uiSprite == null)
+        {
+#if UNITY_EDITOR
+            uiSprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            checkmarkSprite = UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Checkmark.psd");
+#endif
+        }
 
-        SetDisplayPersons(displayPersonIds);
+        RectTransform root = CreateRect("Timeline", canvas.transform);
+        root.anchorMin = new Vector2(0f, 0f);
+        root.anchorMax = new Vector2(1f, 0f);
+        root.pivot = new Vector2(0.5f, 0f);
+        root.anchoredPosition = new Vector2(0f, 10f);
+        root.sizeDelta = new Vector2(-40f, 96f);
+        AddImage(root.gameObject, uiSprite, new Color(0.95f, 0.95f, 0.95f, 0.9f));
+
+        // 1行目: 再生/一時停止・時刻・再生バー
+        RectTransform row1 = CreateRow(root, 0f, 48f);
+
+        Button playPause = CreateButton(row1, ">", 0f, 50f, out playPauseText);
+        playPause.onClick.AddListener(TogglePlay);
+
+        timeText = CreateText("Time", row1, TextAlignmentOptions.MidlineLeft);
+        PlaceLeft(timeText.rectTransform, 60f, 160f);
+
+        timelineSlider = CreateSlider(row1, new Color(0.25f, 0.45f, 0.95f));
+        RectTransform timelineRect = (RectTransform)timelineSlider.transform;
+        timelineRect.anchorMin = new Vector2(0f, 0f);
+        timelineRect.anchorMax = new Vector2(1f, 1f);
+        timelineRect.offsetMin = new Vector2(230f, 10f);
+        timelineRect.offsetMax = new Vector2(-10f, -10f);
+        timelineSlider.onValueChanged.AddListener(Seek);
+
+        // 再生バーの下地に、ヒートの時間範囲(オレンジ)と今数えている部分(赤)を重ねる
+        RectTransform background = (RectTransform)timelineSlider.transform.Find("Background");
+        rangeHighlight = CreateRect("HeatRange", background);
+        AddImage(rangeHighlight.gameObject, null, new Color(1f, 0.6f, 0.1f, 0.45f)).raycastTarget = false;
+        analyzedHighlight = CreateRect("HeatCounted", background);
+        AddImage(analyzedHighlight.gameObject, null, new Color(0.9f, 0.1f, 0.1f, 0.55f)).raycastTarget = false;
+
+        // 2行目: ヒートの時間範囲
+        RectTransform row2 = CreateRow(root, 48f, 44f);
+
+        TMP_Text fromLabel = CreateText("From", row2, TextAlignmentOptions.MidlineLeft);
+        fromLabel.text = "Heat from";
+        PlaceLeft(fromLabel.rectTransform, 10f, 95f);
+
+        rangeStartSlider = CreateSlider(row2, new Color(1f, 0.6f, 0.1f));
+        PlaceLeft((RectTransform)rangeStartSlider.transform, 105f, 260f, 10f);
+        rangeStartSlider.onValueChanged.AddListener(value =>
+        {
+            float end = heatRangeEnd < 0f ? duration : heatRangeEnd;
+            heatRangeStart = Mathf.Min(value, end);
+        });
+
+        rangeStartText = CreateText("FromValue", row2, TextAlignmentOptions.MidlineLeft);
+        PlaceLeft(rangeStartText.rectTransform, 370f, 80f);
+
+        TMP_Text toLabel = CreateText("To", row2, TextAlignmentOptions.MidlineLeft);
+        toLabel.text = "to";
+        PlaceLeft(toLabel.rectTransform, 455f, 30f);
+
+        rangeEndSlider = CreateSlider(row2, new Color(1f, 0.6f, 0.1f));
+        PlaceLeft((RectTransform)rangeEndSlider.transform, 485f, 260f, 10f);
+        rangeEndSlider.onValueChanged.AddListener(value =>
+        {
+            float end = Mathf.Max(value, heatRangeStart);
+            heatRangeEnd = end >= duration - 0.001f ? -1f : end;
+        });
+
+        rangeEndText = CreateText("ToValue", row2, TextAlignmentOptions.MidlineLeft);
+        PlaceLeft(rangeEndText.rectTransform, 750f, 80f);
+
+        followToggle = CreateToggleRow(row2, "Follow playhead", 0f, 44f);
+        RectTransform followRect = (RectTransform)followToggle.transform;
+        followRect.anchorMin = followRect.anchorMax = new Vector2(0f, 0.5f);
+        followRect.pivot = new Vector2(0f, 0.5f);
+        followRect.anchoredPosition = new Vector2(835f, 0f);
+        followRect.sizeDelta = new Vector2(210f, 36f);
+        followToggle.SetIsOnWithoutNotify(heatFollowsPlayhead);
+        followToggle.onValueChanged.AddListener(isOn => heatFollowsPlayhead = isOn);
+
+        Button full = CreateButton(row2, "Full", 1055f, 70f, out _);
+        full.onClick.AddListener(() => SetHeatRange(0f, -1f));
+
+        Button normalize = CreateButton(row2, "Normalize", 1135f, 120f, out _);
+        normalizeButtonImage = (Image)normalize.targetGraphic;
+        normalize.onClick.AddListener(ToggleNormalizeHeat);
+
+        foreach (Slider slider in new[] { timelineSlider, rangeStartSlider, rangeEndSlider })
+        {
+            slider.minValue = 0f;
+            slider.maxValue = Mathf.Max(duration, 0.001f);
+            AddScrubEvents(slider.gameObject);
+        }
+
+        UpdateTimelineUI();
+    }
+
+    // ドラッグ中はヒートの計算し直しを間引き、離したらすぐ作り直す
+    private void AddScrubEvents(GameObject target)
+    {
+        UnityEngine.EventSystems.EventTrigger trigger = target.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+
+        UnityEngine.EventSystems.EventTrigger.Entry down = new UnityEngine.EventSystems.EventTrigger.Entry
+        {
+            eventID = UnityEngine.EventSystems.EventTriggerType.PointerDown
+        };
+        down.callback.AddListener(_ => isScrubbing = true);
+        trigger.triggers.Add(down);
+
+        UnityEngine.EventSystems.EventTrigger.Entry up = new UnityEngine.EventSystems.EventTrigger.Entry
+        {
+            eventID = UnityEngine.EventSystems.EventTriggerType.PointerUp
+        };
+        up.callback.AddListener(_ =>
+        {
+            isScrubbing = false;
+            UpdateAnalysis(true);
+        });
+        trigger.triggers.Add(up);
+    }
+
+    private void UpdateTimelineUI()
+    {
+        if (timelineSlider == null)
+            return;
+
+        GetHeatWindow(out float windowStart, out float windowEnd);
+        float rangeEnd = heatRangeEnd < 0f ? duration : Mathf.Min(heatRangeEnd, duration);
+        float max = Mathf.Max(duration, 0.001f);
+
+        timelineSlider.SetValueWithoutNotify(playbackTime);
+        rangeStartSlider.SetValueWithoutNotify(windowStart);
+        rangeEndSlider.SetValueWithoutNotify(rangeEnd);
+        followToggle.SetIsOnWithoutNotify(heatFollowsPlayhead);
+
+        playPauseText.text = isPlaying ? "||" : ">";
+        timeText.text = cache == null
+            ? $"{playbackTime:F1} s (heat {buildProgress * 100f:F0}%)"
+            : $"{playbackTime:F1} / {duration:F1} s";
+        rangeStartText.text = $"{windowStart:F1} s";
+        rangeEndText.text = $"{rangeEnd:F1} s";
+
+        SetHorizontalSpan(rangeHighlight, windowStart / max, rangeEnd / max);
+
+        // 赤: 実際にヒートに数えている部分(ドラッグ中は離すまで前の範囲のまま)
+        if (nextSample > analyzedStart)
+            SetHorizontalSpan(analyzedHighlight, samples[analyzedStart].time / max, samples[nextSample - 1].time / max);
+        else
+            SetHorizontalSpan(analyzedHighlight, 0f, 0f);
+    }
+
+    private static void SetHorizontalSpan(RectTransform rect, float from, float to)
+    {
+        rect.anchorMin = new Vector2(Mathf.Clamp01(from), 0f);
+        rect.anchorMax = new Vector2(Mathf.Clamp01(Mathf.Max(from, to)), 1f);
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+    }
+
+    // top: 親の上端からの位置
+    private static RectTransform CreateRow(RectTransform parent, float top, float height)
+    {
+        RectTransform row = CreateRect("Row", parent);
+        row.anchorMin = new Vector2(0f, 1f);
+        row.anchorMax = new Vector2(1f, 1f);
+        row.pivot = new Vector2(0.5f, 1f);
+        row.anchoredPosition = new Vector2(0f, -top);
+        row.sizeDelta = new Vector2(0f, height);
+        return row;
+    }
+
+    // 行の左端から x の位置に幅 width で置く(縦は行いっぱい - margin)
+    private static void PlaceLeft(RectTransform rect, float x, float width, float margin = 0f)
+    {
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 0.5f);
+        rect.offsetMin = new Vector2(x, margin);
+        rect.offsetMax = new Vector2(x + width, -margin);
+    }
+
+    private Button CreateButton(RectTransform parent, string label, float x, float width, out TMP_Text text)
+    {
+        return CreateButton(parent, label, x, width, out text, Color.white, new Color(0.2f, 0.2f, 0.2f));
+    }
+
+    private Button CreateButton(RectTransform parent, string label, float x, float width, out TMP_Text text,
+                                Color background, Color textColor)
+    {
+        RectTransform rect = CreateRect("Button", parent);
+        PlaceLeft(rect, x, width, 4f);
+        Button button = rect.gameObject.AddComponent<Button>();
+        button.targetGraphic = AddImage(rect.gameObject, uiSprite, background);
+
+        text = CreateText("Label", rect, TextAlignmentOptions.Center);
+        SetStretch(text.rectTransform, new Vector2(4f, 0f), new Vector2(-4f, 0f));
+        text.text = label;
+        text.color = textColor;
+        text.fontStyle = FontStyles.Bold;
+
+        // ボタンが低い(一覧の行の中など)と、Ellipsis のままでは1行が入り切らず文字が全部消えるので、
+        // はみ出しても消さず、ボタンの大きさに合わせて文字を小さくする
+        text.overflowMode = TextOverflowModes.Overflow;
+        text.enableAutoSizing = true;
+        text.fontSizeMin = 10f;
+        text.fontSizeMax = 20f;
+        return button;
+    }
+
+    // Unity の既定のスライダーと同じ構成 (Background / Fill Area / Handle Slide Area)
+    private Slider CreateSlider(RectTransform parent, Color fillColor)
+    {
+        RectTransform root = CreateRect("Slider", parent);
+
+        RectTransform background = CreateRect("Background", root);
+        background.anchorMin = new Vector2(0f, 0.3f);
+        background.anchorMax = new Vector2(1f, 0.7f);
+        background.offsetMin = background.offsetMax = Vector2.zero;
+        AddImage(background.gameObject, uiSprite, new Color(0.75f, 0.75f, 0.75f));
+
+        RectTransform fillArea = CreateRect("Fill Area", root);
+        fillArea.anchorMin = new Vector2(0f, 0.3f);
+        fillArea.anchorMax = new Vector2(1f, 0.7f);
+        fillArea.offsetMin = fillArea.offsetMax = Vector2.zero;
+
+        RectTransform fill = CreateRect("Fill", fillArea);
+        fill.offsetMin = fill.offsetMax = Vector2.zero;
+        Image fillImage = AddImage(fill.gameObject, uiSprite, new Color(fillColor.r, fillColor.g, fillColor.b, 0.35f));
+        fillImage.raycastTarget = false;
+
+        RectTransform handleArea = CreateRect("Handle Slide Area", root);
+        SetStretch(handleArea, new Vector2(8f, 0f), new Vector2(-8f, 0f));
+
+        RectTransform handle = CreateRect("Handle", handleArea);
+        handle.sizeDelta = new Vector2(16f, 0f);
+        Image handleImage = AddImage(handle.gameObject, uiSprite, fillColor);
+
+        Slider slider = root.gameObject.AddComponent<Slider>();
+        slider.fillRect = fill;
+        slider.handleRect = handle;
+        slider.targetGraphic = handleImage;
+        slider.direction = Slider.Direction.LeftToRight;
+        return slider;
     }
 
     private Toggle CreateToggleRow(RectTransform parent, string label, float y, float height)
@@ -1419,8 +2852,12 @@ public class HomeGazeAnalyzer : MonoBehaviour
     // ------------------------------------------------------------
     private HomeGazeParameters CreateParameters()
     {
+        GetHeatWindow(out float windowStart, out float windowEnd);
+
         return new HomeGazeParameters
         {
+            heatRangeStartSec = windowStart,
+            heatRangeEndSec = windowEnd,
             skeletonSource = SourceName,
             personId = personId,
             // Image では画像で推定した向きをそのまま使い、下向きの補正はしない
@@ -1442,29 +2879,67 @@ public class HomeGazeAnalyzer : MonoBehaviour
             createdAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
             parameters = CreateParameters(),
             sampleCount = samples.Count,
-            processedSamples = nextSample
+            processedSamples = nextSample - analyzedStart
         };
 
-        foreach (HeatMesh heatMesh in heatMeshes)
+        // 表示中のヒートは選んだ人物だけのことがあるので、保存用に今の時間範囲の全員の合計と人物ごとのヒートを作る
+        float[][] allHeat = NewHeatArrays();
+        AddWindowHeat(analyzedStart, nextSample, allHeat, null);
+
+        Dictionary<int, float[][]> personHeats = new Dictionary<int, float[][]>();
+
+        foreach (int id in personFrameCounts.Keys)
         {
-            GetHeatStats(heatMesh.heat, out float max, out float total);
+            float[][] arrays = NewHeatArrays();
+            AddWindowHeat(analyzedStart, nextSample, arrays, new HashSet<int> { id });
+            personHeats[id] = arrays;
+        }
+
+        // グループごと(メンバーの人物ごとのヒートの合計)
+        List<float[][]> groupHeats = new List<float[][]>();
+
+        foreach (HomePersonGroup group in personGroups)
+        {
+            float[][] arrays = NewHeatArrays();
+
+            foreach (int id in group.personIds)
+            {
+                if (!personHeats.TryGetValue(id, out float[][] personHeat))
+                    continue;
+
+                for (int m = 0; m < arrays.Length; m++)
+                {
+                    for (int i = 0; i < arrays[m].Length; i++)
+                        arrays[m][i] += personHeat[m][i];
+                }
+            }
+
+            groupHeats.Add(arrays);
+        }
+
+        for (int m = 0; m < heatMeshes.Count; m++)
+        {
+            HeatMesh heatMesh = heatMeshes[m];
+            GetHeatStats(allHeat[m], out float max, out float total);
 
             HomeGazeHeatMapMesh meshData = new HomeGazeHeatMapMesh
             {
                 name = heatMesh.name,
                 path = heatMesh.path,
-                vertexCount = heatMesh.heat.Length,
+                vertexCount = allHeat[m].Length,
                 maxHeat = max,
                 totalHeat = total,
-                heat = heatMesh.heat
+                heat = allHeat[m]
             };
 
             foreach (int id in personFrameCounts.Keys)
             {
-                if (!heatMesh.personHeat.TryGetValue(id, out float[] personHeat))
-                    continue;
-
+                float[] personHeat = personHeats[id][m];
                 GetHeatStats(personHeat, out float personMax, out float personTotal);
+
+                // この時間範囲で視線が無い人物は書かない
+                if (personTotal <= 0f)
+                    continue;
 
                 meshData.persons.Add(new HomeGazePersonHeat
                 {
@@ -1475,10 +2950,35 @@ public class HomeGazeAnalyzer : MonoBehaviour
                 });
             }
 
+            for (int g = 0; g < personGroups.Count; g++)
+            {
+                float[] groupHeat = groupHeats[g][m];
+                GetHeatStats(groupHeat, out float groupMax, out float groupTotal);
+
+                meshData.groups.Add(new HomeGazeGroupHeat
+                {
+                    name = personGroups[g].name,
+                    personIds = new List<int>(personGroups[g].personIds),
+                    maxHeat = groupMax,
+                    totalHeat = groupTotal,
+                    heat = groupHeat
+                });
+            }
+
             data.meshes.Add(meshData);
         }
 
         return data;
+    }
+
+    private float[][] NewHeatArrays()
+    {
+        float[][] arrays = new float[heatMeshes.Count][];
+
+        for (int m = 0; m < heatMeshes.Count; m++)
+            arrays[m] = new float[heatMeshes[m].heat.Length];
+
+        return arrays;
     }
 
     private static void GetHeatStats(float[] heat, out float max, out float total)
@@ -1495,6 +2995,13 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     private HomeGazeScoreList CreateScoreData()
     {
+        // フレームごとの記録に、人物が入っているグループの名前を書く
+        foreach (HomeGazeFrameRecord record in records)
+        {
+            HomePersonGroup group = FindGroup(record.personId);
+            record.groupName = group != null ? group.name : "";
+        }
+
         HomeGazeScoreList data = new HomeGazeScoreList
         {
             experimentName = env.ExperimentName,
@@ -1502,7 +3009,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
             createdAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
             parameters = CreateParameters(),
             sampleCount = samples.Count,
-            processedSamples = nextSample,
+            processedSamples = nextSample - analyzedStart,
             noHitLabel = NoHitLabel,
             noDataLabel = NoDataLabel,
             frameCount = records.Count,
@@ -1527,7 +3034,84 @@ public class HomeGazeAnalyzer : MonoBehaviour
             });
         }
 
+        data.people = CreatePeopleScores();
         return data;
+    }
+
+    // 人物(グループは1人)ごとのスコア。今の時間範囲の注視記録を数える(RecomputeScores と同じ数え方)
+    private List<HomeGazePersonScore> CreatePeopleScores()
+    {
+        List<HomeGazePersonScore> people = new List<HomeGazePersonScore>();
+        Dictionary<int, HomeGazePersonScore> byPersonId = new Dictionary<int, HomeGazePersonScore>();
+
+        foreach (DisplayUnit unit in GetDisplayUnits())
+        {
+            HomeGazePersonScore score = new HomeGazePersonScore
+            {
+                name = unit.name,
+                isGroup = unit.isGroup,
+                personIds = new List<int>(unit.ids)
+            };
+
+            foreach (ScoreTarget target in targets)
+                score.targets.Add(new HomeGazeTargetScore { name = target.name });
+
+            foreach (int id in unit.ids)
+                byPersonId[id] = score;
+
+            people.Add(score);
+        }
+
+        if (cache == null)
+            return people;
+
+        for (int i = analyzedStart; i < nextSample; i++)
+        {
+            HomeGazeFrameRecord[] frameRecords = cache.records[i];
+            int[] best = cache.bestTargets[i];
+
+            for (int p = 0; p < frameRecords.Length; p++)
+            {
+                HomeGazeFrameRecord record = frameRecords[p];
+
+                if (!byPersonId.TryGetValue(record.personId, out HomeGazePersonScore score))
+                    continue;
+
+                score.frameCount++;
+
+                if (record.gazeTarget == NoDataLabel)
+                {
+                    score.noDataFrames++;
+                    continue;
+                }
+
+                score.gazeFrames++;
+                score.gazeSeconds += record.durationSec;
+
+                for (int t = 0; t < score.targets.Count && t < record.angles.Count; t++)
+                {
+                    if (record.angles[t] < 0f)
+                        continue;
+
+                    score.targets[t].totalHeat += record.heats[t];
+                    score.targets[t].hitFrames++;
+                    score.targets[t].hitSeconds += record.durationSec;
+                }
+
+                if (best[p] >= 0 && best[p] < score.targets.Count)
+                {
+                    score.targets[best[p]].gazeFrames++;
+                    score.targets[best[p]].gazeSeconds += record.durationSec;
+                }
+                else
+                {
+                    score.noTargetFrames++;
+                    score.noTargetSeconds += record.durationSec;
+                }
+            }
+        }
+
+        return people;
     }
 
     private void LogSummary()
@@ -1560,6 +3144,10 @@ public class HomeGazeAnalyzer : MonoBehaviour
         {
             foreach (Person person in samples[index].persons)
             {
+                // 骨格の一覧で人物を選んでいれば、その人だけ表示する
+                if (skeletonIds != null && !skeletonIds.Contains(person.id))
+                    continue;
+
                 if (!visuals.TryGetValue(person.id, out PersonVisual visual))
                 {
                     visual = CreatePersonVisual(person.id);
@@ -1602,7 +3190,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     private PersonVisual CreatePersonVisual(int id)
     {
-        Color color = personColors.Length > 0 ? personColors[Mathf.Abs(id) % personColors.Length] : Color.white;
+        Color color = GetPersonColor(id);
         PersonVisual visual = new PersonVisual
         {
             body = new HomeSkeletonBodyVisual(visualRoot, $"person_{id}", color, visualStyle)
@@ -1630,10 +3218,14 @@ public class HomeGazeAnalyzer : MonoBehaviour
     {
         if (frameText != null)
         {
+            GetHeatWindow(out float windowStart, out float windowEnd);
+            string heatRange = cache == null
+                ? $"Heat : preparing {buildProgress * 100f:F0}% (heat map appears when ready)"
+                : $"Heat Range : {windowStart:F1} - {windowEnd:F1} s ({nextSample - analyzedStart} frames)";
             frameText.text =
                 $"{subjectName} ({OutputName})  Time : {playbackTime:F1} / {duration:F1} s\n" +
-                $"Frame : {nextSample} / {samples.Count}\n" +
-                $"Heat Map : {GetDisplayPersonsLabel()} ({heatMapDisplay})";
+                $"{heatRange}\n" +
+                $"Heat Map : {GetDisplayPersonsLabel()} ({heatMapDisplay}{(normalizeHeat ? ", Normalized" : "")})  Skeleton : {skeletonLabel}";
         }
 
         if (scoreText == null)
@@ -1647,6 +3239,20 @@ public class HomeGazeAnalyzer : MonoBehaviour
             text.AppendLine($"  Gaze : {target.gazeSeconds:F1} s ({target.gazeFrames})");
             text.AppendLine($"  Hit : {target.hitSeconds:F1} s ({target.hitFrames})");
             text.AppendLine($"  Heat : {target.totalHeat:F1}");
+        }
+
+        // 正規化したときの、部屋オブジェクト/対象物体ごとの割合(面積で重み付け)
+        if (normalizeHeat)
+        {
+            text.AppendLine($"Heat Map Share (area-weighted, total {normalizedTotalHeat:F2})");
+
+            for (int i = 0; i < normalizedMeshShares.Count && i < NormalizedShareLines; i++)
+            {
+                if (normalizedMeshShares[i].Value <= 0f)
+                    break;
+
+                text.AppendLine($"  {normalizedMeshShares[i].Key} : {normalizedMeshShares[i].Value * 100f:F1}%");
+            }
         }
 
         text.AppendLine("All Gaze");
@@ -1686,27 +3292,124 @@ public class HomeGazeAnalyzer : MonoBehaviour
         public string path;
         public Mesh mesh;
         public VertexCloud cloud;
-        // 全員の合計と人物ごとのヒート(頂点と同じ並び)
+        // 表示中のヒート(選んだ人物・今の時間範囲。頂点と同じ並び)
         public float[] heat;
-        public readonly Dictionary<int, float[]> personHeat = new Dictionary<int, float[]>();
-        // 選んだ人物のヒートの合計(表示用の作業領域)
-        public float[] displayHeat;
         public Color[] colors;
+        // 頂点ごとの面積(m²。正規化で使う。最初に正規化したときに作る)
+        public float[] vertexAreas;
 
         // 元の部屋のレンダラーと、上に重ねたヒートマップ表示用のレンダラー
         public MeshRenderer sourceRenderer;
         public MeshRenderer overlayRenderer;
         public Material[] paletteMaterials;
+    }
 
-        public float[] GetPersonHeat(int personId)
+    // 視線コーンの設定(これが変わったらキャッシュを作り直す)
+    private struct ConeParams : System.IEquatable<ConeParams>
+    {
+        public readonly float angleDeg;
+        public readonly float distance;
+        public readonly bool centerWeighted;
+        public readonly float heatPerHit;
+
+        public ConeParams(float angleDeg, float distance, bool centerWeighted, float heatPerHit)
         {
-            if (!personHeat.TryGetValue(personId, out float[] values))
+            this.angleDeg = angleDeg;
+            this.distance = distance;
+            this.centerWeighted = centerWeighted;
+            this.heatPerHit = heatPerHit;
+        }
+
+        public bool Equals(ConeParams other) =>
+            angleDeg == other.angleDeg && distance == other.distance &&
+            centerWeighted == other.centerWeighted && heatPerHit == other.heatPerHit;
+
+        public override bool Equals(object obj) => obj is ConeParams other && Equals(other);
+
+        public override int GetHashCode() => angleDeg.GetHashCode() ^ distance.GetHashCode() ^ heatPerHit.GetHashCode();
+    }
+
+    // 全フレームの視線コーンの結果
+    private class HeatCache
+    {
+        public int generation;
+        public ConeParams parameters;
+        public long buildMilliseconds;
+        // CacheChunkSize フレームごとの人物別ヒートの小計
+        public HeatChunk[] chunks;
+        // フレームごとの注視記録(人物ごと)と、注視対象の番号(-1 は対象なし・視線なし)
+        public HomeGazeFrameRecord[][] records;
+        public int[][] bestTargets;
+    }
+
+    private class HeatChunk
+    {
+        // 人物ID → ヒートマップのメッシュごとの小計
+        public readonly Dictionary<int, SparseHeat[]> persons = new Dictionary<int, SparseHeat[]>();
+    }
+
+    // ヒートが入った頂点だけの一覧
+    private class SparseHeat
+    {
+        public int[] indices;
+        public float[] values;
+    }
+
+    // キャッシュを作るときの人物ごとの作業領域(使い回す)
+    private class ScratchHeat
+    {
+        public readonly float[][] values;
+        public readonly List<int>[] touched;
+
+        public ScratchHeat(VertexCloud[] clouds)
+        {
+            values = new float[clouds.Length][];
+            touched = new List<int>[clouds.Length];
+
+            for (int m = 0; m < clouds.Length; m++)
             {
-                values = new float[heat.Length];
-                personHeat[personId] = values;
+                values[m] = new float[clouds[m].positions.Length];
+                touched[m] = new List<int>();
+            }
+        }
+
+        public bool HasData
+        {
+            get
+            {
+                foreach (List<int> list in touched)
+                {
+                    if (list.Count > 0)
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
+        // 溜まったヒートを取り出して作業領域を空にする
+        public SparseHeat[] Flush()
+        {
+            SparseHeat[] result = new SparseHeat[values.Length];
+
+            for (int m = 0; m < values.Length; m++)
+            {
+                List<int> list = touched[m];
+                float[] heat = values[m];
+                SparseHeat sparse = new SparseHeat { indices = list.ToArray(), values = new float[list.Count] };
+
+                for (int k = 0; k < list.Count; k++)
+                {
+                    int i = list[k];
+                    sparse.values[k] = heat[i];
+                    heat[i] = 0f; // 同じ番号が2回入っていても、2回目は 0 になる
+                }
+
+                list.Clear();
+                result[m] = sparse;
             }
 
-            return values;
+            return result;
         }
     }
 
