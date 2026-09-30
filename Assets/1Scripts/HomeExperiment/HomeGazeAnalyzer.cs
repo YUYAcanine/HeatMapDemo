@@ -7,13 +7,15 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // シーン4(4GazeAnalyze)用。骨格データから視線コーンを求め、
-//   - 部屋メッシュのヒートマップ   → Skeleton/<実験対象者>/Analysis/heatmap_<骨格>.json
-//   - 対象物体ごとのスコア/注視対象 → Skeleton/<実験対象者>/Analysis/score_<骨格>.json
+//   - 部屋メッシュのヒートマップ   → Skeleton/<実験対象者>/Analysis/HeatMap/heatmap_<骨格>.json
+//   - 対象物体ごとのスコア/注視対象 → Skeleton/<実験対象者>/Analysis/Score/score_<骨格>.json
 // を作る。視線コーンの判定は ConeHeatMapShow / ScoreHeat / ScoreHeatSummary と同じ。
 //
-// 骨格データは次のどちらかを選ぶ(<骨格> の部分のファイル名になる):
-//   Filtered … シーン3の出力 Filtered/filtered_<Mode>.json (人物ID = trackId)
-//   Kinect   … キネクト1台分の <ID>_skeleton.json          (人物ID = bodyId)
+// 骨格データは次のどれかを選ぶ(<骨格> の部分のファイル名になる):
+//   Filtered … シーン3で作った人物ごとの骨格 Filtered/grouped_<Mode>.json (人物 = シーン3のグループ)
+//   Image    … シーン3で作った人物ごとの骨格 Filtered/grouped_Image.json  (人物 = シーン3のグループ)
+//   Kinect   … キネクト1台分の <ID>_skeleton.json                          (人物ID = bodyId)
+// 信頼度の比較・人物IDのまとめ方はシーン3で済ませてあるので、ここでは読み込んだ骨格をそのまま使う。
 //
 // 部屋オブジェクトと対象物体は同じGameObjectの HomeEnvLoader が Env から再生成する。
 // シーン0で部屋オブジェクトの下に置いた対象物体(Env/TargetObjects.json)は自動でスコアの対象になる。
@@ -35,11 +37,11 @@ public class HomeGazeAnalyzer : MonoBehaviour
 {
     public enum SkeletonSource
     {
-        // シーン3で作った信頼度フィルタリング後の骨格
+        // シーン3で作った人物ごとの骨格 (Filtered/grouped_<filteredMode>.json)
         Filtered,
         // キネクト1台分の骨格
         Kinect,
-        // シーン1(Record Raw Mkv)の生データから画像で推定したもの (Tools/GazePipeline → Filtered/filtered_Image.json)
+        // シーン1(Record Raw Mkv)の生データから画像で推定したもの (Tools/GazePipeline → シーン3 → Filtered/grouped_Image.json)
         // 頭の位置・頭の向き・目の視線が入っているので、関節から向きを計算しない
         Image
     }
@@ -79,13 +81,13 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     [Header("Skeleton")]
     [SerializeField] private SkeletonSource skeletonSource = SkeletonSource.Filtered;
-    [Tooltip("Filtered のとき: 読み込む filtered_<Mode>.json")]
+    [Tooltip("Filtered のとき: 読み込む grouped_<Mode>.json(シーン3の Confidence Mode)")]
     [SerializeField] private HomeSkeletonFilter.ConfidenceMode filteredMode = HomeSkeletonFilter.ConfidenceMode.HeadJoints;
     [Tooltip("Kinect のとき: 読み込む <ID>_skeleton.json のキネクトID")]
     [SerializeField] private string kinectId = "A";
     [Tooltip("Image のとき: 視線として使う向き")]
     [SerializeField] private ImageDirection imageDirection = ImageDirection.GazeElseHead;
-    [Tooltip("解析する人物。Filtered / Image なら trackId、Kinect なら bodyId。-1 なら全員。")]
+    [Tooltip("解析する人物。Filtered / Image ならシーン3のグループの番号、Kinect なら bodyId。-1 なら全員。")]
     [SerializeField] private int personId = -1;
     [Tooltip("次のフレームまでの間隔がこれより長いときは、フレームの時間をこの秒数で打ち切る(記録の抜けを注視時間に数えない)。")]
     [SerializeField] private float maxFrameDuration = 0.2f;
@@ -113,7 +115,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
     [SerializeField] private Material heatMapMaterial;
     [Tooltip("Palette 用のマテリアル(Custom/TextureHeatAlpha)。部屋の元のテクスチャを引き継ぐ。空なら Custom/TextureHeatAlpha から作る。")]
     [SerializeField] private Material paletteMaterial;
-    [Tooltip("ヒートマップを表示する人物ID(Filtered なら trackId、Kinect なら bodyId)。複数指定すると合計を表示する。空なら全員。画面右上の一覧でも選べる。")]
+    [Tooltip("ヒートマップを表示する人物ID(Filtered / Image ならシーン3のグループの番号、Kinect なら bodyId)。複数指定すると合計を表示する。空なら全員。画面右上の一覧でも選べる。")]
     [SerializeField] private int[] displayPersonIds = new int[0];
     [Tooltip("このヒートで最大の色になる")]
     [SerializeField] private float maxHeatDisplay = 50f;
@@ -134,7 +136,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
     [SerializeField] private Material lineMaterial;
     [SerializeField] private float jointScale = 0.06f;
     [SerializeField] private float lineWidth = 0.02f;
-    [Tooltip("人物ごとの色")]
+    [Tooltip("人物ごとの色(人物IDの順。シーン3のグループの色と同じ並び)")]
     [SerializeField] private Color[] personColors =
     {
         Color.red, Color.green, Color.blue, Color.yellow, Color.cyan, Color.magenta
@@ -143,8 +145,8 @@ public class HomeGazeAnalyzer : MonoBehaviour
     [SerializeField] private bool showGaze = true;
     [SerializeField] private float gazeLineLength = 1.5f;
     [SerializeField] private float gazeLineWidth = 0.015f;
-    [Tooltip("骨格と視線の線を表示する人物ID(1人だけ)。-1 なら全員。画面右上の「Skeleton」の一覧でも選べ、選ぶとその人が最初に出てくる時刻へ移動する。\n" +
-             "ヒートマップの人物の選択(Heat Map)とは別。")]
+    [Tooltip("骨格と視線の線を表示する人物ID(1人だけ)。-1 なら全員。画面右上の「Skeleton」の一覧でも選べ、\n" +
+             "選んだ人物がその時刻に映っていなければ、最初に出てくる時刻へ移動する。表示だけで、解析は全員分を行う。")]
     [SerializeField] private int skeletonPersonId = -1;
 
     [Header("Playback")]
@@ -184,31 +186,22 @@ public class HomeGazeAnalyzer : MonoBehaviour
     private HeatMapDisplay appliedDisplay;
     // 骨格データに出てくる人物IDとそのフレーム数(画面右上の一覧の選択肢)
     private readonly SortedDictionary<int, int> personFrameCounts = new SortedDictionary<int, int>();
+    // 人物IDの名前(grouped の骨格ではシーン3のグループ名)
+    private readonly Dictionary<int, string> personNames = new Dictionary<int, string>();
     // 人物IDが最初に出てくる時刻(秒)
     private readonly Dictionary<int, float> personFirstTimes = new Dictionary<int, float>();
-    // 同じ人の人物IDをまとめたグループ(Analysis/person_groups_<骨格>.json に保存する)
-    private readonly List<HomePersonGroup> personGroups = new List<HomePersonGroup>();
+    // 骨格を表示する人物の一覧(1人だけ選ぶ)
+    private RectTransform skeletonListRect;
+    private RectTransform skeletonListContent;
+    private TMP_Text skeletonHeaderText;
+    private Toggle skeletonAllToggle;
+    private readonly List<KeyValuePair<int, Toggle>> skeletonToggles = new List<KeyValuePair<int, Toggle>>();
+    private int appliedSkeletonPersonId = -1;
     // ヒートマップの人物の一覧
     private RectTransform heatListRect;
     private RectTransform heatListContent;
     private Toggle heatAllToggle;
     private readonly List<KeyValuePair<DisplayUnit, Toggle>> heatUnitToggles = new List<KeyValuePair<DisplayUnit, Toggle>>();
-    // 骨格を表示する人物の一覧(1人・1グループだけ選ぶ)
-    private RectTransform skeletonListRect;
-    private RectTransform skeletonListContent;
-    private Toggle skeletonAllToggle;
-    private readonly List<KeyValuePair<DisplayUnit, Toggle>> skeletonUnitToggles = new List<KeyValuePair<DisplayUnit, Toggle>>();
-    private TMP_Text skeletonHeaderText;
-    // 骨格を表示する人物ID(null なら全員)と、その表示名
-    private HashSet<int> skeletonIds;
-    private string skeletonLabel = "All";
-    private int appliedSkeletonPersonId = -1;
-    // グループを作る一覧
-    private RectTransform groupListRect;
-    private RectTransform groupListContent;
-    private TMP_Text groupHeaderText;
-    private TMP_InputField groupNameInput;
-    private readonly HashSet<int> groupCandidateIds = new HashSet<int>();
     // ヒートマップに表示する人物(空なら全員)
     private readonly SortedSet<int> selectedPersonIds = new SortedSet<int>();
     private int[] appliedPersonIds = new int[0];
@@ -298,14 +291,14 @@ public class HomeGazeAnalyzer : MonoBehaviour
             showHeadDirection = false
         };
 
+        // 以前 Analysis/ の直下に置いていたグループ・ヒートマップ・スコアを種類ごとのフォルダへ移す
+        HomeExperimentPaths.MigrateLegacyAnalysisFiles(env.ExperimentName, subjectName);
         LoadSamples();
-        LoadPersonGroups();
         SetupHeatMeshes();
         SetupScoreTargets();
         ApplyDisplayMode();
         SetupPersonSelector();
-        SetupSkeletonSelector();
-        SetupGroupPanel();
+        SetupSkeletonSelector(frameText != null ? frameText.canvas : FindObjectOfType<Canvas>(), 1);
         StartCacheBuild();
         SetupTimeline();
         ShowSample(FindSampleIndex(playbackTime));
@@ -337,7 +330,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
         if (skeletonPersonId != appliedSkeletonPersonId)
             SetSkeletonPerson(skeletonPersonId);
 
-        if (Input.GetKeyDown(playStopKey) && !IsTypingText())
+        if (Input.GetKeyDown(playStopKey))
         {
             if (isPlaying)
                 Stop();
@@ -381,9 +374,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     private void LateUpdate()
     {
-        // グループ名を入力中は選択を外さない(外すと入力できない)
-        if (!IsTypingText())
-            HomeExperimentPaths.ClearUISelection();
+        HomeExperimentPaths.ClearUISelection();
     }
 
     private void OnDestroy()
@@ -526,7 +517,9 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
         try
         {
+            // ヒートマップとスコアは別のフォルダ
             Directory.CreateDirectory(Path.GetDirectoryName(heatMapPath));
+            Directory.CreateDirectory(Path.GetDirectoryName(scorePath));
             File.WriteAllText(heatMapPath, JsonUtility.ToJson(CreateHeatMapData()));
             File.WriteAllText(scorePath, JsonUtility.ToJson(CreateScoreData(), true));
             HomeExperimentPaths.RefreshAssetDatabase();
@@ -554,6 +547,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
     {
         samples.Clear();
         personFrameCounts.Clear();
+        personNames.Clear();
         personFirstTimes.Clear();
 
         if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out string error))
@@ -602,21 +596,22 @@ public class HomeGazeAnalyzer : MonoBehaviour
         text.Append($"[HomeGazeAnalyzer] {SourceName}: {samples.Count} samples, {duration:F1}s を読み込みました。人物 {personFrameCounts.Count} 人");
 
         foreach (KeyValuePair<int, int> pair in personFrameCounts)
-            text.Append($"\n  person_{pair.Key}: {pair.Value} frames");
+            text.Append($"\n  {GetPersonName(pair.Key)}: {pair.Value} frames");
 
         Debug.Log(text.ToString());
     }
 
+    // シーン3で作った人物ごとの骨格(grouped_<Mode>.json)を読み込む
     private void LoadFiltered(string modeName)
     {
-        string path = HomeExperimentPaths.GetFilteredSkeletonPath(env.ExperimentName, subjectName, modeName);
+        string path = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName);
 
         if (!File.Exists(path))
         {
             string how = skeletonSource == SkeletonSource.Image
-                ? "シーン1で Record Raw Mkv にチェックを入れて記録してから Tools/GazePipeline/run_pipeline.py で作ってください"
-                : "先にシーン3で作ってください";
-            Debug.LogError($"[HomeGazeAnalyzer] 骨格のファイルがありません。{how}: {path}");
+                ? "Tools/GazePipeline で filtered_Image.json を作ってから、シーン3(Source = Image)でグループを作って Save grouped を押してください"
+                : $"シーン3(Source = Kinect, Confidence Mode = {modeName})でグループを作って Save grouped を押してください";
+            Debug.LogError($"[HomeGazeAnalyzer] 人物ごとの骨格のファイルがありません。{how}: {path}");
             return;
         }
 
@@ -633,6 +628,9 @@ public class HomeGazeAnalyzer : MonoBehaviour
             {
                 if (personId >= 0 && person.trackId != personId)
                     continue;
+
+                if (!personNames.ContainsKey(person.trackId))
+                    personNames[person.trackId] = person.label;
 
                 Person p = new Person { id = person.trackId, joints = person.joints };
 
@@ -1750,220 +1748,52 @@ public class HomeGazeAnalyzer : MonoBehaviour
     }
 
     // ------------------------------------------------------------
-    // Person groups (同じ人に付いた複数の人物IDをまとめる)
+    // Persons (人物のまとめ方はシーン3で済ませてある。grouped の骨格では人物ID = シーン3のグループの番号)
     // ------------------------------------------------------------
-    // 人物IDの元になった骨格データ(グループのファイル名に使う。Image の向きの違いでは人物IDは変わらない)
-    private string PersonIdSourceName =>
-        skeletonSource == SkeletonSource.Filtered ? $"filtered_{filteredMode}" :
-        skeletonSource == SkeletonSource.Image ? "filtered_Image" :
-        $"Kinect{kinectId.Trim()}";
-
-    // 一覧に出す単位: グループ(複数の人物ID)と、グループに入っていない人物
+    // 一覧に出す単位(人物1人)
     private class DisplayUnit
     {
         public string name;
-        public bool isGroup;
         public int[] ids;
     }
 
     private List<DisplayUnit> GetDisplayUnits()
     {
         List<DisplayUnit> units = new List<DisplayUnit>();
-        HashSet<int> grouped = new HashSet<int>();
-
-        foreach (HomePersonGroup group in personGroups)
-        {
-            units.Add(new DisplayUnit { name = group.name, isGroup = true, ids = group.personIds.ToArray() });
-            grouped.UnionWith(group.personIds);
-        }
 
         foreach (int id in personFrameCounts.Keys)
-        {
-            if (!grouped.Contains(id))
-                units.Add(new DisplayUnit { name = $"person_{id}", ids = new[] { id } });
-        }
+            units.Add(new DisplayUnit { name = GetPersonName(id), ids = new[] { id } });
 
         return units;
     }
 
-    private HomePersonGroup FindGroup(int personId)
-    {
-        foreach (HomePersonGroup group in personGroups)
-        {
-            if (group.personIds.Contains(personId))
-                return group;
-        }
+    // 人物の名前(grouped の骨格ではシーン3のグループ名、それ以外は person_<ID>)
+    private string GetPersonName(int id) =>
+        personNames.TryGetValue(id, out string name) && !string.IsNullOrEmpty(name) ? name : $"person_{id}";
 
-        return null;
-    }
-
-    private string GetUnitLabel(DisplayUnit unit, bool withFirstTime)
+    private string GetUnitLabel(DisplayUnit unit)
     {
         int frames = 0;
-        float firstTime = float.MaxValue;
 
         foreach (int id in unit.ids)
         {
             if (personFrameCounts.TryGetValue(id, out int count))
                 frames += count;
-
-            if (personFirstTimes.TryGetValue(id, out float time))
-                firstTime = Mathf.Min(firstTime, time);
         }
 
-        string members = unit.isGroup ? $" [{string.Join(",", unit.ids)}]" : "";
-        string first = firstTime == float.MaxValue ? "-" : $"{firstTime:F1} s -";
-        return withFirstTime ? $"{unit.name}{members} ({first}, {frames} frames)" : $"{unit.name}{members} ({frames} frames)";
+        return $"{unit.name} ({frames} frames)";
     }
 
-    // 人物の色。グループはメンバーの一番小さいIDの色にそろえる
+    // 人物の色(人物IDの順。grouped の骨格ではシーン3のグループの色と同じ)
     private Color GetPersonColor(int personId)
     {
-        int key = personId;
-        HomePersonGroup group = FindGroup(personId);
-
-        if (group != null)
-        {
-            foreach (int id in group.personIds)
-                key = Mathf.Min(key, id);
-        }
-
-        return personColors.Length > 0 ? personColors[Mathf.Abs(key) % personColors.Length] : Color.white;
-    }
-
-    private void LoadPersonGroups()
-    {
-        personGroups.Clear();
-
-        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
-            !HomeExperimentPaths.IsValidFolderName(subjectName, out _))
-            return;
-
-        string path = HomeExperimentPaths.GetPersonGroupsPath(env.ExperimentName, subjectName, PersonIdSourceName);
-
-        if (!File.Exists(path))
-            return;
-
-        try
-        {
-            HomePersonGroupList list = JsonUtility.FromJson<HomePersonGroupList>(File.ReadAllText(path));
-
-            if (list != null && list.groups != null)
-            {
-                foreach (HomePersonGroup group in list.groups)
-                {
-                    if (group != null && group.personIds != null && group.personIds.Count > 0)
-                        personGroups.Add(group);
-                }
-            }
-
-            Debug.Log($"[HomeGazeAnalyzer] 人物のグループを {personGroups.Count} 個読み込みました: {path}");
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"[HomeGazeAnalyzer] 人物のグループを読み込めませんでした: {path}\n{e.Message}");
-        }
-    }
-
-    private void SavePersonGroups()
-    {
-        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
-            !HomeExperimentPaths.IsValidFolderName(subjectName, out _))
-            return;
-
-        string path = HomeExperimentPaths.GetPersonGroupsPath(env.ExperimentName, subjectName, PersonIdSourceName);
-
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            HomePersonGroupList list = new HomePersonGroupList { skeletonSource = PersonIdSourceName, groups = personGroups };
-            File.WriteAllText(path, JsonUtility.ToJson(list, true));
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError($"[HomeGazeAnalyzer] 人物のグループを保存できませんでした: {path}\n{e}");
-        }
-    }
-
-    // ids を1つのグループにする。ほかのグループに入っていたIDは移す。
-    // 同じ名前のグループがあればそこに足す。name が空なら group_<番号>
-    public void CreatePersonGroup(string name, IEnumerable<int> ids)
-    {
-        List<int> members = new List<int>();
-
-        foreach (int id in ids)
-        {
-            if (id >= 0 && !members.Contains(id))
-                members.Add(id);
-        }
-
-        if (members.Count == 0)
-        {
-            Debug.LogWarning("[HomeGazeAnalyzer] グループにする人物IDを選んでください。");
-            return;
-        }
-
-        foreach (HomePersonGroup group in personGroups)
-            group.personIds.RemoveAll(members.Contains);
-
-        personGroups.RemoveAll(group => group.personIds.Count == 0);
-
-        name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
-
-        if (name == null)
-        {
-            int number = personGroups.Count + 1;
-
-            while (personGroups.Exists(group => group.name == $"group_{number}"))
-                number++;
-
-            name = $"group_{number}";
-        }
-
-        HomePersonGroup target = personGroups.Find(group => group.name == name);
-
-        if (target == null)
-        {
-            target = new HomePersonGroup { name = name };
-            personGroups.Add(target);
-        }
-
-        target.personIds.AddRange(members);
-        target.personIds.Sort();
-        OnPersonGroupsChanged();
-    }
-
-    public void RemovePersonGroup(string name)
-    {
-        if (personGroups.RemoveAll(group => group.name == name) > 0)
-            OnPersonGroupsChanged();
-    }
-
-    // グループを変えたら保存し、一覧と骨格の色を作り直す
-    private void OnPersonGroupsChanged()
-    {
-        SavePersonGroups();
-        RebuildHeatRows();
-        RebuildSkeletonRows();
-        RebuildGroupPanel();
-
-        foreach (KeyValuePair<int, PersonVisual> pair in visuals)
-        {
-            Color color = GetPersonColor(pair.Key);
-            pair.Value.body.SetColor(color);
-            pair.Value.headColor = Color.Lerp(color, Color.white, 0.5f);
-        }
-
-        shownSample = -2; // 視線の線の色も描き直す
-        ShowSample(FindSampleIndex(playbackTime));
-        UpdateText();
+        return personColors.Length > 0 ? personColors[Mathf.Abs(personId) % personColors.Length] : Color.white;
     }
 
     // ------------------------------------------------------------
     // Person selection (ヒートマップ。複数選べる)
     // ------------------------------------------------------------
     // 表示するヒートマップの人物をまとめて指定する(空なら全員)。
-    // 画面の一覧でグループを選ぶと、そのグループの人物IDがまとめて選ばれる。
     public void SetDisplayPersons(IEnumerable<int> ids)
     {
         selectedPersonIds.Clear();
@@ -2053,7 +1883,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
         return ids.Length > 0;
     }
 
-    // 選んでいる人物の表示名(グループを丸ごと選んでいればグループ名)
+    // 選んでいる人物の表示名
     private string GetDisplayPersonsLabel()
     {
         if (selectedPersonIds.Count == 0)
@@ -2074,7 +1904,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
         foreach (int id in selectedPersonIds)
         {
             if (!named.Contains(id))
-                names.Add($"person_{id}");
+                names.Add(GetPersonName(id));
         }
 
         return string.Join(", ", names);
@@ -2083,8 +1913,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
     // 骨格を読み込んだ後に、ヒートマップの人物の一覧を作る(画面右上)
     //   [Heat Map : All  v]   … 押すと一覧を開閉する
     //   [x] All (123 frames)
-    //   [ ] mother [0,3,7] (100 frames)   … グループ
-    //   [ ] person_5 (23 frames)          … グループに入っていない人物
+    //   [ ] mother (100 frames)   … 人物(シーン3のグループ)
     private void SetupPersonSelector()
     {
         Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
@@ -2130,7 +1959,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
         for (int i = 0; i < units.Count; i++)
         {
             DisplayUnit unit = units[i];
-            Toggle toggle = CreateToggleRow(heatListContent, GetUnitLabel(unit, false), (i + 1) * DropdownRowHeight, DropdownRowHeight);
+            Toggle toggle = CreateToggleRow(heatListContent, GetUnitLabel(unit), (i + 1) * DropdownRowHeight, DropdownRowHeight);
             toggle.onValueChanged.AddListener(isOn => OnHeatUnitToggle(unit, isOn));
             heatUnitToggles.Add(new KeyValuePair<DisplayUnit, Toggle>(unit, toggle));
         }
@@ -2140,36 +1969,19 @@ public class HomeGazeAnalyzer : MonoBehaviour
     }
 
     // ------------------------------------------------------------
-    // Skeleton selection (1人・1グループだけ)
+    // Skeleton selection (表示する人物を1人だけ選ぶ。表示だけで、解析には関係しない)
     // ------------------------------------------------------------
-    // 骨格と視線の線を表示する人物を1人選ぶ(-1 なら全員)。インスペクターの skeletonPersonId から呼ばれる
+    //   [Skeleton : All  v]
+    //   (o) All
+    //   ( ) kawabe (0.1 s -, 17000 frames)
     public void SetSkeletonPerson(int id)
     {
-        SetSkeletonUnit(id < 0 ? null : new DisplayUnit { name = $"person_{id}", ids = new[] { id } });
-    }
+        skeletonPersonId = id;
+        appliedSkeletonPersonId = id;
 
-    // 骨格と視線の線を表示する人物(グループなら全員)を選ぶ(null なら全員)。
-    // 選ぶと、その人(グループなら誰か)が最初に出てくる時刻へ移動する
-    private void SetSkeletonUnit(DisplayUnit unit)
-    {
-        skeletonIds = unit == null ? null : new HashSet<int>(unit.ids);
-        skeletonLabel = unit == null ? "All" : unit.name;
-        skeletonPersonId = unit != null && !unit.isGroup && unit.ids.Length == 1 ? unit.ids[0] : -1;
-        appliedSkeletonPersonId = skeletonPersonId;
-
-        if (unit != null)
-        {
-            float firstTime = float.MaxValue;
-
-            foreach (int id in unit.ids)
-            {
-                if (personFirstTimes.TryGetValue(id, out float time))
-                    firstTime = Mathf.Min(firstTime, time);
-            }
-
-            if (firstTime != float.MaxValue)
-                Seek(firstTime);
-        }
+        // 選んだ人物が今の時刻に映っていなければ、最初に出てくる時刻へ移動する
+        if (id >= 0 && !IsPersonInSample(FindSampleIndex(playbackTime), id) && personFirstTimes.TryGetValue(id, out float firstTime))
+            Seek(firstTime);
 
         shownSample = -2; // 同じフレームでも描き直す
         ShowSample(FindSampleIndex(playbackTime));
@@ -2178,73 +1990,56 @@ public class HomeGazeAnalyzer : MonoBehaviour
         UpdateText();
     }
 
-    private bool IsSkeletonUnit(DisplayUnit unit)
+    private bool IsPersonInSample(int index, int id)
     {
-        return skeletonIds != null && skeletonIds.Count == unit.ids.Length && ContainsAll(skeletonIds, unit.ids);
+        if (index < 0 || index >= samples.Count)
+            return false;
+
+        foreach (Person person in samples[index].persons)
+        {
+            if (person.id == id)
+                return true;
+        }
+
+        return false;
     }
 
-    private void RefreshSkeletonToggles()
+    private string SkeletonLabel => skeletonPersonId < 0 ? "All" : GetPersonName(skeletonPersonId);
+
+    private void SetupSkeletonSelector(Canvas canvas, int slot)
     {
-        if (skeletonAllToggle != null)
-            skeletonAllToggle.SetIsOnWithoutNotify(skeletonIds == null);
-
-        foreach (KeyValuePair<DisplayUnit, Toggle> pair in skeletonUnitToggles)
-            pair.Value.SetIsOnWithoutNotify(IsSkeletonUnit(pair.Key));
-
-        if (skeletonHeaderText != null)
-            skeletonHeaderText.text = $"Skeleton : {skeletonLabel}";
-    }
-
-    // ヒートマップの一覧の左隣に、骨格を表示する人物の一覧を作る(1つだけ選ぶ)
-    //   [Skeleton : All  v]
-    //   (o) All
-    //   ( ) mother [0,3,7] (0.1 s -, 100 frames)
-    //   ( ) person_5 (12.3 s -, 23 frames)
-    private void SetupSkeletonSelector()
-    {
-        Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
-
         if (canvas == null)
             return;
 
-        RectTransform root = CreateDropdown(canvas, "SkeletonSelector", 1, out skeletonHeaderText, out skeletonListRect, out skeletonListContent);
+        RectTransform root = CreateDropdown(canvas, "SkeletonSelector", slot, out skeletonHeaderText, out skeletonListRect, out skeletonListContent);
         root.GetComponent<Button>().onClick.AddListener(() => skeletonListRect.gameObject.SetActive(!skeletonListRect.gameObject.activeSelf));
         skeletonListRect.gameObject.SetActive(false);
 
-        RebuildSkeletonRows();
-    }
-
-    private void RebuildSkeletonRows()
-    {
-        if (skeletonListContent == null)
-            return;
-
-        ClearChildren(skeletonListContent);
-        skeletonUnitToggles.Clear();
-
-        List<DisplayUnit> units = GetDisplayUnits();
-
         skeletonAllToggle = CreateToggleRow(skeletonListContent, "All", 0f, DropdownRowHeight);
-        skeletonAllToggle.onValueChanged.AddListener(isOn => OnSkeletonToggle(null, isOn));
+        skeletonAllToggle.onValueChanged.AddListener(isOn => OnSkeletonToggle(-1, isOn));
 
-        for (int i = 0; i < units.Count; i++)
+        int row = 1;
+
+        foreach (KeyValuePair<int, int> pair in personFrameCounts)
         {
-            DisplayUnit unit = units[i];
-            Toggle toggle = CreateToggleRow(skeletonListContent, GetUnitLabel(unit, true), (i + 1) * DropdownRowHeight, DropdownRowHeight);
-            toggle.onValueChanged.AddListener(isOn => OnSkeletonToggle(unit, isOn));
-            skeletonUnitToggles.Add(new KeyValuePair<DisplayUnit, Toggle>(unit, toggle));
+            int id = pair.Key;
+            personFirstTimes.TryGetValue(id, out float firstTime);
+            Toggle toggle = CreateToggleRow(skeletonListContent, $"{GetPersonName(id)} ({firstTime:F1} s -, {pair.Value} frames)",
+                                            row++ * DropdownRowHeight, DropdownRowHeight);
+            toggle.onValueChanged.AddListener(isOn => OnSkeletonToggle(id, isOn));
+            skeletonToggles.Add(new KeyValuePair<int, Toggle>(id, toggle));
         }
 
-        SetDropdownRows(skeletonListRect, skeletonListContent, units.Count + 1);
+        SetDropdownRows(skeletonListRect, skeletonListContent, row);
         RefreshSkeletonToggles();
     }
 
-    private void OnSkeletonToggle(DisplayUnit unit, bool isOn)
+    private void OnSkeletonToggle(int id, bool isOn)
     {
         // 1つだけ選ぶ。選び直すと一覧を閉じる(選んでいるものを外そうとしたときは選んだままにする)
         if (isOn)
         {
-            SetSkeletonUnit(unit);
+            SetSkeletonPerson(id);
             skeletonListRect.gameObject.SetActive(false);
         }
         else
@@ -2253,125 +2048,16 @@ public class HomeGazeAnalyzer : MonoBehaviour
         }
     }
 
-    // ------------------------------------------------------------
-    // Group panel (人物IDをまとめる)
-    // ------------------------------------------------------------
-    //   [Groups (1)  - click to edit]            … 押すと下を開閉する
-    //   ┌ 固定(スクロールしない) ───────────────┐
-    //   │ 1. Check IDs below  2. Name  3. Make    │
-    //   │ [group name (optional)_____] [Make group]│ … 青いボタン
-    //   └──────────────────────────────┘
-    //   Groups:
-    //     mother: 0, 3, 7                [Ungroup]  … 赤いボタンで解除
-    //   Person IDs (check to group):
-    //   [x] person_0 (0.1 s -, 100 frames)  [mother]
-    //   [ ] person_5 (12.3 s -, 23 frames)
-    private void SetupGroupPanel()
+    private void RefreshSkeletonToggles()
     {
-        Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
+        if (skeletonAllToggle != null)
+            skeletonAllToggle.SetIsOnWithoutNotify(skeletonPersonId < 0);
 
-        if (canvas == null)
-            return;
+        foreach (KeyValuePair<int, Toggle> pair in skeletonToggles)
+            pair.Value.SetIsOnWithoutNotify(pair.Key == skeletonPersonId);
 
-        RectTransform root = CreateDropdown(canvas, "GroupPanel", 2, out groupHeaderText, out groupListRect, out groupListContent);
-
-        // 見出しのすぐ下に、スクロールしない入力欄とボタンを置き、一覧はその下にずらす
-        const float toolsHeight = DropdownRowHeight * 2f + 8f;
-        RectTransform tools = CreateRect("Tools", root);
-        tools.anchorMin = new Vector2(0f, 0f);
-        tools.anchorMax = new Vector2(1f, 0f);
-        tools.pivot = new Vector2(0.5f, 1f);
-        tools.anchoredPosition = new Vector2(0f, -2f);
-        tools.sizeDelta = new Vector2(0f, toolsHeight);
-        AddImage(tools.gameObject, uiSprite, new Color(0.85f, 0.92f, 1f, 0.98f));
-        groupListRect.anchoredPosition = new Vector2(0f, -2f - toolsHeight);
-
-        RectTransform hintRow = CreateLabelRow(tools, "1. Check IDs below  2. Name  3. Make group", 0, 0f);
-        hintRow.GetComponentInChildren<TMP_Text>().fontSize = 16f;
-
-        RectTransform inputRow = CreateLabelRow(tools, "", 1, 0f);
-        groupNameInput = CreateInputField(inputRow, "group name (optional)", 8f, DropdownWidth - 138f);
-        Button make = CreateButton(inputRow, "Make group", DropdownWidth - 125f, 118f, out _,
-                                   new Color(0.2f, 0.45f, 0.9f), Color.white);
-        make.onClick.AddListener(OnMakeGroup);
-
-        GameObject toolsObject = tools.gameObject;
-        root.GetComponent<Button>().onClick.AddListener(() =>
-        {
-            bool open = !groupListRect.gameObject.activeSelf;
-            groupListRect.gameObject.SetActive(open);
-            toolsObject.SetActive(open);
-        });
-        groupListRect.gameObject.SetActive(false);
-        toolsObject.SetActive(false);
-
-        RebuildGroupPanel();
-    }
-
-    private void RebuildGroupPanel()
-    {
-        if (groupListContent == null)
-            return;
-
-        ClearChildren(groupListContent);
-        int row = 0;
-
-        // 今あるグループ(右の赤いボタンで解除)
-        TMP_Text groupsTitle = CreateLabelRow(groupListContent, personGroups.Count > 0 ? "Groups:" : "Groups: (none yet)", row++, 0f)
-            .GetComponentInChildren<TMP_Text>();
-        groupsTitle.fontStyle = FontStyles.Bold;
-
-        foreach (HomePersonGroup group in personGroups)
-        {
-            RectTransform line = CreateLabelRow(groupListContent, $"  {group.name}: {string.Join(", ", group.personIds)}", row++, 100f);
-            string name = group.name;
-            Button ungroup = CreateButton(line, "Ungroup", DropdownWidth - 95f, 88f, out _,
-                                          new Color(0.85f, 0.3f, 0.3f), Color.white);
-            ungroup.onClick.AddListener(() => RemovePersonGroup(name));
-        }
-
-        TMP_Text idsTitle = CreateLabelRow(groupListContent, "Person IDs (check to group):", row++, 0f).GetComponentInChildren<TMP_Text>();
-        idsTitle.fontStyle = FontStyles.Bold;
-
-        // まとめる人物を選ぶ
-        foreach (int id in personFrameCounts.Keys)
-        {
-            personFrameCounts.TryGetValue(id, out int frames);
-            personFirstTimes.TryGetValue(id, out float firstTime);
-            HomePersonGroup group = FindGroup(id);
-            string label = $"person_{id} ({firstTime:F1} s -, {frames} frames){(group != null ? $"  [{group.name}]" : "")}";
-
-            Toggle toggle = CreateToggleRow(groupListContent, label, row++ * DropdownRowHeight, DropdownRowHeight);
-            toggle.SetIsOnWithoutNotify(groupCandidateIds.Contains(id));
-            toggle.onValueChanged.AddListener(isOn =>
-            {
-                if (isOn)
-                    groupCandidateIds.Add(id);
-                else
-                    groupCandidateIds.Remove(id);
-            });
-        }
-
-        SetDropdownRows(groupListRect, groupListContent, row);
-        groupHeaderText.text = $"Groups ({personGroups.Count})  - click to edit";
-    }
-
-    private void OnMakeGroup()
-    {
-        if (groupCandidateIds.Count == 0)
-        {
-            Debug.LogWarning("[HomeGazeAnalyzer] まとめる人物IDに、下の一覧でチェックを入れてください。");
-            return;
-        }
-
-        string groupName = groupNameInput != null ? groupNameInput.text : "";
-        List<int> ids = new List<int>(groupCandidateIds);
-        groupCandidateIds.Clear();
-
-        if (groupNameInput != null)
-            groupNameInput.text = "";
-
-        CreatePersonGroup(groupName, ids);
+        if (skeletonHeaderText != null)
+            skeletonHeaderText.text = $"Skeleton : {SkeletonLabel}";
     }
 
     // ------------------------------------------------------------
@@ -2423,66 +2109,6 @@ public class HomeGazeAnalyzer : MonoBehaviour
         content.sizeDelta = new Vector2(0f, rows * DropdownRowHeight);
     }
 
-    // 文字だけの行(rightMargin: 右に置くボタンの分だけ文字を短くする)
-    private RectTransform CreateLabelRow(RectTransform parent, string label, int row, float rightMargin)
-    {
-        RectTransform line = CreateRect("Row", parent);
-        line.anchorMin = new Vector2(0f, 1f);
-        line.anchorMax = new Vector2(1f, 1f);
-        line.pivot = new Vector2(0.5f, 1f);
-        line.anchoredPosition = new Vector2(0f, -row * DropdownRowHeight);
-        line.sizeDelta = new Vector2(0f, DropdownRowHeight);
-
-        TMP_Text text = CreateText("Label", line, TextAlignmentOptions.MidlineLeft);
-        SetStretch(text.rectTransform, new Vector2(10f, 0f), new Vector2(-10f - rightMargin, 0f));
-        text.text = label;
-        return line;
-    }
-
-    private TMP_InputField CreateInputField(RectTransform parent, string placeholderText, float x, float width)
-    {
-        RectTransform rect = CreateRect("Input", parent);
-        PlaceLeft(rect, x, width, 3f);
-        AddImage(rect.gameObject, uiSprite, Color.white);
-
-        // 背景と見分けやすいように枠線を付ける
-        Outline outline = rect.gameObject.AddComponent<Outline>();
-        outline.effectColor = new Color(0.35f, 0.35f, 0.35f);
-        outline.effectDistance = new Vector2(1.5f, -1.5f);
-
-        RectTransform area = CreateRect("Text Area", rect);
-        SetStretch(area, new Vector2(8f, 2f), new Vector2(-8f, -2f));
-        area.gameObject.AddComponent<RectMask2D>();
-
-        TMP_Text placeholder = CreateText("Placeholder", area, TextAlignmentOptions.MidlineLeft);
-        SetStretch(placeholder.rectTransform, Vector2.zero, Vector2.zero);
-        placeholder.text = placeholderText;
-        placeholder.fontStyle = FontStyles.Italic;
-        placeholder.color = new Color(0.5f, 0.5f, 0.5f);
-
-        TMP_Text text = CreateText("Text", area, TextAlignmentOptions.MidlineLeft);
-        SetStretch(text.rectTransform, Vector2.zero, Vector2.zero);
-        // 入力中の文字は省略記号(…)にせず、はみ出した分は入力欄の中でスクロールさせる
-        text.overflowMode = TextOverflowModes.Overflow;
-
-        // TMP_InputField は有効になったとき(OnEnable)に textComponent を使ってカーソルなどを準備する。
-        // 追加した直後に有効になると textComponent がまだ無く準備されずに、カーソルの描画でエラーになるので、
-        // いったん無効にしてから設定し、最後に有効にする
-        bool wasActive = rect.gameObject.activeSelf;
-        rect.gameObject.SetActive(false);
-
-        TMP_InputField input = rect.gameObject.AddComponent<TMP_InputField>();
-        input.textViewport = area;
-        input.textComponent = text;
-        input.placeholder = placeholder;
-        input.fontAsset = text.font;
-        input.pointSize = text.fontSize;
-        input.text = "";
-
-        rect.gameObject.SetActive(wasActive);
-        return input;
-    }
-
     private static void ClearChildren(RectTransform parent)
     {
         for (int i = parent.childCount - 1; i >= 0; i--)
@@ -2491,16 +2117,6 @@ public class HomeGazeAnalyzer : MonoBehaviour
             child.SetParent(null, false);
             Destroy(child.gameObject);
         }
-    }
-
-    // 文字を入力中か(入力中は Space で再生しない・選択を外さない)
-    private static bool IsTypingText()
-    {
-        GameObject selected = UnityEngine.EventSystems.EventSystem.current != null
-            ? UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject
-            : null;
-
-        return selected != null && selected.GetComponent<TMP_InputField>() != null;
     }
 
     // ------------------------------------------------------------
@@ -2895,28 +2511,6 @@ public class HomeGazeAnalyzer : MonoBehaviour
             personHeats[id] = arrays;
         }
 
-        // グループごと(メンバーの人物ごとのヒートの合計)
-        List<float[][]> groupHeats = new List<float[][]>();
-
-        foreach (HomePersonGroup group in personGroups)
-        {
-            float[][] arrays = NewHeatArrays();
-
-            foreach (int id in group.personIds)
-            {
-                if (!personHeats.TryGetValue(id, out float[][] personHeat))
-                    continue;
-
-                for (int m = 0; m < arrays.Length; m++)
-                {
-                    for (int i = 0; i < arrays[m].Length; i++)
-                        arrays[m][i] += personHeat[m][i];
-                }
-            }
-
-            groupHeats.Add(arrays);
-        }
-
         for (int m = 0; m < heatMeshes.Count; m++)
         {
             HeatMesh heatMesh = heatMeshes[m];
@@ -2944,24 +2538,10 @@ public class HomeGazeAnalyzer : MonoBehaviour
                 meshData.persons.Add(new HomeGazePersonHeat
                 {
                     personId = id,
+                    name = GetPersonName(id),
                     maxHeat = personMax,
                     totalHeat = personTotal,
                     heat = personHeat
-                });
-            }
-
-            for (int g = 0; g < personGroups.Count; g++)
-            {
-                float[] groupHeat = groupHeats[g][m];
-                GetHeatStats(groupHeat, out float groupMax, out float groupTotal);
-
-                meshData.groups.Add(new HomeGazeGroupHeat
-                {
-                    name = personGroups[g].name,
-                    personIds = new List<int>(personGroups[g].personIds),
-                    maxHeat = groupMax,
-                    totalHeat = groupTotal,
-                    heat = groupHeat
                 });
             }
 
@@ -2995,12 +2575,9 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     private HomeGazeScoreList CreateScoreData()
     {
-        // フレームごとの記録に、人物が入っているグループの名前を書く
+        // フレームごとの記録に、人物の名前を書く
         foreach (HomeGazeFrameRecord record in records)
-        {
-            HomePersonGroup group = FindGroup(record.personId);
-            record.groupName = group != null ? group.name : "";
-        }
+            record.personName = GetPersonName(record.personId);
 
         HomeGazeScoreList data = new HomeGazeScoreList
         {
@@ -3038,7 +2615,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
         return data;
     }
 
-    // 人物(グループは1人)ごとのスコア。今の時間範囲の注視記録を数える(RecomputeScores と同じ数え方)
+    // 人物ごとのスコア。今の時間範囲の注視記録を数える(RecomputeScores と同じ数え方)
     private List<HomeGazePersonScore> CreatePeopleScores()
     {
         List<HomeGazePersonScore> people = new List<HomeGazePersonScore>();
@@ -3049,7 +2626,6 @@ public class HomeGazeAnalyzer : MonoBehaviour
             HomeGazePersonScore score = new HomeGazePersonScore
             {
                 name = unit.name,
-                isGroup = unit.isGroup,
                 personIds = new List<int>(unit.ids)
             };
 
@@ -3144,8 +2720,8 @@ public class HomeGazeAnalyzer : MonoBehaviour
         {
             foreach (Person person in samples[index].persons)
             {
-                // 骨格の一覧で人物を選んでいれば、その人だけ表示する
-                if (skeletonIds != null && !skeletonIds.Contains(person.id))
+                // Skeleton の一覧で人物を選んでいれば、その人だけ表示する
+                if (skeletonPersonId >= 0 && person.id != skeletonPersonId)
                     continue;
 
                 if (!visuals.TryGetValue(person.id, out PersonVisual visual))
@@ -3225,7 +2801,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
             frameText.text =
                 $"{subjectName} ({OutputName})  Time : {playbackTime:F1} / {duration:F1} s\n" +
                 $"{heatRange}\n" +
-                $"Heat Map : {GetDisplayPersonsLabel()} ({heatMapDisplay}{(normalizeHeat ? ", Normalized" : "")})  Skeleton : {skeletonLabel}";
+                $"Heat Map : {GetDisplayPersonsLabel()} ({heatMapDisplay}{(normalizeHeat ? ", Normalized" : "")})  Skeleton : {SkeletonLabel}";
         }
 
         if (scoreText == null)

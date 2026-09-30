@@ -135,9 +135,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   subjectName: 0929hanekun
+  source: 1
+  forceRebuild: 0
   confidenceMode: 1
   headJoints: 1a0000001b0000001c0000001e0000001d0000001f000000
-  sameBodyDistance: 0.2
+  sameBodyDistance: 0.6
   trackMatchDistance: 1
   trackTimeout: 2
   sampleInterval: 0.03333334
@@ -156,6 +158,7 @@ MonoBehaviour:
   showHeadDirection: 1
   headDirectionLength: 0.4
   headDirectionWidth: 0.015
+  groupedOnly: 0
   playbackSpeed: 1
   loop: 0
   playStopKey: 32

@@ -158,10 +158,13 @@ public class HomeSkeletonJoint
 }
 
 // ============================================================
-// Filtered: 信頼度フィルタリング後の骨格 (Skeleton/<実験対象者>/Filtered/filtered_skeleton.json)
+// Filtered: 統合後の骨格 (Skeleton/<実験対象者>/Filtered/filtered_<Mode>.json)
+//           人物ごとの骨格 (Skeleton/<実験対象者>/Filtered/grouped_<Mode>.json)
 // ============================================================
-// SkeletonRealtimePublisher と同じ方法で全キネクトの骨格を統合した結果。
-// 各時刻で「近い骨格は同一人物とみなして信頼度の高いものだけ」を残し、人物ごとにトラックIDを振る。
+// filtered: SkeletonRealtimePublisher と同じ方法で全キネクトの骨格を統合した結果(シーン3)。
+//           各時刻で「近い骨格は同一人物とみなして信頼度の高いものだけ」を残し、人物ごとにトラックIDを振る。
+// grouped : シーン3で同じ人の人物IDをまとめ(groups)、各時刻でグループごとに頭の信頼度が最も高い骨格を1つだけ残したもの。
+//           trackId = グループの番号、label = グループ名、sourceTrackId = filtered での人物ID。シーン4/5はこれを読む。
 [Serializable]
 public class HomeFilteredSkeletonList
 {
@@ -169,6 +172,14 @@ public class HomeFilteredSkeletonList
     public string subjectName;
     public string createdAt;
     public List<string> sourceKinects = new List<string>();
+
+    // 統合の作り方の版(HomeSkeletonFilter.FusionVersion)。古いファイルは 0
+    public int fusionVersion;
+
+    // grouped のときだけ: グループと、元にした filtered の createdAt
+    public bool grouped;
+    public string sourceCreatedAt;
+    public List<HomePersonGroup> groups = new List<HomePersonGroup>();
 
     // 使ったパラメータ
     // confidenceMode: "AllJoints"(全関節の平均) / "HeadJoints"(headJoints の平均)
@@ -196,6 +207,8 @@ public class HomeFilteredPerson
 {
     public int trackId;
     public string label;
+    // grouped のときだけ: filtered での人物ID(-1 は filtered そのもの)
+    public int sourceTrackId = -1;
 
     // 採用した骨格の出どころ
     public string kinectId;
@@ -221,7 +234,7 @@ public class HomeFilteredPerson
 }
 
 // ============================================================
-// Analysis: 視線コーンの解析結果 (Skeleton/<実験対象者>/Analysis/)
+// Analysis: 視線コーンの解析結果 (Skeleton/<実験対象者>/Analysis/HeatMap/, Analysis/Score/)
 // ============================================================
 // ConeHeatMapShow / ScoreHeat / ScoreHeatSummary と同じ方法で視線方向を求める:
 //   頭部方向(Head→Nose) を 顔の右方向軸まわりに downwardAngle だけ下へ回し、
@@ -245,7 +258,7 @@ public class HomeGazeParameters
     public float heatRangeEndSec;
 }
 
-// heatmap_<骨格>.json … 部屋メッシュの頂点ごとのヒート
+// Analysis/HeatMap/heatmap_<骨格>.json … 部屋メッシュの頂点ごとのヒート
 [Serializable]
 public class HomeGazeHeatMapList
 {
@@ -272,29 +285,18 @@ public class HomeGazeHeatMapMesh
     public float totalHeat;
     // 全員の合計。メッシュの頂点と同じ並び
     public float[] heat;
-    // 人物ごとのヒート
+    // 人物ごとのヒート(grouped の骨格では、シーン3でまとめた人物ごと)
     public List<HomeGazePersonHeat> persons = new List<HomeGazePersonHeat>();
-    // 人物のグループ(シーン4でまとめた人物ID)ごとのヒート
-    public List<HomeGazeGroupHeat> groups = new List<HomeGazeGroupHeat>();
 }
 
-[Serializable]
-public class HomeGazeGroupHeat
-{
-    public string name;
-    public List<int> personIds = new List<int>();
-    public float maxHeat;
-    public float totalHeat;
-    // メッシュの頂点と同じ並び
-    public float[] heat;
-}
-
-// Analysis/person_groups_<人物IDの元の骨格>.json … シーン4で同じ人の人物IDをまとめたグループ
+// Analysis/Groups/person_groups_<人物IDの元の骨格>.json … シーン3で同じ人の人物IDをまとめたグループ
 [Serializable]
 public class HomePersonGroupList
 {
-    // 人物IDの元になった骨格データ(filtered_HeadJoints / filtered_Image / KinectA など)
+    // 人物IDの元になった骨格データ(filtered_HeadJoints / filtered_Image など)
     public string skeletonSource;
+    // グループを作ったときの filtered の createdAt(骨格を作り直すと人物IDが変わるので、違えば確認が必要)
+    public string filteredCreatedAt;
     public List<HomePersonGroup> groups = new List<HomePersonGroup>();
 }
 
@@ -305,13 +307,12 @@ public class HomePersonGroup
     public List<int> personIds = new List<int>();
 }
 
-// 人物(グループにまとめたものは1人)ごとのスコア
+// 人物ごとのスコア
 [Serializable]
 public class HomeGazePersonScore
 {
-    // グループ名、またはグループに入っていない人物は person_<ID>
+    // 人物の名前(grouped の骨格ではシーン3のグループ名、それ以外は person_<ID>)
     public string name;
-    public bool isGroup;
     public List<int> personIds = new List<int>();
 
     public int frameCount;
@@ -327,15 +328,16 @@ public class HomeGazePersonScore
 [Serializable]
 public class HomeGazePersonHeat
 {
-    // Filtered なら trackId、Kinect なら bodyId
+    // 骨格データの人物ID(grouped ならグループの番号、Kinect なら bodyId)と名前
     public int personId;
+    public string name;
     public float maxHeat;
     public float totalHeat;
     // メッシュの頂点と同じ並び
     public float[] heat;
 }
 
-// score_<骨格>.json … 対象物体ごとのスコアとフレームごとの注視対象
+// Analysis/Score/score_<骨格>.json … 対象物体ごとのスコアとフレームごとの注視対象
 [Serializable]
 public class HomeGazeScoreList
 {
@@ -360,7 +362,7 @@ public class HomeGazeScoreList
     public float noTargetSeconds;
 
     public List<HomeGazeTargetScore> targets = new List<HomeGazeTargetScore>();
-    // 人物(グループにまとめたものは1人)ごとの集計
+    // 人物ごとの集計
     public List<HomeGazePersonScore> people = new List<HomeGazePersonScore>();
     public List<HomeGazeFrameRecord> frames = new List<HomeGazeFrameRecord>();
 }
@@ -385,8 +387,8 @@ public class HomeGazeFrameRecord
     // このフレームが代表する時間(次の時刻までの間隔)
     public float durationSec;
     public int personId;
-    // personId が入っているグループ(シーン4でまとめたもの)。グループに入っていなければ空
-    public string groupName;
+    // 人物の名前(grouped の骨格ではシーン3のグループ名、それ以外は person_<ID>)
+    public string personName;
 
     // 対象名 / noHitLabel / noDataLabel のいずれか
     public string gazeTarget;
@@ -397,6 +399,109 @@ public class HomeGazeFrameRecord
     // targets と同じ並び。当たっていない対象は 0 / -1
     public List<float> heats = new List<float>();
     public List<float> angles = new List<float>();
+}
+
+// ============================================================
+// Analysis: 人物どうし・対象物体の相互作用 (シーン5, Analysis/Interaction/interaction_<骨格>.json と CSV)
+// ============================================================
+// 視線(シーン4と同じ補正後の頭部方向)から、時間範囲の中で次のものを数える。
+//   TargetGaze     … 人物が対象物体を注視していた(コーン軸に最も近い対象。シーン4の gazeTarget と同じ判定)
+//   JointAttention … 2人が同時に同じ対象物体を注視していた(注視対象の一致)。other が空なら「2人以上が同時に」
+//   LookAtPerson   … 人物の視線が相手の体(頭〜骨盤)の方向を向いていた
+//   LookAtFace     … 人物の視線が相手の頭(顔)の方向を向いていた
+//   MutualGaze     … 2人が同時にお互いの顔を見ていた(目を合わせていた)
+//   FaceToFace     … 2人が近くで向かい合っていた(水平面での向き。会話の姿勢の目安)
+[Serializable]
+public class HomeInteractionParameters
+{
+    public string skeletonSource;
+    public string headDirectionMethod;
+    public float downwardAngle;
+    // 「見ている」とするコーンの半角(度)。対象物体の注視・相手の体/顔を見ている・目を合わせている のすべてに使う
+    public float coneAngle;
+    public float coneDistance;
+
+    public float lookAtPersonDistance;
+    public float faceToFaceAngle;
+    public float faceToFaceDistance;
+
+    // これより短く映っていた人物(誤検出など)は数えない
+    public float minPersonSeconds;
+    // 途切れがこれ以下なら1回の出来事として続ける
+    public float mergeGapSeconds;
+    // これより短い出来事は回数(episodes)に数えない(時間 seconds には数える)
+    public float minEpisodeSeconds;
+
+    // 数えた時間範囲(秒, 骨格データの時刻)
+    public float rangeStartSec;
+    public float rangeEndSec;
+}
+
+[Serializable]
+public class HomeInteractionList
+{
+    public string experimentName;
+    public string subjectName;
+    public string createdAt;
+    public HomeInteractionParameters parameters = new HomeInteractionParameters();
+
+    public int sampleCount;
+    // 時間範囲の長さ(フレームの時間の合計)
+    public float rangeSeconds;
+
+    public List<string> targets = new List<string>();
+    public List<HomeInteractionPerson> persons = new List<HomeInteractionPerson>();
+    public List<HomeInteractionMeasure> measures = new List<HomeInteractionMeasure>();
+    public List<HomeInteractionEpisode> episodes = new List<HomeInteractionEpisode>();
+}
+
+// 人物(grouped の骨格では、シーン3でまとめた人物)
+[Serializable]
+public class HomeInteractionPerson
+{
+    public string name;
+    public List<int> personIds = new List<int>();
+    // 映っていた時間と、視線が取れた時間
+    public float presentSeconds;
+    public float gazeSeconds;
+}
+
+[Serializable]
+public class HomeInteractionMeasure
+{
+    // TargetGaze / JointAttention / LookAtPerson / LookAtFace / MutualGaze / FaceToFace
+    public string type;
+    // 見ている人(2人の組なら1人目)。JointAttention の「2人以上」では空
+    public string person;
+    // 見られている人(2人の組なら2人目)。無ければ空
+    public string other;
+    // 対象物体。無ければ空
+    public string target;
+
+    public float seconds;
+    public int frames;
+    // 割合の分母(TargetGaze: その人が映っていた時間 / 2人の組: 2人が同時に映っていた時間 / 2人以上: 時間範囲)
+    public float baseSeconds;
+    public float ratio;
+
+    // minEpisodeSeconds 以上続いた回数と、その平均・最長
+    public int episodes;
+    public float meanEpisodeSeconds;
+    public float longestEpisodeSeconds;
+    // 最初に起きた時刻(秒)。起きなければ -1
+    public float firstTimeSec;
+}
+
+[Serializable]
+public class HomeInteractionEpisode
+{
+    public string type;
+    public string person;
+    public string other;
+    public string target;
+    public float startSec;
+    public float endSec;
+    public float durationSec;
 }
 
 // ============================================================

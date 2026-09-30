@@ -1,6 +1,6 @@
 {
     "experimentName": "0928sansouken",
-    "savedAt": "2026-09-28 14:13:37",
+    "savedAt": "2026-09-30 16:16:53",
     "objects": [
         {
             "name": "TV",
@@ -16,6 +16,46 @@
                 "x": -1.5499999523162842,
                 "y": 0.9430000185966492,
                 "z": 0.8769999742507935
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.10000000149011612,
+                "y": 0.10000000149011612,
+                "z": 0.10000000149011612
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Toy",
+            "group": "Toy",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_001_Toy.json",
+            "position": {
+                "x": -0.17000000178813935,
+                "y": 0.3100000023841858,
+                "z": 1.25
             },
             "rotation": {
                 "x": 0.0,
