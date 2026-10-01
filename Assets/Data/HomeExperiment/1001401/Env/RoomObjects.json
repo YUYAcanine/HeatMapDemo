@@ -1,6 +1,6 @@
 {
-    "experimentName": "0928sansouken",
-    "savedAt": "2026-10-01 01:47:10",
+    "experimentName": "1001401",
+    "savedAt": "2026-10-01 18:30:01",
     "objects": [
         {
             "name": "mesh",
@@ -8,8 +8,8 @@
             "sourceType": "Mesh",
             "assetGuid": "",
             "assetPath": "",
-            "meshAssetGuid": "c18bef76b91c1ad4fa6eedbbf7800318",
-            "meshAssetPath": "Assets/3DObject/LivingLab(nice)/LivingLab_nice_.obj",
+            "meshAssetGuid": "f8473ad408081fc4dbd6a974a021fd28",
+            "meshAssetPath": "Assets/3DObject/1001401/1001401.obj",
             "meshLocalId": -8670151273213183110,
             "meshFile": "",
             "position": {
@@ -30,8 +30,8 @@
             },
             "materials": [
                 {
-                    "assetGuid": "c18bef76b91c1ad4fa6eedbbf7800318",
-                    "assetPath": "Assets/3DObject/LivingLab(nice)/LivingLab_nice_.obj",
+                    "assetGuid": "f8473ad408081fc4dbd6a974a021fd28",
+                    "assetPath": "Assets/3DObject/1001401/1001401.obj",
                     "localId": 3758952881610933197,
                     "color": {
                         "r": 1.0,

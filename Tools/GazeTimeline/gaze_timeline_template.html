@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>注視の時系列</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f3f0;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #7a7974;
+    --grid: #e4e3df;
+    --lane: #f0efec;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --border: #dcdbd6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8f8e86;
+      --grid: #2c2c2a;
+      --lane: #232321;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --border: #34342f;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #111110;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --grid: #2c2c2a;
+    --lane: #232321;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --border: #34342f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 40px;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 14px/1.5 system-ui, "Yu Gothic UI", "Hiragino Sans", "Meiryo", sans-serif;
+  }
+  main { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--text-secondary); margin: 0 0 16px; max-width: 900px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+  .controls span { color: var(--text-secondary); margin-right: 4px; }
+  .controls button {
+    font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  }
+  .controls button[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; color: var(--text-secondary); font-size: 13px; }
+  .legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 14px 10px; margin-bottom: 16px; }
+  .panel h2 { font-size: 15px; margin: 0; }
+  .panel .meta { color: var(--text-muted); font-size: 12px; margin-bottom: 8px; }
+  svg { display: block; width: 100%; overflow: visible; }
+  svg text { fill: var(--text-secondary); font-size: 12px; }
+  svg .group-title { fill: var(--text-primary); font-weight: 600; }
+  svg .tick { fill: var(--text-muted); font-size: 11px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; }
+  .table-wrap { max-height: 320px; overflow: auto; margin-top: 6px; }
+  table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  th, td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--surface-1); color: var(--text-secondary); font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); max-width: 280px;
+  }
+  #tooltip b { display: block; margin-bottom: 2px; }
+  #tooltip .sw { display: inline-block; width: 10px; height: 8px; border-radius: 2px; margin-right: 5px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">注視の時系列</h1>
+  <p class="lead" id="lead"></p>
+  <div class="controls" id="controls"><span>時間範囲</span></div>
+  <div class="legend" id="legend"></div>
+  <div id="panels"></div>
+</main>
+<div id="tooltip" role="tooltip"></div>
+<script>
+const DATA = /*__DATA__*/null;
+
+const LABEL_W = 150;      // 左の行ラベルの幅
+const LANE_H = 12;        // 1人分の帯の高さ
+const LANE_GAP = 2;       // 上下の帯の間(2px の面の隙間)
+const ROW_GAP = 8;
+const GROUP_GAP = 14;
+const GROUP_TITLE_H = 20;
+const AXIS_H = 24;
+const MIN_BAR_W = 2;      // 短い出来事も見えるように
+const HIT_W = 8;          // マウスを乗せやすくする幅
+
+const TYPE_NAMES = {
+  TargetGaze: "対象物体を見ている", LookAtFace: "相手の顔を見ている", LookAtPerson: "相手の体を見ている",
+  JointAttention: "同じ物を同時に見ている", MutualGaze: "目を合わせている", FaceToFace: "向かい合っている"
+};
+
+// 色は人物に付ける(順位ではなく、最初に出てきた順で固定)。2人の関係は3番目の色
+const personOrder = [];
+for (const s of DATA.sources) for (const p of s.persons) if (!personOrder.includes(p)) personOrder.push(p);
+const personVar = p => `var(--series-${Math.min(personOrder.indexOf(p), 1) + 1})`;
+const RELATION_VAR = "var(--series-3)";
+
+const duration = Math.max(...DATA.sources.map(s => s.rangeEnd || Math.max(0, ...s.episodes.map(e => e.e))));
+const windows = [{ label: "全体", s: 0, e: duration }];
+// 2分ごとの時間範囲
+for (let t = 0; t < duration; t += 120) {
+  const end = Math.min(t + 120, duration);
+  windows.push({ label: `${t / 60}〜${Math.ceil(end / 60)}分`, s: t, e: end });
+}
+let current = windows[0];
+
+const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(1).padStart(4, "0")}`; };
+const fmtTick = t => { const m = Math.floor(t / 60), s = Math.round(t - m * 60); return `${m}:${String(s).padStart(2, "0")}`; };
+
+document.getElementById("title").textContent = `注視の時系列 ― ${DATA.subject}(${DATA.experiment})`;
+document.getElementById("lead").textContent =
+  "シーン5の判定で、2人がそれぞれ何を見ていたかを時間の流れに沿って並べたもの。各行の上の帯が1人目、下の帯が2人目で、" +
+  "同じ時刻に上下の帯がそろっていれば2人が同時に同じものを見ている。帯は0.5秒以上続いた出来事(0.3秒以下の途切れはつなげる)。帯にマウスを乗せると時刻が出る。";
+
+// 凡例(2人以上なので必ず出す。行ラベルにも名前を書くので色だけに頼らない)
+const legend = document.getElementById("legend");
+legend.innerHTML = personOrder.slice(0, 2).map(p => `<span><i style="background:${personVar(p)}"></i>${p}</span>`).join("") +
+  `<span><i style="background:${RELATION_VAR}"></i>2人の関係</span>`;
+
+// 時間範囲のボタン(グラフの上に1列)
+const controls = document.getElementById("controls");
+for (const w of windows) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = w.label;
+  b.setAttribute("aria-pressed", w === current ? "true" : "false");
+  b.onclick = () => {
+    current = w;
+    for (const other of controls.querySelectorAll("button")) other.setAttribute("aria-pressed", other === b ? "true" : "false");
+    renderAll();
+  };
+  controls.appendChild(b);
+}
+
+// 行の構成
+function buildRows(source) {
+  const [p0, p1] = source.persons;
+  const pair = (label, match) => ({ label, lanes: [p0, p1].filter(Boolean).map(p => ({ person: p, color: personVar(p), match: e => match(e) && e.person === p })) });
+  const single = (label, match) => ({ label, lanes: [{ person: "", color: RELATION_VAR, match }] });
+  return [
+    { title: "対象物体を見ている", rows: source.targets.map(t => pair(t, e => e.type === "TargetGaze" && e.target === t)) },
+    { title: "相手を見ている", rows: [pair("相手の顔", e => e.type === "LookAtFace"), pair("相手の体", e => e.type === "LookAtPerson")] },
+    { title: "2人の関係", rows: [
+      ...source.targets.map(t => single(`同じ物を同時に（${t}）`, e => e.type === "JointAttention" && e.target === t && e.person === "")),
+      single("目を合わせる", e => e.type === "MutualGaze"),
+      single("向かい合う", e => e.type === "FaceToFace")
+    ] }
+  ];
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function el(name, attrs, parent) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+const tooltip = document.getElementById("tooltip");
+function showTip(ev, html) {
+  tooltip.innerHTML = html;
+  tooltip.style.display = "block";
+  const x = Math.min(ev.clientX + 14, window.innerWidth - tooltip.offsetWidth - 8);
+  const y = Math.min(ev.clientY + 14, window.innerHeight - tooltip.offsetHeight - 8);
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${y}px`;
+}
+const hideTip = () => { tooltip.style.display = "none"; };
+
+function tickStep(span) {
+  for (const s of [1, 2, 5, 10, 15, 30, 60, 120, 300]) if (span / s <= 12) return s;
+  return 600;
+}
+
+function renderPanel(source, container) {
+  container.innerHTML = "";
+  const h2 = document.createElement("h2");
+  h2.textContent = source.name;
+  container.appendChild(h2);
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = `保存: ${source.createdAt} / 人物: ${source.persons.join("・")} / コーン半角 ${Number(source.coneAngle).toFixed(2)}°`;
+  container.appendChild(meta);
+
+  const groups = buildRows(source);
+  const width = Math.max(container.clientWidth - 28, 360);
+  const plotW = width - LABEL_W - 8;
+  const x = t => LABEL_W + (t - current.s) / (current.e - current.s) * plotW;
+
+  let height = AXIS_H;
+  for (const g of groups) {
+    height += GROUP_TITLE_H;
+    for (const r of g.rows) height += r.lanes.length * (LANE_H + LANE_GAP) - LANE_GAP + ROW_GAP;
+    height += GROUP_GAP;
+  }
+
+  const svg = el("svg", { viewBox: `0 0 ${width} ${height}`, height, role: "img",
+    "aria-label": `${source.name} の注視の時系列 ${fmtTick(current.s)}〜${fmtTick(current.e)}` }, container);
+  const clipId = `clip-${source.name}`;
+  el("rect", { x: LABEL_W, y: 0, width: plotW, height }, el("clipPath", { id: clipId }, el("defs", {}, svg)));
+
+  // 目盛り(控えめな縦線)
+  const step = tickStep(current.e - current.s);
+  const grid = el("g", {}, svg);
+  for (let t = Math.ceil(current.s / step) * step; t <= current.e + 1e-6; t += step) {
+    el("line", { x1: x(t), x2: x(t), y1: AXIS_H - 4, y2: height, stroke: "var(--grid)", "stroke-width": 1 }, grid);
+    const label = el("text", { x: x(t), y: AXIS_H - 10, "text-anchor": "middle", class: "tick" }, grid);
+    label.textContent = fmtTick(t);
+  }
+
+  const inWindow = e => e.e > current.s && e.s < current.e;
+  let y = AXIS_H;
+  const tableRows = [];
+
+  for (const g of groups) {
+    const title = el("text", { x: 0, y: y + 14, class: "group-title" }, svg);
+    title.textContent = g.title;
+    y += GROUP_TITLE_H;
+
+    for (const r of g.rows) {
+      const rowTop = y;
+      const rowH = r.lanes.length * (LANE_H + LANE_GAP) - LANE_GAP;
+      const rowLabel = el("text", { x: 10, y: rowTop + rowH / 2 + 4 }, svg);
+      rowLabel.textContent = r.label;
+
+      r.lanes.forEach((lane, i) => {
+        const ly = rowTop + i * (LANE_H + LANE_GAP);
+        el("rect", { x: LABEL_W, y: ly, width: plotW, height: LANE_H, fill: "var(--lane)", rx: 2 }, svg);
+
+        // 2人の行は、帯の左に誰の帯かを書く(色だけで区別しない)
+        if (lane.person) {
+          const who = el("text", { x: LABEL_W - 6, y: ly + LANE_H - 2, "text-anchor": "end", class: "tick" }, svg);
+          who.textContent = lane.person;
+        }
+
+        const layer = el("g", { "clip-path": `url(#${clipId})` }, svg);
+        for (const e of source.episodes) {
+          if (!lane.match(e) || !inWindow(e)) continue;
+          const x0 = x(e.s), w = Math.max(x(e.e) - x0, MIN_BAR_W);
+          el("rect", { x: x0, y: ly, width: w, height: LANE_H, rx: 2, fill: lane.color }, layer);
+          const hit = el("rect", { x: x0 + w / 2 - Math.max(w, HIT_W) / 2, y: ly - 1, width: Math.max(w, HIT_W), height: LANE_H + 2,
+            fill: "transparent", style: "cursor: default" }, layer);
+          const what = e.type === "TargetGaze" ? `${e.person} → ${e.target}` :
+            e.type === "LookAtFace" || e.type === "LookAtPerson" ? `${e.person} → ${e.other}` :
+            e.type === "JointAttention" ? `2人 → ${e.target}` : source.persons.join(" ・ ");
+          const html = `<b><span class="sw" style="background:${lane.color}"></span>${TYPE_NAMES[e.type]}</b>${what}<br>` +
+            `${fmt(e.s)} 〜 ${fmt(e.e)}(${(e.e - e.s).toFixed(1)} 秒)`;
+          hit.addEventListener("mousemove", ev => showTip(ev, html));
+          hit.addEventListener("mouseleave", hideTip);
+          tableRows.push([TYPE_NAMES[e.type], what, e.s, e.e]);
+        }
+      });
+
+      y += rowH + ROW_GAP;
+    }
+
+    y += GROUP_GAP;
+  }
+
+  // データ表(色が見分けにくいときや印刷用)
+  const details = document.createElement("details");
+  details.innerHTML = `<summary>データ表(この時間範囲の出来事 ${tableRows.length} 件)</summary>`;
+  tableRows.sort((a, b) => a[2] - b[2]);
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap";
+  wrap.innerHTML = `<table><thead><tr><th>開始</th><th>終了</th><th>長さ(秒)</th><th>種類</th><th>内容</th></tr></thead><tbody>` +
+    tableRows.map(([t, w, s, e]) => `<tr><td class="num">${fmt(s)}</td><td class="num">${fmt(e)}</td><td class="num">${(e - s).toFixed(1)}</td><td>${t}</td><td>${w}</td></tr>`).join("") +
+    `</tbody></table>`;
+  details.appendChild(wrap);
+  container.appendChild(details);
+}
+
+const panels = document.getElementById("panels");
+const panelNodes = DATA.sources.map(() => { const d = document.createElement("section"); d.className = "panel"; panels.appendChild(d); return d; });
+function renderAll() { DATA.sources.forEach((s, i) => renderPanel(s, panelNodes[i])); }
+renderAll();
+let resizeTimer;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderAll, 150); });
+</script>
+</body>
+</html>

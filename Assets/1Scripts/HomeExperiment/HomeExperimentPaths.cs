@@ -31,10 +31,12 @@ using UnityEngine.EventSystems;
 //                   │   └ heatmap_<骨格>.json … 視線コーンのヒートマップ(シーン4, 部屋メッシュの頂点ごとのヒート)
 //                   ├ Score/
 //                   │   └ score_<骨格>.json   … 対象物体ごとのスコアとフレームごとの注視対象(シーン4)
-//                   └ Interaction/
-//                       ├ interaction_<骨格>.json          … 人物どうし・対象物体の相互作用の解析(シーン5)
-//                       ├ interaction_<骨格>_summary.csv   … 同じ集計を表にしたもの(Excel などで開く)
-//                       └ interaction_<骨格>_episodes.csv  … 1回1回の出来事(注視・相互注視など)の開始・終了時刻
+//                   ├ Interaction/
+//                   │   ├ interaction_<骨格>.json          … 人物どうし・対象物体の相互作用の解析(シーン5)
+//                   │   ├ interaction_<骨格>_summary.csv   … 同じ集計を表にしたもの(Excel などで開く)
+//                   │   └ interaction_<骨格>_episodes.csv  … 1回1回の出来事(注視・相互注視など)の開始・終了時刻
+//                   └ Figures/
+//                       └ gaze_timeline.html … 2人の注視の時系列グラフ(Tools/GazeTimeline/make_gaze_timeline.py で Interaction/ から作る)
 //                   (<骨格> は filtered_HeadJoints / KinectA など、解析に使った骨格データ)
 //                   以前は Analysis/ の直下に置いていた。シーン4/5を開くと MigrateLegacyAnalysisFiles で上のフォルダへ移す。
 public static class HomeExperimentPaths

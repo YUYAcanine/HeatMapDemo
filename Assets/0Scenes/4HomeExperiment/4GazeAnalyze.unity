@@ -135,7 +135,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   subjectName: 0929hanekun
-  skeletonSource: 2
+  skeletonSource: 0
   filteredMode: 1
   kinectId: A
   imageDirection: 0
@@ -143,7 +143,7 @@ MonoBehaviour:
   maxFrameDuration: 0.2
   headDirectionMethod: 0
   downwardAngle: 24.4
-  coneAngle: 10.14
+  coneAngle: 20
   coneDistance: 5
   useCenterWeightedHeat: 0
   heatPerHit: 1

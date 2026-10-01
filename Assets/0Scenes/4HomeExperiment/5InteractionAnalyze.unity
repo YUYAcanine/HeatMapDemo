@@ -135,7 +135,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   subjectName: 0929hanekun
-  skeletonSource: 2
+  skeletonSource: 0
   filteredMode: 1
   kinectId: A
   imageDirection: 0
