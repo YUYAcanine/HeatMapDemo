@@ -295,7 +295,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: 0928sansouken
+  experimentName: 1001401
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1217085267}
   kinects:
@@ -436,7 +436,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   deviceIndex: 1
-  syncMode: 0
+  syncMode: 2
 --- !u!1 &824463867
 GameObject:
   m_ObjectHideFlags: 0
@@ -835,7 +835,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   deviceIndex: 2
-  syncMode: 0
+  syncMode: 2
 --- !u!114 &1838825168
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -858,15 +858,15 @@ MonoBehaviour:
   - kinectId: B
     use: 0
     deviceIndex: 1
-    syncMode: 0
+    syncMode: 3
   - kinectId: C
     use: 0
     deviceIndex: 2
-    syncMode: 0
+    syncMode: 3
   - kinectId: D
     use: 0
     deviceIndex: 3
-    syncMode: 0
+    syncMode: 3
   recordRawMkv: 1
   rawColorResolution: 2
   recordSkeleton: 0
@@ -1022,7 +1022,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   deviceIndex: 3
-  syncMode: 0
+  syncMode: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

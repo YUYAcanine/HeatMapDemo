@@ -134,7 +134,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3f7c35e62a474047afac2892be954c27, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: 0929hanekun
+  subjectName: test1
   source: 1
   forceRebuild: 0
   confidenceMode: 1
@@ -500,7 +500,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: 0928sansouken
+  experimentName: 1001401
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1133163295}
   kinects: []

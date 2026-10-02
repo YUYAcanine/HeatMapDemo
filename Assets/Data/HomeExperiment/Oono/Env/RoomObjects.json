@@ -1,0 +1,46 @@
+{
+    "experimentName": "Oono",
+    "savedAt": "2026-10-02 16:48:02",
+    "objects": [
+        {
+            "name": "mesh",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "31ba8860398a456458149f981b5b7fd5",
+            "meshAssetPath": "Assets/3DObject/OonoHouse/OonoHouse.obj",
+            "meshLocalId": -8670151273213183110,
+            "meshFile": "",
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+            },
+            "materials": [
+                {
+                    "assetGuid": "31ba8860398a456458149f981b5b7fd5",
+                    "assetPath": "Assets/3DObject/OonoHouse/OonoHouse.obj",
+                    "localId": 3758952881610933197,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        }
+    ]
+}
