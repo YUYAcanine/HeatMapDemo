@@ -1,5 +1,166 @@
 {
     "experimentName": "Oono",
-    "savedAt": "2026-10-02 16:48:02",
-    "objects": []
+    "savedAt": "2026-10-05 21:03:09",
+    "objects": [
+        {
+            "name": "TV",
+            "group": "TV",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_000_TV.json",
+            "position": {
+                "x": -3.1640000343322756,
+                "y": 0.6290000081062317,
+                "z": -0.753000020980835
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Monkey",
+            "group": "Monkey",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_001_Monkey.json",
+            "position": {
+                "x": -0.13099999725818635,
+                "y": 0.7860000133514404,
+                "z": -0.2630000114440918
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Tablet",
+            "group": "Tablet",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_002_Tablet.json",
+            "position": {
+                "x": 0.27300000190734866,
+                "y": 0.8220000267028809,
+                "z": 0.5019999742507935
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Clock",
+            "group": "Clock",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_003_Clock.json",
+            "position": {
+                "x": 2.757999897003174,
+                "y": 2.055999994277954,
+                "z": 0.33799999952316286
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        }
+    ]
 }

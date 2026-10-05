@@ -407,8 +407,8 @@ public class HomeGazeFrameRecord
 // 視線(シーン4と同じ補正後の頭部方向)から、時間範囲の中で次のものを数える。
 //   TargetGaze     … 人物が対象物体を注視していた(コーン軸に最も近い対象。シーン4の gazeTarget と同じ判定)
 //   JointAttention … 2人が同時に同じ対象物体を注視していた(注視対象の一致)。other が空なら「2人以上が同時に」
-//   LookAtPerson   … 人物の視線が相手の体(頭〜骨盤)の方向を向いていた
-//   LookAtFace     … 人物の視線が相手の頭(顔)の方向を向いていた
+//   LookAtPerson   … 人物の視線が相手の体(骨格の一番上から一番下までを囲う縦の円柱。直径 personDiameter)の方向を向いていた
+//   LookAtFace     … 人物の視線が相手の顔(その円柱の上部 faceHeight)の方向を向いていた
 //   MutualGaze     … 2人が同時にお互いの顔を見ていた(目を合わせていた)
 //   FaceToFace     … 2人が近くで向かい合っていた(水平面での向き。会話の姿勢の目安)
 [Serializable]
@@ -421,6 +421,9 @@ public class HomeInteractionParameters
     public float coneAngle;
     public float coneDistance;
 
+    // 見られる側の人物を表す円柱の直径と、顔とする範囲(円柱の上からの高さ)
+    public float personDiameter;
+    public float faceHeight;
     public float lookAtPersonDistance;
     public float faceToFaceAngle;
     public float faceToFaceDistance;

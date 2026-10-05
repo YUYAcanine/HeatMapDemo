@@ -12,7 +12,8 @@ using UnityEngine.UI;
 //
 //   Targets(対象物体の注視)   … 人物ごとに、どの対象物体を何秒・何回見たか(シーン4の注視対象と同じ判定)
 //   Joint attention(注視対象の一致) … 2人が同時に同じ対象物体を見ていた時間・回数(対象ごと・2人の組ごと)
-//   Look at person(相手の方を見る)  … 視線が相手の体(頭〜骨盤)/ 顔(頭)の方向を向いていた時間
+//   Look at person(相手の方を見る)  … 視線が相手の体 / 顔の方向を向いていた時間
+//                                     体 = 骨格の一番上から一番下までを囲う縦の円柱(直径 personDiameter)、顔 = その円柱の上部 faceHeight
 //   Mutual gaze(目を合わせる)       … 2人が同時にお互いの顔を見ていた時間・回数
 //   Face to face(向かい合い)         … 2人が近く(faceToFaceDistance 以内)で向かい合っていた時間。会話の姿勢の目安
 //                                     (骨格だけでは声は分からないので、話しているかどうかまでは判定しない)
@@ -82,6 +83,10 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     [SerializeField] private GameObject[] targetObjects = new GameObject[0];
 
     [Header("Person")]
+    [Tooltip("見られる側の人物を表す円柱の直径(m)。円柱は縦向きで、骨格の一番上の関節から一番下の関節までの高さ")]
+    [SerializeField] private float personDiameter = 0.5f;
+    [Tooltip("顔とする範囲(m)。円柱の上からこの高さまで")]
+    [SerializeField] private float faceHeight = 0.3f;
     [Tooltip("相手がこれより遠いときは見ているとしない(m)")]
     [SerializeField] private float lookAtPersonDistance = 5f;
     [Tooltip("水平面で、自分の向きと相手への方向のなす角が2人ともこれ以下なら向かい合っているとする(度)")]
@@ -112,6 +117,9 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     [SerializeField] private float gazeLineWidth = 0.015f;
     [Tooltip("人物どうし・対象物体との関係を表す線の太さ")]
     [SerializeField] private float relationLineWidth = 0.02f;
+    [Tooltip("見られる側の人物の円柱(体と、上部の顔の範囲)を線で表示する")]
+    [SerializeField] private bool showPersonCylinder = true;
+    [SerializeField] private float cylinderLineWidth = 0.008f;
     [Tooltip("骨格と視線の線を表示する人物ID(1人だけ)。-1 なら全員。画面右上の「Skeleton」の一覧でも選べ、\n" +
              "選んだ人物がその時刻に映っていなければ、最初に出てくる時刻へ移動する。表示だけで、解析は全員分を行う。")]
     [SerializeField] private int skeletonPersonId = -1;
@@ -143,10 +151,17 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     private const float PrecomputeBudget = 0.02f;
     private const float NoTargetAngle = -1f;
 
+    // 円柱の中心軸(水平位置)を決めるのに使う関節
     private static readonly JointId[] BodyJoints =
     {
         JointId.Head, JointId.Neck, JointId.SpineChest, JointId.SpineNavel, JointId.Pelvis
     };
+
+    // 円柱に視線が当たるかを調べる点の置き方: 高さ CylinderStep(m)ごとの輪に、中心1点と円周 CylinderSides 点
+    private const float CylinderStep = 0.1f;
+    private const int CylinderSides = 12;
+    // 円柱を表示する輪の分割数
+    private const int CylinderRingSegments = 24;
 
     private HomeEnvLoader env;
     private readonly List<Sample> samples = new List<Sample>();
@@ -192,6 +207,8 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     private HomeSkeletonBodyVisual.Style visualStyle;
     private readonly Dictionary<int, HomeSkeletonBodyVisual> bodies = new Dictionary<int, HomeSkeletonBodyVisual>();
     private readonly Dictionary<int, LineRenderer> gazeLines = new Dictionary<int, LineRenderer>();
+    // 人物の円柱の線([0]上の輪 [1]顔の範囲の下の輪 [2]下の輪 [3..6]縦の線)
+    private readonly Dictionary<int, LineRenderer[]> cylinderLines = new Dictionary<int, LineRenderer[]>();
     private readonly List<LineRenderer> relationLines = new List<LineRenderer>();
     private int usedRelationLines;
     private Material sharedLineMaterial;
@@ -435,7 +452,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
                 if (!person.fixedGaze)
                     person.hasGaze = TryGetGaze(person.joints, out person.origin, out person.direction);
 
-                SetupBodyPoints(person);
+                SetupCylinder(person);
                 personSeconds.TryGetValue(person.id, out float seconds);
                 personSeconds[person.id] = seconds + samples[i].duration;
 
@@ -564,8 +581,8 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         return true;
     }
 
-    // 見られる側の頭の位置と、体(頭〜骨盤)の線上の点
-    private static void SetupBodyPoints(Person person)
+    // 見られる側の頭の位置と、体を表す縦の円柱(骨格の一番上の関節から一番下の関節まで。直径 personDiameter)
+    private void SetupCylinder(Person person)
     {
         if (!person.hasHead && person.joints != null && HomeSkeletonIO.TryGetJointPosition(person.joints, JointId.Head, out Vector3 head))
         {
@@ -573,35 +590,70 @@ public class HomeInteractionAnalyzer : MonoBehaviour
             person.head = head;
         }
 
-        if (person.joints == null)
-            return;
+        float bottomY = float.MaxValue;
+        float topY = float.MinValue;
+        Vector3 allSum = Vector3.zero;
+        int allCount = 0;
+        Vector3 trunkSum = Vector3.zero;
+        int trunkCount = 0;
 
-        List<Vector3> joints = new List<Vector3>();
+        if (person.joints != null)
+        {
+            foreach (HomeSkeletonJoint joint in person.joints)
+            {
+                bottomY = Mathf.Min(bottomY, joint.position.y);
+                topY = Mathf.Max(topY, joint.position.y);
+                allSum += joint.position;
+                allCount++;
+            }
+
+            foreach (JointId jointId in BodyJoints)
+            {
+                if (jointId != JointId.Head && HomeSkeletonIO.TryGetJointPosition(person.joints, jointId, out Vector3 position))
+                {
+                    trunkSum += position;
+                    trunkCount++;
+                }
+            }
+        }
 
         if (person.hasHead)
-            joints.Add(person.head);
-
-        foreach (JointId jointId in BodyJoints)
         {
-            if (jointId != JointId.Head && HomeSkeletonIO.TryGetJointPosition(person.joints, jointId, out Vector3 position))
-                joints.Add(position);
+            trunkSum += person.head;
+            trunkCount++;
         }
 
-        if (joints.Count == 0)
-            return;
-
-        // 関節の間も 1/4 ずつ点を置く(体のどこかを見ていれば相手の方を見ているとする)
-        List<Vector3> points = new List<Vector3>();
-
-        for (int i = 0; i + 1 < joints.Count; i++)
+        if (allCount == 0)
         {
-            for (int k = 0; k < 4; k++)
-                points.Add(Vector3.Lerp(joints[i], joints[i + 1], k / 4f));
+            if (!person.hasHead)
+                return;
+
+            // 関節が無く頭の位置だけ分かるとき(画像での推定)は、頭を中心にした顔の範囲だけの円柱にする
+            bottomY = person.head.y - faceHeight * 0.5f;
+            topY = person.head.y + faceHeight * 0.5f;
+        }
+        else if (person.hasHead)
+        {
+            bottomY = Mathf.Min(bottomY, person.head.y);
+            topY = Mathf.Max(topY, person.head.y);
         }
 
-        points.Add(joints[joints.Count - 1]);
-        person.body = points.ToArray();
+        // 中心軸は体幹(頭〜骨盤)の水平位置の平均。腕や脚を伸ばしても軸が体から外れないようにする
+        Vector3 center = trunkCount > 0 ? trunkSum / trunkCount : allSum / allCount;
+
+        person.hasCylinder = true;
+        person.axisX = center.x;
+        person.axisZ = center.z;
+        person.bottomY = bottomY;
+        person.topY = topY;
     }
+
+    // 顔の範囲(円柱の上部 faceHeight)の下端の高さ
+    private float FaceBottomY(Person person) => Mathf.Max(person.bottomY, person.topY - faceHeight);
+
+    // 顔の範囲の中心(線を引く先)
+    private Vector3 FaceCenter(Person person) =>
+        new Vector3(person.axisX, (FaceBottomY(person) + person.topY) * 0.5f, person.axisZ);
 
     // ------------------------------------------------------------
     // Persons (人物のまとめ方はシーン3で済ませてある。grouped の骨格では人物ID = シーン3のグループの番号)
@@ -890,47 +942,65 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     // ------------------------------------------------------------
     // 人物どうしの判定
     // ------------------------------------------------------------
-    // viewer の視線が other の頭(顔)の方向を向いているか(対象物体と同じコーンの角度 coneAngle で判定する)
+    // viewer の視線が other の顔(円柱の上部 faceHeight)の方向を向いているか(対象物体と同じコーンの角度 coneAngle で判定する)
     private bool LooksAtFace(Person viewer, Person other)
     {
-        if (!viewer.hasGaze || !other.hasHead)
-            return false;
-
-        Vector3 toHead = other.head - viewer.origin;
-        float distance = toHead.magnitude;
-
-        return distance > 0.05f && distance <= lookAtPersonDistance &&
-               Vector3.Angle(viewer.direction, toHead) <= coneAngle;
+        return other.hasCylinder && LooksAtCylinder(viewer, other, FaceBottomY(other), other.topY, out _);
     }
 
-    // viewer の視線が other の体(頭〜骨盤)のどこかの方向を向いているか。point は最も視線に近い点
+    // viewer の視線が other の体(円柱全体)のどこかの方向を向いているか。point は最も視線に近い点
     private bool LooksAtBody(Person viewer, Person other, out Vector3 point)
     {
         point = Vector3.zero;
+        return other.hasCylinder && LooksAtCylinder(viewer, other, other.bottomY, other.topY, out point);
+    }
 
-        if (!viewer.hasGaze || other.body == null)
+    // viewer の視線のコーンが、other の円柱の高さ bottomY 〜 topY の部分に当たるか。
+    // 対象物体(頂点で判定)と同じく、円柱の上に並べた点がコーンに入るかで判定する。point は最も視線に近い点
+    private bool LooksAtCylinder(Person viewer, Person other, float bottomY, float topY, out Vector3 point)
+    {
+        point = Vector3.zero;
+
+        if (!viewer.hasGaze)
             return false;
 
-        float bestAngle = float.MaxValue;
+        float radius = personDiameter * 0.5f;
+        int rings = Mathf.Max(1, Mathf.CeilToInt((topY - bottomY) / CylinderStep));
+        float bestDot = -2f;
 
-        foreach (Vector3 bodyPoint in other.body)
+        for (int i = 0; i <= rings; i++)
         {
-            Vector3 toPoint = bodyPoint - viewer.origin;
-            float distance = toPoint.magnitude;
+            float y = Mathf.Lerp(bottomY, topY, i / (float)rings);
 
-            if (distance <= 0.05f || distance > lookAtPersonDistance)
-                continue;
-
-            float angle = Vector3.Angle(viewer.direction, toPoint);
-
-            if (angle < bestAngle)
+            // k = -1 は中心軸上の点(上から/下から見たときのため)
+            for (int k = -1; k < CylinderSides; k++)
             {
-                bestAngle = angle;
-                point = bodyPoint;
+                Vector3 p = new Vector3(other.axisX, y, other.axisZ);
+
+                if (k >= 0)
+                {
+                    float angle = k * 2f * Mathf.PI / CylinderSides;
+                    p.x += Mathf.Cos(angle) * radius;
+                    p.z += Mathf.Sin(angle) * radius;
+                }
+
+                Vector3 toPoint = p - viewer.origin;
+                float distance = toPoint.magnitude;
+
+                if (distance <= 0.05f || distance > lookAtPersonDistance)
+                    continue;
+
+                float dot = Vector3.Dot(viewer.direction, toPoint) / distance;
+
+                if (dot > bestDot)
+                {
+                    bestDot = dot;
+                    point = p;
+                }
             }
         }
 
-        return bestAngle <= coneAngle;
+        return bestDot >= Mathf.Cos(coneAngle * Mathf.Deg2Rad);
     }
 
     // 2人が近くで向かい合っているか(水平面での向き。上下の向きは見ない)
@@ -1156,6 +1226,8 @@ public class HomeInteractionAnalyzer : MonoBehaviour
                 downwardAngle = downwardAngle,
                 coneAngle = coneAngle,
                 coneDistance = coneDistance,
+                personDiameter = personDiameter,
+                faceHeight = faceHeight,
                 lookAtPersonDistance = lookAtPersonDistance,
                 faceToFaceAngle = faceToFaceAngle,
                 faceToFaceDistance = faceToFaceDistance,
@@ -1367,7 +1439,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
 
                     if (faceAB && faceBA)
                     {
-                        DrawRelation(pa.head, pb.head, Color.yellow, relationLineWidth * 2f);
+                        DrawRelation(FaceCenter(pa), FaceCenter(pb), Color.yellow, relationLineWidth * 2f);
                         now.AppendLine($"Mutual gaze : {units[a].name} ↔ {units[b].name}");
                     }
                     else
@@ -1394,6 +1466,9 @@ public class HomeInteractionAnalyzer : MonoBehaviour
             {
                 pair.Value.SetVisible(false);
                 gazeLines[pair.Key].enabled = false;
+
+                foreach (LineRenderer line in cylinderLines[pair.Key])
+                    line.enabled = false;
             }
         }
 
@@ -1407,7 +1482,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     {
         if (face)
         {
-            DrawRelation(pv.origin, po.head, units[viewer].color, relationLineWidth);
+            DrawRelation(pv.origin, FaceCenter(po), units[viewer].color, relationLineWidth);
             now.AppendLine($"{units[viewer].name} → {units[other].name} (face)");
         }
         else if (LooksAtBody(pv, po, out Vector3 point))
@@ -1428,9 +1503,11 @@ public class HomeInteractionAnalyzer : MonoBehaviour
             body = new HomeSkeletonBodyVisual(visualRoot, $"person_{person.id}", color, visualStyle);
             bodies[person.id] = body;
             gazeLines[person.id] = CreateLine($"person_{person.id}_Gaze", Color.Lerp(color, Color.white, 0.5f), gazeLineWidth);
+            cylinderLines[person.id] = CreateCylinderLines($"person_{person.id}_Cylinder", Color.Lerp(color, Color.white, 0.6f));
         }
 
         body.Apply(person.joints);
+        ShowCylinder(cylinderLines[person.id], person);
 
         LineRenderer gaze = gazeLines[person.id];
         gaze.enabled = person.hasGaze;
@@ -1442,6 +1519,58 @@ public class HomeInteractionAnalyzer : MonoBehaviour
             Color lineColor = person.usedEyeGaze ? Color.yellow : Color.Lerp(color, Color.white, 0.5f);
             gaze.startColor = lineColor;
             gaze.endColor = lineColor;
+        }
+    }
+
+    // 人物の円柱の線: 上の輪・顔の範囲の下の輪・下の輪と、縦の線4本
+    private LineRenderer[] CreateCylinderLines(string name, Color color)
+    {
+        LineRenderer[] lines = new LineRenderer[7];
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            lines[i] = CreateLine(name, color, cylinderLineWidth);
+
+            if (i < 3)
+            {
+                lines[i].positionCount = CylinderRingSegments;
+                lines[i].loop = true;
+            }
+        }
+
+        return lines;
+    }
+
+    private void ShowCylinder(LineRenderer[] lines, Person person)
+    {
+        bool visible = showPersonCylinder && person.hasCylinder;
+
+        foreach (LineRenderer line in lines)
+            line.enabled = visible;
+
+        if (!visible)
+            return;
+
+        float radius = personDiameter * 0.5f;
+        float[] ringY = { person.topY, FaceBottomY(person), person.bottomY };
+
+        for (int r = 0; r < 3; r++)
+        {
+            for (int k = 0; k < CylinderRingSegments; k++)
+            {
+                float angle = k * 2f * Mathf.PI / CylinderRingSegments;
+                lines[r].SetPosition(k, new Vector3(
+                    person.axisX + Mathf.Cos(angle) * radius, ringY[r], person.axisZ + Mathf.Sin(angle) * radius));
+            }
+        }
+
+        for (int k = 0; k < 4; k++)
+        {
+            float angle = k * 0.5f * Mathf.PI;
+            float x = person.axisX + Mathf.Cos(angle) * radius;
+            float z = person.axisZ + Mathf.Sin(angle) * radius;
+            lines[3 + k].SetPosition(0, new Vector3(x, person.bottomY, z));
+            lines[3 + k].SetPosition(1, new Vector3(x, person.topY, z));
         }
     }
 
@@ -2101,10 +2230,16 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         public bool fixedGaze;
         public bool usedEyeGaze;
 
-        // 見られる側としての頭の位置と、体(頭〜骨盤)の線上の点
+        // 見られる側としての頭の位置
         public bool hasHead;
         public Vector3 head;
-        public Vector3[] body;
+
+        // 見られる側としての体を表す縦の円柱(中心軸の水平位置と、下端・上端の高さ)。上部 faceHeight が顔
+        public bool hasCylinder;
+        public float axisX;
+        public float axisZ;
+        public float bottomY;
+        public float topY;
 
         // 注視している対象物体の番号(-1 はなし)と、コーン軸との角度(度)
         public int target = -1;
