@@ -2,7 +2,7 @@
 
 シーン5(5InteractionAnalyze)で保存した
   Skeleton/<実験対象者>/Analysis/Interaction/interaction_<骨格>.json / interaction_<骨格>_episodes.csv
-を読み、骨格データ(filtered_HeadJoints / image_GazeElseHead など)ごとに1段ずつ並べて
+を読み、骨格データ(filtered_HeadJoints / filtered_HeadJoints_smooth05 / image_GazeElseHead など)ごとに1段ずつ並べて
   Skeleton/<実験対象者>/Analysis/Figures/gaze_timeline.html
 に書き出す(毎回上書き)。ブラウザで開くと、帯にマウスを乗せて時刻を確認でき、上のボタンで時間範囲を絞れる。
 
@@ -15,6 +15,8 @@
 使い方:
   python Tools/GazeTimeline/make_gaze_timeline.py <実験の名前> <実験対象者>
   (引数を省くと、フォルダの一覧から選ぶ)
+  骨格データが2つ以上あるとき(平滑化した骨格 Tools/GazeSmooth でもシーン5で Save したときなど)は、グラフにする骨格も一覧から選ぶ
+  (1,3 のように複数選べる。何も入力しなければ全部)。--sources filtered_HeadJoints_smooth05 のように指定すれば選ばずに作る。
 Python の標準ライブラリだけで動く。
 """
 
@@ -44,6 +46,23 @@ def _choose(label: str, options: list[str]) -> str | None:
 
 def _subdirs(path: Path) -> list[str]:
     return sorted(p.name for p in path.iterdir() if p.is_dir()) if path.exists() else []
+
+
+def _choose_sources(names: list[str]) -> list[str] | None:
+    """グラフにする骨格データを選ぶ(複数可)。何も入力しなければ全部"""
+    for i, name in enumerate(names, 1):
+        print(f"  {i}. {name}")
+    answer = input("骨格データの番号 (1,3 のように複数可。空欄で全部): ").strip()
+    if not answer:
+        return names
+    chosen = []
+    for part in answer.replace(",", " ").split():
+        if not part.isdigit() or not 1 <= int(part) <= len(names):
+            print(f"番号が正しくありません: {part}")
+            return None
+        if names[int(part) - 1] not in chosen:
+            chosen.append(names[int(part) - 1])
+    return chosen
 
 
 def load_source(interaction_dir: Path, source: str) -> dict | None:
@@ -87,6 +106,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="二人の注視対象の時系列グラフ(HTML)を作る")
     parser.add_argument("experiment", nargs="?", help="実験の名前 (Assets/Data/HomeExperiment/<実験の名前>)")
     parser.add_argument("subject", nargs="?", help="実験対象者 (Skeleton/<実験対象者>)")
+    parser.add_argument("--sources", nargs="+", metavar="骨格",
+                        help="グラフにする骨格データ (interaction_<骨格>_episodes.csv の <骨格>。省略すると一覧から選ぶ)")
     args = parser.parse_args()
 
     experiment = args.experiment or _choose("実験の名前", _subdirs(DATA_ROOT))
@@ -100,6 +121,18 @@ def main() -> int:
     analysis_dir = DATA_ROOT / experiment / "Skeleton" / subject / "Analysis"
     interaction_dir = analysis_dir / "Interaction"
     names = sorted(p.name[len("interaction_"):-len("_episodes.csv")] for p in interaction_dir.glob("interaction_*_episodes.csv"))
+
+    if args.sources:
+        missing = [name for name in args.sources if name not in names]
+        if missing:
+            print(f"シーン5の結果がない骨格データです: {', '.join(missing)} (あるもの: {', '.join(names) or 'なし'})")
+            return 1
+        names = list(dict.fromkeys(args.sources))
+    elif len(names) > 1 and sys.stdin.isatty():
+        names = _choose_sources(names)
+        if not names:
+            return 1
+
     sources = [s for s in (load_source(interaction_dir, name) for name in names) if s is not None]
 
     if not sources:

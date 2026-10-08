@@ -1075,7 +1075,7 @@ public class HomeSkeletonFilter : MonoBehaviour
         SetupGroupPanel(canvas);
     }
 
-    //   [>]  12.3 / 60.0 s  [=========o-----------------]   … 再生バー。ドラッグで再生位置を動かす
+    //   [>]  12.3 / 60.0 s  (00:00:12 / 00:01:00)  [=========o-----------------]   … 再生バー。ドラッグで再生位置を動かす
     //   [x] Grouped only   [Save grouped]  saved / NOT SAVED
     private void SetupTimeline(Canvas canvas)
     {
@@ -1093,13 +1093,13 @@ public class HomeSkeletonFilter : MonoBehaviour
         playPause.onClick.AddListener(TogglePlay);
 
         timeText = CreateText("Time", row1, TextAlignmentOptions.MidlineLeft);
-        PlaceLeft(timeText.rectTransform, 60f, 160f);
+        PlaceLeft(timeText.rectTransform, 60f, 380f);
 
         timelineSlider = CreateSlider(row1, new Color(0.25f, 0.45f, 0.95f));
         RectTransform timelineRect = (RectTransform)timelineSlider.transform;
         timelineRect.anchorMin = new Vector2(0f, 0f);
         timelineRect.anchorMax = new Vector2(1f, 1f);
-        timelineRect.offsetMin = new Vector2(230f, 10f);
+        timelineRect.offsetMin = new Vector2(450f, 10f);
         timelineRect.offsetMax = new Vector2(-10f, -10f);
         timelineSlider.minValue = 0f;
         timelineSlider.maxValue = Mathf.Max(duration, 0.001f);
@@ -1137,7 +1137,8 @@ public class HomeSkeletonFilter : MonoBehaviour
 
         timelineSlider.SetValueWithoutNotify(playbackTime);
         playPauseText.text = isPlaying ? "||" : ">";
-        timeText.text = $"{playbackTime:F1} / {duration:F1} s";
+        timeText.text = $"{playbackTime:F1} / {duration:F1} s  " +
+                        $"({HomeSkeletonIO.FormatClock(playbackTime)} / {HomeSkeletonIO.FormatClock(duration)})";
 
         saveStatusText.text =
             personGroups.Count == 0 ? $"grouped_{ModeName}.json : make groups first" :

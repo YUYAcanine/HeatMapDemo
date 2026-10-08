@@ -167,6 +167,13 @@ public static class HomeSkeletonIO
         return tracks;
     }
 
+    // 秒を 00:00:00 (時:分:秒) の形にする(再生バーの時刻表示用)
+    public static string FormatClock(float seconds)
+    {
+        int total = Mathf.Max(0, Mathf.FloorToInt(seconds));
+        return $"{total / 3600:00}:{total / 60 % 60:00}:{total % 60:00}";
+    }
+
     private static Dictionary<string, JointId> CreateJointIdTable()
     {
         Dictionary<string, JointId> table = new Dictionary<string, JointId>();

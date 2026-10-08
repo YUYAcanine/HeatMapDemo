@@ -58,6 +58,10 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     [SerializeField] private HomeGazeAnalyzer.SkeletonSource skeletonSource = HomeGazeAnalyzer.SkeletonSource.Filtered;
     [Tooltip("Filtered のとき: 読み込む filtered_<Mode>.json")]
     [SerializeField] private HomeSkeletonFilter.ConfidenceMode filteredMode = HomeSkeletonFilter.ConfidenceMode.HeadJoints;
+    [Tooltip("Filtered / Image のとき: 頭の向きを平滑化した骨格の名前(Tools/GazeSmooth/smooth_skeleton.py で作る grouped_<Mode>_<名前>.json。\n" +
+             "例: smooth05)。空なら平滑化前の grouped_<Mode>.json")]
+    [HomeSkeletonVariant]
+    [SerializeField] private string skeletonVariant = "";
     [Tooltip("Kinect のとき: 読み込む <ID>_skeleton.json のキネクトID")]
     [SerializeField] private string kinectId = "A";
     [Tooltip("Image のとき: 視線として使う向き")]
@@ -229,9 +233,13 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     private Sprite checkmarkSprite;
 
     private string SourceName =>
-        skeletonSource == HomeGazeAnalyzer.SkeletonSource.Filtered ? $"filtered_{filteredMode}" :
-        skeletonSource == HomeGazeAnalyzer.SkeletonSource.Image ? $"image_{imageDirection}" :
+        skeletonSource == HomeGazeAnalyzer.SkeletonSource.Filtered ? $"filtered_{filteredMode}{VariantSuffix}" :
+        skeletonSource == HomeGazeAnalyzer.SkeletonSource.Image ? $"image_{imageDirection}{VariantSuffix}" :
         $"Kinect{kinectId.Trim()}";
+
+    // 平滑化した骨格を使うときに、出力ファイル名に付ける "_<名前>"
+    private string VariantSuffix =>
+        string.IsNullOrWhiteSpace(skeletonVariant) ? "" : $"_{skeletonVariant.Trim()}";
 
     private string OutputName =>
         string.IsNullOrWhiteSpace(outputLabel) ? SourceName : $"{SourceName}_{outputLabel.Trim()}";
@@ -475,13 +483,18 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     private void LoadFiltered(string modeName)
     {
         // シーン3で作った人物ごとの骨格
-        string path = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName);
+        string path = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName, skeletonVariant);
 
         if (!File.Exists(path))
         {
-            Debug.LogError($"[HomeInteractionAnalyzer] 人物ごとの骨格のファイルがありません。シーン3でグループを作って Save grouped を押してください: {path}");
+            string how = !string.IsNullOrWhiteSpace(skeletonVariant)
+                ? $"Tools/GazeSmooth/smooth_skeleton.py で平滑化した骨格({skeletonVariant.Trim()})を作るか、Skeleton Variant を空にしてください"
+                : "シーン3でグループを作って Save grouped を押してください";
+            Debug.LogError($"[HomeInteractionAnalyzer] 人物ごとの骨格のファイルがありません。{how}: {path}");
             return;
         }
+
+        WarnIfVariantIsOld(path, modeName);
 
         HomeFilteredSkeletonList data = JsonUtility.FromJson<HomeFilteredSkeletonList>(File.ReadAllText(path));
 
@@ -519,6 +532,19 @@ public class HomeInteractionAnalyzer : MonoBehaviour
 
             samples.Add(sample);
         }
+    }
+
+    // 平滑化した骨格が、元の grouped_<Mode>.json より古い(シーン3で Save grouped し直した後に作り直していない)ときに知らせる
+    private void WarnIfVariantIsOld(string path, string modeName)
+    {
+        if (string.IsNullOrWhiteSpace(skeletonVariant))
+            return;
+
+        string basePath = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName);
+
+        if (File.Exists(basePath) && File.GetLastWriteTimeUtc(basePath) > File.GetLastWriteTimeUtc(path))
+            Debug.LogWarning($"[HomeInteractionAnalyzer] 平滑化した骨格({skeletonVariant.Trim()})が grouped_{modeName}.json より古いです。" +
+                             $"Tools/GazeSmooth/smooth_skeleton.py を実行し直してください: {path}");
     }
 
     private void LoadKinect()
@@ -1780,8 +1806,8 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     // ------------------------------------------------------------
     // Timeline (画面下)
     // ------------------------------------------------------------
-    //   [>]  12.3 / 60.0 s  [=========o-----------------]   … 再生バー(オレンジ: 数える時間範囲)
-    //   From [--o------] 5.0 s   to [-------o--] 40.0 s   [Full]  [Page: Targets]
+    //   [>]  12.3 / 60.0 s  (00:00:12 / 00:01:00)  [=========o-----------------]   … 再生バー(オレンジ: 数える時間範囲)
+    //   From [--o------] 5.0 s / 00:00:05   to [-------o--] 40.0 s / 00:00:40 (値は2段)   [Full]  [Page: Targets]
     private void SetupTimeline()
     {
         Canvas canvas = frameText != null ? frameText.canvas : FindObjectOfType<Canvas>();
@@ -1812,13 +1838,13 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         playPause.onClick.AddListener(TogglePlay);
 
         timeText = CreateText("Time", row1, TextAlignmentOptions.MidlineLeft);
-        PlaceLeft(timeText.rectTransform, 60f, 160f);
+        PlaceLeft(timeText.rectTransform, 60f, 380f);
 
         timelineSlider = CreateSlider(row1, new Color(0.25f, 0.45f, 0.95f));
         RectTransform timelineRect = (RectTransform)timelineSlider.transform;
         timelineRect.anchorMin = new Vector2(0f, 0f);
         timelineRect.anchorMax = new Vector2(1f, 1f);
-        timelineRect.offsetMin = new Vector2(230f, 10f);
+        timelineRect.offsetMin = new Vector2(450f, 10f);
         timelineRect.offsetMax = new Vector2(-10f, -10f);
         timelineSlider.onValueChanged.AddListener(Seek);
 
@@ -1834,7 +1860,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         PlaceLeft(fromLabel.rectTransform, 10f, 95f);
 
         rangeStartSlider = CreateSlider(row2, new Color(1f, 0.6f, 0.1f));
-        PlaceLeft((RectTransform)rangeStartSlider.transform, 105f, 260f, 10f);
+        PlaceLeft((RectTransform)rangeStartSlider.transform, 105f, 240f, 10f);
         rangeStartSlider.onValueChanged.AddListener(value =>
         {
             float end = rangeEnd < 0f ? duration : rangeEnd;
@@ -1842,14 +1868,15 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         });
 
         rangeStartText = CreateText("FromValue", row2, TextAlignmentOptions.MidlineLeft);
-        PlaceLeft(rangeStartText.rectTransform, 370f, 80f);
+        PlaceLeft(rangeStartText.rectTransform, 355f, 95f);
+        rangeStartText.fontSize = 15f; // 秒数と 時:分:秒 の2段で出す
 
         TMP_Text toLabel = CreateText("To", row2, TextAlignmentOptions.MidlineLeft);
         toLabel.text = "to";
         PlaceLeft(toLabel.rectTransform, 455f, 30f);
 
         rangeEndSlider = CreateSlider(row2, new Color(1f, 0.6f, 0.1f));
-        PlaceLeft((RectTransform)rangeEndSlider.transform, 485f, 260f, 10f);
+        PlaceLeft((RectTransform)rangeEndSlider.transform, 485f, 240f, 10f);
         rangeEndSlider.onValueChanged.AddListener(value =>
         {
             float end = Mathf.Max(value, rangeStart);
@@ -1857,7 +1884,8 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         });
 
         rangeEndText = CreateText("ToValue", row2, TextAlignmentOptions.MidlineLeft);
-        PlaceLeft(rangeEndText.rectTransform, 750f, 80f);
+        PlaceLeft(rangeEndText.rectTransform, 735f, 95f);
+        rangeEndText.fontSize = 15f;
 
         Button full = CreateButton(row2, "Full", 840f, 70f, out _);
         full.onClick.AddListener(() => SetRange(0f, -1f));
@@ -1910,9 +1938,10 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         rangeEndSlider.SetValueWithoutNotify(windowEnd);
 
         playPauseText.text = isPlaying ? "||" : ">";
-        timeText.text = $"{playbackTime:F1} / {duration:F1} s";
-        rangeStartText.text = $"{windowStart:F1} s";
-        rangeEndText.text = $"{windowEnd:F1} s";
+        timeText.text = $"{playbackTime:F1} / {duration:F1} s  " +
+                        $"({HomeSkeletonIO.FormatClock(playbackTime)} / {HomeSkeletonIO.FormatClock(duration)})";
+        rangeStartText.text = $"{windowStart:F1} s\n{HomeSkeletonIO.FormatClock(windowStart)}";
+        rangeEndText.text = $"{windowEnd:F1} s\n{HomeSkeletonIO.FormatClock(windowEnd)}";
         pageText.text = $"Page: {page}";
 
         rangeHighlight.anchorMin = new Vector2(Mathf.Clamp01(windowStart / max), 0f);

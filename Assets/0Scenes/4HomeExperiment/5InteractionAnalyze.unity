@@ -137,6 +137,7 @@ MonoBehaviour:
   subjectName: sora
   skeletonSource: 0
   filteredMode: 1
+  skeletonVariant: 
   kinectId: A
   imageDirection: 0
   maxFrameDuration: 0.2
@@ -147,6 +148,8 @@ MonoBehaviour:
   useEnvTargetObjects: 1
   targetNames: []
   targetObjects: []
+  personDiameter: 0.5
+  faceHeight: 0.3
   lookAtPersonDistance: 5
   faceToFaceAngle: 30
   faceToFaceDistance: 2
@@ -167,6 +170,8 @@ MonoBehaviour:
   gazeLineLength: 1.5
   gazeLineWidth: 0.015
   relationLineWidth: 0.02
+  showPersonCylinder: 1
+  cylinderLineWidth: 0.008
   skeletonPersonId: -1
   playbackSpeed: 1
   playStopKey: 32

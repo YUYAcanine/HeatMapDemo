@@ -137,6 +137,7 @@ MonoBehaviour:
   subjectName: sora
   skeletonSource: 0
   filteredMode: 1
+  skeletonVariant: 
   kinectId: A
   imageDirection: 0
   personId: -1

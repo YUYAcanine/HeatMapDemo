@@ -23,7 +23,9 @@ using UnityEngine.EventSystems;
 //               │   ├ filtered_AllJoints.json  … 全キネクトを統合した骨格(シーン3, 全関節の信頼度で選択。人物IDはまとめる前)
 //               │   ├ filtered_HeadJoints.json … 全キネクトを統合した骨格(シーン3, 頭部の関節の信頼度で選択。人物IDはまとめる前)
 //               │   ├ filtered_Image.json      … 画像から推定した骨格(Tools/GazePipeline。人物IDはまとめる前)
-//               │   └ grouped_<Mode>.json      … 人物ごとの骨格(シーン3でグループごとに1つに絞ったもの。シーン4/5はこれを読む)
+//               │   ├ grouped_<Mode>.json      … 人物ごとの骨格(シーン3でグループごとに1つに絞ったもの。シーン4/5はこれを読む)
+//               │   └ grouped_<Mode>_<名前>.json … 頭の向きを平滑化した人物ごとの骨格(Tools/GazeSmooth/smooth_skeleton.py。
+//               │                                 シーン4/5の Skeleton Variant で <名前> を選ぶと読む)
 //               └ Analysis/
 //                   ├ Groups/
 //                   │   └ person_groups_<人物IDの元の骨格>.json … 同じ人の人物IDをまとめたグループ(シーン3で作る・使う)
@@ -99,6 +101,30 @@ public static class HomeExperimentPaths
     // シーン3でグループごとに1つに絞った人物ごとの骨格(シーン4/5が読む)
     public static string GetGroupedSkeletonPath(string experimentName, string subjectName, string modeName) =>
         Path.Combine(GetSubjectDirectory(experimentName, subjectName), FilteredFolderName, $"grouped_{modeName}.json");
+
+    // 頭の向きを平滑化した人物ごとの骨格(Tools/GazeSmooth/smooth_skeleton.py)。variant が空なら平滑化前の grouped_<Mode>.json
+    public static string GetGroupedSkeletonPath(string experimentName, string subjectName, string modeName, string variant) =>
+        string.IsNullOrWhiteSpace(variant)
+            ? GetGroupedSkeletonPath(experimentName, subjectName, modeName)
+            : Path.Combine(GetSubjectDirectory(experimentName, subjectName), FilteredFolderName, $"grouped_{modeName}_{variant.Trim()}.json");
+
+    // Filtered/ にある grouped_<Mode>_<名前>.json の <名前> の一覧
+    public static string[] GetGroupedSkeletonVariants(string experimentName, string subjectName, string modeName)
+    {
+        string directory = Path.Combine(GetSubjectDirectory(experimentName, subjectName), FilteredFolderName);
+
+        if (!Directory.Exists(directory))
+            return new string[0];
+
+        string prefix = $"grouped_{modeName}_";
+        string[] files = Directory.GetFiles(directory, prefix + "*.json");
+
+        for (int i = 0; i < files.Length; i++)
+            files[i] = Path.GetFileNameWithoutExtension(files[i]).Substring(prefix.Length);
+
+        System.Array.Sort(files);
+        return files;
+    }
 
     public static string GetRawDirectory(string experimentName, string subjectName) =>
         Path.Combine(GetSubjectDirectory(experimentName, subjectName), RawFolderName);
@@ -293,4 +319,11 @@ public class HomeExperimentFolderAttribute : PropertyAttribute
     {
         this.kind = kind;
     }
+}
+
+// インスペクターで、平滑化した骨格(Filtered/grouped_<Mode>_<名前>.json)の <名前> を既存ファイルから選べるようにする属性。
+// 同じコンポーネントの subjectName / skeletonSource / filteredMode から探す場所を決める。
+// 描画は Editor/HomeSkeletonVariantDrawer.cs。
+public class HomeSkeletonVariantAttribute : PropertyAttribute
+{
 }
