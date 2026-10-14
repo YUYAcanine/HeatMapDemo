@@ -1,6 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEngine;
 using Unity.AI.Navigation;
 using Microsoft.Azure.Kinect.Sensor;
@@ -226,6 +228,16 @@ public class PlaneFinder : MonoBehaviour
     [HideInInspector]
     public float pointCloudObjectSmoothStrength = 0.35f;
 
+    [Header("Performance")]
+    [Tooltip("色画像を取得して点群に色を付ける。色を使うのは点群の表示とPCD保存だけでNavMesh生成には不要なので、OFFにすると色カメラを起動せず深度だけ取得して軽くする(点群は白一色になる)。再生中に切り替えた場合、色カメラの起動/停止は次にKinectを開き直すまで反映されない。")]
+    public bool captureColor = true;
+    [Tooltip("同じ層で隣り合うセルを大きな長方形にまとめ、NavMeshソースメッシュの三角形数を減らす。")]
+    public bool mergeNavMeshSourceQuads = true;
+    [Tooltip("長方形にまとめるセル同士の高さ差の許容範囲(m)。まとめた長方形は含まれるセルの平均の高さになる。")]
+    public float navMeshQuadMergeHeightTolerance = 0.03f;
+    [Tooltip("CaptureBuildNavMeshAndLinks(自動更新/Rキー/reloadボタン)の撮影と点群の集計をバックグラウンドスレッドで、NavMeshビルドを非同期で実行し、更新中に画面が止まらないようにする。新しいNavMeshができあがるまで前回のNavMeshを残す。")]
+    public bool runPipelineAsync = false;
+
     // 保存先
     private string saveFolderPath;
     private const float PlaneEpsilon = 0.0001f;
@@ -248,6 +260,14 @@ public class PlaneFinder : MonoBehaviour
     private bool singleDeviceStreaming;
     private readonly Dictionary<int, Device> multiDevicesByIndex = new Dictionary<int, Device>();
     private readonly HashSet<int> multiDevicesStreaming = new HashSet<int>();
+
+    // Transformation(深度→点群変換用のテーブル)は生成コストが高いので、デバイスごとに1つ作って使い回す。
+    private readonly Dictionary<Device, Transformation> transformationsByDevice =
+        new Dictionary<Device, Transformation>();
+
+    private Coroutine asyncPipelineCoroutine;
+    private Task asyncPipelineTask;
+    private bool asyncPipelineRunning;
 
     void Awake()
     {
@@ -273,6 +293,7 @@ public class PlaneFinder : MonoBehaviour
     void OnDisable()
     {
         UnregisterButtonEvents();
+        StopAsyncPipeline();
         CloseAllDevices();
     }
 
@@ -282,6 +303,13 @@ public class PlaneFinder : MonoBehaviour
         {
             Debug.Log("PlaneFinder: R key triggered reload.");
             CaptureBuildNavMeshAndLinks();
+        }
+
+        // 非同期パイプラインの実行中は次回の自動更新を先送りし続け、完了した時点から間隔を測り直す。
+        if (asyncPipelineRunning)
+        {
+            ScheduleNextAutoUpdate();
+            return;
         }
 
         if (!autoUpdateCaptureBuildNavMeshAndLinks)
@@ -369,7 +397,16 @@ public class PlaneFinder : MonoBehaviour
             return;
         }
 
-        ClearPreviousPipelineOutput();
+        if (runPipelineAsync &&
+            Application.isPlaying &&
+            isActiveAndEnabled)
+        {
+            asyncPipelineCoroutine =
+                StartCoroutine(CaptureBuildNavMeshAndLinksAsync());
+            return;
+        }
+
+        ClearPreviousPipelineOutput(true);
 
         Debug.Log("PlaneFinder: pipeline started. Step 1/3 CaptureOnce.");
         CaptureOnce();
@@ -384,6 +421,11 @@ public class PlaneFinder : MonoBehaviour
         Debug.Log($"PlaneFinder: pipeline Step 2/3 BuildNavMeshFromSavedPointCloud. points={savedVertices.Count}");
         BuildNavMeshFromSavedPointCloud();
 
+        GenerateLinksAndFinishPipeline();
+    }
+
+    private void GenerateLinksAndFinishPipeline()
+    {
         PointNavLink linkGenerator =
             pointNavLink;
 
@@ -412,12 +454,221 @@ public class PlaneFinder : MonoBehaviour
         OnNavMeshPipelineFinished?.Invoke();
     }
 
-    private void ClearPreviousPipelineOutput()
+    private class AsyncCaptureResult
+    {
+        public readonly List<Vector3> Vertices = new List<Vector3>();
+        public readonly List<Color32> Colors = new List<Color32>();
+        public List<Vector3> NavMeshPoints;
+        public int AddedCount;
+        public int RemovedCount;
+    }
+
+    // CaptureBuildNavMeshAndLinksの非同期版。Kinectからの撮影と点群の集計(Unityのメインスレッド専用APIに
+    // 触れない部分)をバックグラウンドスレッドで、NavMeshビルドをUpdateNavMeshDataAsyncで行う。
+    // 同期版と違い、前回のNavMesh/リンク/経路は新しいNavMeshができあがった時点でまとめて差し替える
+    // (ビルド中にNavMeshが無い期間を作ると、その間の経路計算がすべて到達不可になってしまうため)。
+    private IEnumerator CaptureBuildNavMeshAndLinksAsync()
+    {
+        isCapturing = true;
+        asyncPipelineRunning = true;
+
+        try
+        {
+            Debug.Log("PlaneFinder: async pipeline started. Step 1/3 capture (background thread).");
+
+            List<CaptureJob> jobs =
+                BuildCaptureJobs();
+            AuxiliaryFloorMergeInputs auxiliaryInputs =
+                PrepareAuxiliaryFloorMerge();
+            AsyncCaptureResult capture =
+                new AsyncCaptureResult();
+
+            asyncPipelineTask =
+                Task.Run(() =>
+                {
+                    RunCaptureJobs(jobs, capture.Vertices, capture.Colors);
+
+                    if (capture.Vertices.Count == 0)
+                        return;
+
+                    capture.NavMeshPoints =
+                        auxiliaryInputs != null
+                            ? MergeAuxiliaryFloorPoints(
+                                capture.Vertices,
+                                auxiliaryInputs,
+                                out capture.AddedCount,
+                                out capture.RemovedCount)
+                            : capture.Vertices;
+                });
+
+            while (!asyncPipelineTask.IsCompleted)
+                yield return null;
+
+            if (LogAsyncPipelineFault("capture"))
+                yield break;
+
+            // 保存用に保持
+            savedVertices = capture.Vertices;
+            savedColors = capture.Colors;
+
+            CreateMesh(savedVertices, savedColors);
+
+            Debug.Log(
+                $"PointCloud Captured : {savedVertices.Count} points from {jobs.Count} Kinect sources");
+
+            if (savedVertices.Count == 0)
+            {
+                Debug.LogWarning("PlaneFinder: async pipeline stopped. Captured point cloud is empty. Previous NavMesh is kept.");
+                yield break;
+            }
+
+            LogAuxiliaryFloorOverride(capture.AddedCount, capture.RemovedCount);
+
+            Debug.Log($"PlaneFinder: async pipeline Step 2/3 build NavMesh. points={savedVertices.Count}");
+
+            List<Vector3> navMeshPoints =
+                capture.NavMeshPoints;
+
+            GetHorizontalFrameOrDefault(
+                navMeshPoints,
+                out Vector3 horizontalNormal,
+                out Vector3 axisU,
+                out Vector3 axisV);
+
+            float cellSize =
+                Mathf.Max(navMeshCellSize, 0.02f);
+            List<AuxiliaryFloorFootprint> guaranteedFootprints =
+                GetAuxiliaryFloorGuaranteedFootprints(horizontalNormal, axisU, axisV);
+            NavMeshSourceGeometry geometry =
+                null;
+
+            asyncPipelineTask =
+                Task.Run(() =>
+                {
+                    geometry =
+                        ComputeNavMeshSourceGeometry(
+                            navMeshPoints,
+                            horizontalNormal,
+                            axisU,
+                            axisV,
+                            cellSize,
+                            guaranteedFootprints);
+                });
+
+            while (!asyncPipelineTask.IsCompleted)
+                yield return null;
+
+            if (LogAsyncPipelineFault("surface extraction"))
+                yield break;
+
+            Mesh mesh =
+                CreateNavMeshSourceMesh(
+                    generatedNavMeshObjectName + "Mesh",
+                    geometry.Vertices,
+                    geometry.Triangles);
+
+            if (mesh == null)
+            {
+                Debug.LogWarning(
+                    $"PlaneFinder: denoised horizontal surface mesh has no triangles. layers={geometry.LayerCount}. Previous NavMesh is kept.");
+                yield break;
+            }
+
+            // 生成されるNavMeshオブジェクトはこのオブジェクトの子(ローカル変換なし)なので、
+            // ソースメッシュのワールド変換はこのオブジェクト自身のものと同じになる。
+            CreateDirectNavMeshBuildInputs(
+                mesh,
+                transform.localToWorldMatrix,
+                out NavMeshBuildSettings buildSettings,
+                out List<NavMeshBuildSource> sources,
+                out Bounds bounds);
+
+            NavMeshData navMeshData =
+                new NavMeshData(buildSettings.agentTypeID);
+            AsyncOperation buildOperation =
+                NavMeshBuilder.UpdateNavMeshDataAsync(
+                    navMeshData,
+                    buildSettings,
+                    sources,
+                    bounds);
+
+            while (!buildOperation.isDone)
+                yield return null;
+
+            ClearPreviousPipelineOutput(false);
+            ApplyNavMeshSourceMesh(mesh, navMeshData);
+
+            Debug.Log(
+                $"PlaneFinder: point cloud NavMesh generated. cells={geometry.SourceCellCount}, vertices={geometry.Vertices.Count}, triangles={geometry.Triangles.Count / 3}, layers={geometry.UsedLayerCount}/{geometry.LayerCount}");
+
+            GenerateLinksAndFinishPipeline();
+        }
+        finally
+        {
+            asyncPipelineTask = null;
+            asyncPipelineCoroutine = null;
+            asyncPipelineRunning = false;
+            isCapturing = false;
+
+            // 計算が終わった時点を起点に次回までの間隔を測る。
+            ScheduleNextAutoUpdate();
+        }
+    }
+
+    private bool LogAsyncPipelineFault(
+        string stepName)
+    {
+        if (asyncPipelineTask == null ||
+            !asyncPipelineTask.IsFaulted)
+        {
+            return false;
+        }
+
+        System.Exception ex =
+            asyncPipelineTask.Exception.GetBaseException();
+        Debug.LogError(
+            $"PlaneFinder: async pipeline {stepName} failed. {ex.GetType().Name}: {ex.Message}");
+        return true;
+    }
+
+    // コルーチンは外から止められるとfinallyが実行されないため、状態の後始末をここで行う。
+    // バックグラウンドの撮影がKinectを使っている最中にデバイスを閉じないよう、終わるのを待つ。
+    private void StopAsyncPipeline()
+    {
+        if (asyncPipelineCoroutine != null)
+        {
+            StopCoroutine(asyncPipelineCoroutine);
+            asyncPipelineCoroutine = null;
+        }
+
+        if (asyncPipelineTask != null)
+        {
+            try { asyncPipelineTask.Wait(2000); }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"PlaneFinder: async pipeline task ended with an error. {ex.GetType().Name}: {ex.Message}");
+            }
+
+            asyncPipelineTask = null;
+        }
+
+        if (asyncPipelineRunning)
+        {
+            asyncPipelineRunning = false;
+            isCapturing = false;
+        }
+    }
+
+    private void ClearPreviousPipelineOutput(
+        bool clearPointCloud)
     {
         Debug.Log("PlaneFinder: clearing previous point cloud, routes, generated NavMesh, and NavMeshLinks.");
 
-        savedVertices.Clear();
-        savedColors.Clear();
+        if (clearPointCloud)
+        {
+            savedVertices.Clear();
+            savedColors.Clear();
+        }
         ClearGeneratedRoutes();
 
         // 点群メッシュ(MeshFilter.sharedMesh)はここではクリアしない。
@@ -536,15 +787,34 @@ public class PlaneFinder : MonoBehaviour
 
         try
         {
-            if (useMultipleKinects &&
-                kinectSources != null &&
-                kinectSources.Length > 0)
+            List<CaptureJob> jobs =
+                BuildCaptureJobs();
+            List<Vector3> vertices =
+                new List<Vector3>();
+            List<Color32> colors =
+                new List<Color32>();
+
+            RunCaptureJobs(jobs, vertices, colors);
+
+            // 単一Kinect構成で撮影に失敗した場合は、直前の点群をそのまま残す。
+            bool singleKinect =
+                jobs.Count == 1 &&
+                !jobs[0].IsMultiSource;
+
+            if (singleKinect &&
+                vertices.Count == 0)
             {
-                CaptureFromMultipleKinects();
                 return;
             }
 
-            CaptureFromSingleKinect();
+            // 保存用に保持
+            savedVertices = vertices;
+            savedColors = colors;
+
+            CreateMesh(vertices, colors);
+
+            Debug.Log(
+                $"PointCloud Captured : {vertices.Count} points from {jobs.Count} Kinect sources");
         }
         finally
         {
@@ -552,7 +822,93 @@ public class PlaneFinder : MonoBehaviour
         }
     }
 
-    private void CaptureFromSingleKinect()
+    // 撮影1台分の指示。Transformはメインスレッドでしか読めないため、点群をこのオブジェクトのローカル座標へ
+    // 変換する行列をあらかじめ計算して持たせる(バックグラウンドスレッドからの撮影でも使えるようにするため)。
+    private struct CaptureJob
+    {
+        public int DeviceIndex;
+        public bool IsMultiSource;
+        public bool HasToLocal;
+        public Matrix4x4 ToLocal;
+    }
+
+    private List<CaptureJob> BuildCaptureJobs()
+    {
+        List<CaptureJob> jobs =
+            new List<CaptureJob>();
+
+        if (!useMultipleKinects ||
+            kinectSources == null ||
+            kinectSources.Length == 0)
+        {
+            jobs.Add(new CaptureJob { DeviceIndex = deviceIndex });
+            return jobs;
+        }
+
+        foreach (KinectCaptureSource source in kinectSources)
+        {
+            if (source == null ||
+                !source.enabled)
+            {
+                continue;
+            }
+
+            bool hasTransform =
+                source.kinectTransform != null;
+
+            jobs.Add(
+                new CaptureJob
+                {
+                    DeviceIndex = source.deviceIndex,
+                    IsMultiSource = true,
+                    HasToLocal = hasTransform,
+                    ToLocal = hasTransform
+                        ? transform.worldToLocalMatrix * source.kinectTransform.localToWorldMatrix
+                        : Matrix4x4.identity
+                });
+        }
+
+        if (jobs.Count == 0)
+        {
+            Debug.LogWarning(
+                "PlaneFinder: multi Kinect capture has no enabled sources.");
+        }
+
+        return jobs;
+    }
+
+    // Kinect SDKの呼び出しと行列演算だけで構成し、Unityのメインスレッド専用APIには触れない
+    // (非同期パイプラインではバックグラウンドスレッドから呼ばれる)。
+    private void RunCaptureJobs(
+        List<CaptureJob> jobs,
+        List<Vector3> vertices,
+        List<Color32> colors)
+    {
+        int installedCount =
+            -1;
+
+        foreach (CaptureJob job in jobs)
+        {
+            if (!job.IsMultiSource)
+            {
+                CaptureFromSingleKinect(vertices, colors);
+                continue;
+            }
+
+            if (installedCount < 0)
+                installedCount = Device.GetInstalledCount();
+
+            CapturePointCloudFromDevice(
+                job,
+                installedCount,
+                vertices,
+                colors);
+        }
+    }
+
+    private void CaptureFromSingleKinect(
+        List<Vector3> vertices,
+        List<Color32> colors)
     {
         Device dev = EnsureSingleDeviceOpen();
 
@@ -564,20 +920,54 @@ public class PlaneFinder : MonoBehaviour
             // 単一Kinect構成ではIR投光の干渉が起きないため、ストリーミングは
             // 開始したまま使い回す。毎回StartCameras/StopCamerasすると、
             // 短い間隔(数秒〜十数秒おき)で回したときにUSBの再ネゴシエーション分の
-            // オーバーヘッドが積み重なって重くなる(マルチKinect構成では従来通り
-            // CaptureFromMultipleKinects側で撮影のたびにStart/Stopする)。
+            // オーバーヘッドが積み重なって重くなる。
             EnsureSingleDeviceStreaming(dev);
 
-            using (Capture cap = dev.GetCapture())
+            ReadPointCloud(
+                dev,
+                false,
+                Matrix4x4.identity,
+                vertices,
+                colors);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError(
+                $"PlaneFinder: Kinect capture failed. {ex.GetType().Name}: {ex.Message}");
+
+            // 取得中に例外が起きた場合はデバイスが不安定な状態になっている可能性があるため、
+            // 一旦閉じて次回のCaptureOnceで開き直す(ストリーミング状態もここでリセットされる)。
+            CloseSingleDevice();
+        }
+    }
+
+    // 1フレーム分の深度を点群に変換してvertices(とcaptureColorがONならcolors)に追加する。
+    private void ReadPointCloud(
+        Device dev,
+        bool hasToLocal,
+        Matrix4x4 toLocal,
+        List<Vector3> vertices,
+        List<Color32> colors)
+    {
+        Transformation trans =
+            GetOrCreateTransformation(dev);
+
+        using (Capture cap = dev.GetCapture())
+        {
+            Image depth = cap.Depth;
+            // 色カメラを起動していない場合(captureColorをOFFで開いた場合)はcap.Colorがnullになる。
+            Image color =
+                captureColor
+                    ? cap.Color
+                    : null;
+
+            using (Image pointCloudImage =
+                   trans.DepthImageToPointCloud(depth))
             {
-                Image depth = cap.Depth;
-                Image color = cap.Color;
+                byte[] colorBytes =
+                    null;
 
-                Calibration calib = dev.GetCalibration();
-
-                using (Transformation trans = calib.CreateTransformation())
-                using (Image pointCloudImage =
-                       trans.DepthImageToPointCloud(depth))
+                if (color != null)
                 {
                     using (Image transformedColor =
                         new Image(
@@ -591,80 +981,84 @@ public class PlaneFinder : MonoBehaviour
                             color,
                             transformedColor);
 
-                        var pointMem =
-                            pointCloudImage.GetPixels<Short3>();
-
-                        var points = pointMem.Span;
-
-                        byte[] colorBytes =
+                        colorBytes =
                             transformedColor.Memory.ToArray();
+                    }
+                }
 
-                        List<Vector3> vertices =
-                            new List<Vector3>();
+                var pointMem =
+                    pointCloudImage.GetPixels<Short3>();
+                var points =
+                    pointMem.Span;
 
-                        List<Color32> colors =
-                            new List<Color32>();
+                for (int i = 0; i < points.Length; i += stride)
+                {
+                    Short3 p = points[i];
 
-                        for (int i = 0; i < points.Length; i += stride)
-                        {
-                            Short3 p = points[i];
+                    if (p.Z <= 0)
+                        continue;
 
-                            if (p.Z <= 0)
-                                continue;
+                    Vector3 v =
+                        new Vector3(
+                            p.X / 1000f,
+                            -p.Y / 1000f,
+                            p.Z / 1000f);
 
-                            Vector3 v = new Vector3(
-                                p.X / 1000f,
-                                -p.Y / 1000f,
-                                p.Z / 1000f
-                            );
+                    vertices.Add(
+                        hasToLocal
+                            ? toLocal.MultiplyPoint3x4(v)
+                            : v);
 
-                            vertices.Add(v);
+                    if (!captureColor)
+                        continue;
 
-                            int ci = i * 4;
+                    int ci = i * 4;
 
-                            if (ci + 3 < colorBytes.Length)
-                            {
-                                byte b = colorBytes[ci + 0];
-                                byte g = colorBytes[ci + 1];
-                                byte r = colorBytes[ci + 2];
-                                byte a = colorBytes[ci + 3];
+                    if (colorBytes != null &&
+                        ci + 3 < colorBytes.Length)
+                    {
+                        byte b = colorBytes[ci + 0];
+                        byte g = colorBytes[ci + 1];
+                        byte r = colorBytes[ci + 2];
+                        byte a = colorBytes[ci + 3];
 
-                                colors.Add(
-                                    new Color32(r, g, b, a));
-                            }
-                            else
-                            {
-                                colors.Add(Color.white);
-                            }
-                        }
-
-                        // 保存用に保持
-                        savedVertices = vertices;
-                        savedColors = colors;
-
-                        CreateMesh(vertices, colors);
-
-                        Debug.Log(
-                            $"PointCloud Captured : {vertices.Count} points");
+                        colors.Add(
+                            new Color32(r, g, b, a));
+                    }
+                    else
+                    {
+                        colors.Add(Color.white);
                     }
                 }
             }
         }
-        catch (System.Exception ex)
-        {
-            Debug.LogError(
-                $"PlaneFinder: Kinect capture failed. {ex.GetType().Name}: {ex.Message}");
+    }
 
-            // 取得中に例外が起きた場合はデバイスが不安定な状態になっている可能性があるため、
-            // 一旦閉じて次回のCaptureOnceで開き直す(ストリーミング状態もここでリセットされる)。
-            CloseSingleDevice();
-        }
+    private Transformation GetOrCreateTransformation(
+        Device dev)
+    {
+        if (transformationsByDevice.TryGetValue(dev, out Transformation existing))
+            return existing;
+
+        Transformation created =
+            dev.GetCalibration().CreateTransformation();
+        transformationsByDevice[dev] = created;
+        return created;
+    }
+
+    private void DisposeTransformation(
+        Device dev)
+    {
+        if (!transformationsByDevice.TryGetValue(dev, out Transformation transformation))
+            return;
+
+        transformation.Dispose();
+        transformationsByDevice.Remove(dev);
     }
 
     // Kinectデバイスハンドル自体(Device.Open/Dispose)は毎回作り直すと不安定になりやすいので
     // 使い回す。単一Kinect構成ではカメラストリーミング(StartCameras)もEnsureSingleDeviceStreamingで
-    // 一度開始したまま使い回す(IR干渉の懸念がないため)。マルチKinect構成では
-    // CaptureFromMultipleKinects側で従来通り撮影のたびにStart/Stopする。
+    // 一度開始したまま使い回す(IR干渉の懸念がないため)。
     private Device EnsureSingleDeviceOpen()
     {
         if (singleDevice != null)
@@ -704,15 +1098,19 @@ public class PlaneFinder : MonoBehaviour
         singleDeviceStreaming = true;
     }
 
-    private static DeviceConfiguration CreateKinectDeviceConfiguration()
+    private DeviceConfiguration CreateKinectDeviceConfiguration()
     {
+        // 色を使わない場合は色カメラ自体を起動しない(SynchronizedImagesOnlyは両方のカメラが
+        // 有効なときしか指定できない)。
         return new DeviceConfiguration
         {
             ColorFormat = ImageFormat.ColorBGRA32,
-            ColorResolution = ColorResolution.R720p,
+            ColorResolution = captureColor
+                ? ColorResolution.R720p
+                : ColorResolution.Off,
             DepthMode = DepthMode.NFOV_2x2Binned,
             CameraFPS = FPS.FPS30,
-            SynchronizedImagesOnly = true
+            SynchronizedImagesOnly = captureColor
         };
     }
 
@@ -727,68 +1125,24 @@ public class PlaneFinder : MonoBehaviour
             Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
         }
 
+        DisposeTransformation(singleDevice);
         singleDevice.Dispose();
         singleDevice = null;
         singleDeviceStreaming = false;
     }
 
     // =========================
-    // PCD保存
-    // =========================
-    // =========================
     // Multi Kinect capture
     // =========================
-    private void CaptureFromMultipleKinects()
-    {
-        int installedCount =
-            Device.GetInstalledCount();
-        List<Vector3> vertices =
-            new List<Vector3>();
-        List<Color32> colors =
-            new List<Color32>();
-        int activeSourceCount =
-            0;
-
-        foreach (KinectCaptureSource source in kinectSources)
-        {
-            if (source == null ||
-                !source.enabled)
-            {
-                continue;
-            }
-
-            activeSourceCount++;
-
-            CapturePointCloudFromDevice(
-                source.deviceIndex,
-                source.kinectTransform,
-                installedCount,
-                vertices,
-                colors);
-        }
-
-        if (activeSourceCount == 0)
-        {
-            Debug.LogWarning(
-                "PlaneFinder: multi Kinect capture has no enabled sources.");
-        }
-
-        savedVertices = vertices;
-        savedColors = colors;
-
-        CreateMesh(vertices, colors);
-
-        Debug.Log(
-            $"PointCloud Captured : {vertices.Count} points from {activeSourceCount} Kinect sources");
-    }
-
     private void CapturePointCloudFromDevice(
-        int sourceDeviceIndex,
-        Transform sourceTransform,
+        CaptureJob job,
         int installedCount,
         List<Vector3> vertices,
         List<Color32> colors)
     {
+        int sourceDeviceIndex =
+            job.DeviceIndex;
+
         if (sourceDeviceIndex < 0 ||
             installedCount <= sourceDeviceIndex)
         {
@@ -811,74 +1165,12 @@ public class PlaneFinder : MonoBehaviour
             // 開始したまま使い回す(撮影のたびにStart/Stopしない)。
             EnsureMultiDeviceStreaming(sourceDeviceIndex, dev);
 
-            using (Capture cap = dev.GetCapture())
-            {
-                Image depth = cap.Depth;
-                Image color = cap.Color;
-
-                Calibration calib = dev.GetCalibration();
-
-                using (Transformation trans = calib.CreateTransformation())
-                using (Image pointCloudImage =
-                       trans.DepthImageToPointCloud(depth))
-                {
-                    using (Image transformedColor =
-                        new Image(
-                            ImageFormat.ColorBGRA32,
-                            depth.WidthPixels,
-                            depth.HeightPixels,
-                            depth.WidthPixels * 4))
-                    {
-                        trans.ColorImageToDepthCamera(
-                            depth,
-                            color,
-                            transformedColor);
-
-                        var pointMem =
-                            pointCloudImage.GetPixels<Short3>();
-                        var points =
-                            pointMem.Span;
-                        byte[] colorBytes =
-                            transformedColor.Memory.ToArray();
-
-                        for (int i = 0; i < points.Length; i += stride)
-                        {
-                            Short3 p = points[i];
-
-                            if (p.Z <= 0)
-                                continue;
-
-                            Vector3 v =
-                                new Vector3(
-                                    p.X / 1000f,
-                                    -p.Y / 1000f,
-                                    p.Z / 1000f);
-
-                            vertices.Add(
-                                TransformCapturedPointToLocal(
-                                    v,
-                                    sourceTransform));
-
-                            int ci = i * 4;
-
-                            if (ci + 3 < colorBytes.Length)
-                            {
-                                byte b = colorBytes[ci + 0];
-                                byte g = colorBytes[ci + 1];
-                                byte r = colorBytes[ci + 2];
-                                byte a = colorBytes[ci + 3];
-
-                                colors.Add(
-                                    new Color32(r, g, b, a));
-                            }
-                            else
-                            {
-                                colors.Add(Color.white);
-                            }
-                        }
-                    }
-                }
-            }
+            ReadPointCloud(
+                dev,
+                job.HasToLocal,
+                job.ToLocal,
+                vertices,
+                colors);
         }
         catch (System.Exception ex)
         {
@@ -940,6 +1232,7 @@ public class PlaneFinder : MonoBehaviour
             Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
         }
 
+        DisposeTransformation(dev);
         dev.Dispose();
         multiDevicesByIndex.Remove(index);
         multiDevicesStreaming.Remove(index);
@@ -960,24 +1253,12 @@ public class PlaneFinder : MonoBehaviour
                 Debug.LogWarning($"PlaneFinder: StopCameras failed. {ex.GetType().Name}: {ex.Message}");
             }
 
+            DisposeTransformation(dev);
             dev.Dispose();
         }
 
         multiDevicesByIndex.Clear();
         multiDevicesStreaming.Clear();
-    }
-
-    private Vector3 TransformCapturedPointToLocal(
-        Vector3 point,
-        Transform sourceTransform)
-    {
-        if (sourceTransform == null)
-            return point;
-
-        Vector3 worldPoint =
-            sourceTransform.TransformPoint(point);
-
-        return transform.InverseTransformPoint(worldPoint);
     }
 
     // =========================
@@ -1021,7 +1302,11 @@ public class PlaneFinder : MonoBehaviour
         for (int i = 0; i < savedVertices.Count; i++)
         {
             Vector3 p = savedVertices[i];
-            Color32 c = savedColors[i];
+            // captureColorがOFFのときは色を持っていないので白で保存する。
+            Color32 c =
+                i < savedColors.Count
+                    ? savedColors[i]
+                    : (Color32)Color.white;
 
             uint rgb =
                 ((uint)c.r << 16) |
@@ -1060,7 +1345,9 @@ public class PlaneFinder : MonoBehaviour
 
         mesh.vertices = pts.ToArray();
 
-        mesh.colors32 = cols.ToArray();
+        // captureColorがOFFのときは頂点カラーなし(白)で表示する。
+        if (cols.Count == pts.Count)
+            mesh.colors32 = cols.ToArray();
 
         int[] indices = new int[pts.Count];
 
@@ -1180,23 +1467,19 @@ public class PlaneFinder : MonoBehaviour
         }
 
         List<Vector3> pointsForNavMesh = savedVertices;
+        AuxiliaryFloorMergeInputs auxiliaryInputs =
+            PrepareAuxiliaryFloorMerge();
 
-        if (useAuxiliaryFloorPoints &&
-            auxiliaryFloorObjects != null &&
-            auxiliaryFloorObjects.Count > 0)
+        if (auxiliaryInputs != null)
         {
             pointsForNavMesh =
-                BuildPointsWithAuxiliaryFloorPriority(
+                MergeAuxiliaryFloorPoints(
                     savedVertices,
+                    auxiliaryInputs,
                     out int addedCount,
                     out int removedCount);
 
-            if (addedCount > 0 ||
-                removedCount > 0)
-            {
-                Debug.Log(
-                    $"PlaneFinder: auxiliary floor override applied. addedPoints={addedCount}, removedPoints={removedCount}, objects={auxiliaryFloorObjects.Count}.");
-            }
+            LogAuxiliaryFloorOverride(addedCount, removedCount);
         }
 
         if (!TryBuildNavMeshFromPointCloud(pointsForNavMesh, out int vertexCount, out int triangleCount, out int cellCount))
@@ -2045,19 +2328,87 @@ public class PlaneFinder : MonoBehaviour
         triangleCount = 0;
         cellCount = 0;
 
-        if (!TryGetBaseHorizontalFrame(
+        GetHorizontalFrameOrDefault(
             points,
             out Vector3 horizontalNormal,
             out Vector3 axisU,
-            out Vector3 axisV))
-        {
-            horizontalNormal =
-                transform.InverseTransformDirection(Vector3.up).normalized;
-            CreateHorizontalAxes(horizontalNormal, out axisU, out axisV);
-        }
+            out Vector3 axisV);
 
         float cellSize =
             Mathf.Max(navMeshCellSize, 0.02f);
+        NavMeshSourceGeometry geometry =
+            ComputeNavMeshSourceGeometry(
+                points,
+                horizontalNormal,
+                axisU,
+                axisV,
+                cellSize,
+                GetAuxiliaryFloorGuaranteedFootprints(horizontalNormal, axisU, axisV));
+        Mesh mesh =
+            CreateNavMeshSourceMesh(
+                generatedNavMeshObjectName + "Mesh",
+                geometry.Vertices,
+                geometry.Triangles);
+
+        if (mesh == null ||
+            mesh.vertexCount == 0)
+        {
+            Debug.LogWarning(
+                $"PlaneFinder: denoised horizontal surface mesh has no triangles. layers={geometry.LayerCount}");
+            return false;
+        }
+
+        ApplyNavMeshSourceMesh(mesh, null);
+
+        vertexCount = geometry.Vertices.Count;
+        triangleCount = geometry.Triangles.Count / 3;
+        cellCount = geometry.SourceCellCount;
+
+        Debug.Log(
+            $"PlaneFinder: denoised surface NavMesh built. layers={geometry.UsedLayerCount}/{geometry.LayerCount}, cells={geometry.SourceCellCount}, cellSize={cellSize:F3}, normal={horizontalNormal}");
+
+        return true;
+    }
+
+    private void GetHorizontalFrameOrDefault(
+        List<Vector3> points,
+        out Vector3 horizontalNormal,
+        out Vector3 axisU,
+        out Vector3 axisV)
+    {
+        if (TryGetBaseHorizontalFrame(
+            points,
+            out horizontalNormal,
+            out axisU,
+            out axisV))
+        {
+            return;
+        }
+
+        horizontalNormal =
+            transform.InverseTransformDirection(Vector3.up).normalized;
+        CreateHorizontalAxes(horizontalNormal, out axisU, out axisV);
+    }
+
+    private class NavMeshSourceGeometry
+    {
+        public readonly List<Vector3> Vertices = new List<Vector3>();
+        public readonly List<int> Triangles = new List<int>();
+        public int SourceCellCount;
+        public int UsedLayerCount;
+        public int LayerCount;
+    }
+
+    // 点群からNavMeshソースメッシュの頂点/三角形を作る。Unityのメインスレッド専用APIに触れないので
+    // バックグラウンドスレッドから呼べる(Transformやメッシュに依存する入力は呼び出し側が事前に用意する)。
+    private NavMeshSourceGeometry ComputeNavMeshSourceGeometry(
+        List<Vector3> points,
+        Vector3 horizontalNormal,
+        Vector3 axisU,
+        Vector3 axisV,
+        float cellSize,
+        List<AuxiliaryFloorFootprint> guaranteedFootprints)
+    {
         Dictionary<int, HorizontalSurfaceLayer> layers =
             BuildHorizontalSurfaceLayers(
                 points,
@@ -2065,24 +2416,30 @@ public class PlaneFinder : MonoBehaviour
                 axisU,
                 axisV,
                 cellSize);
-        Mesh mesh =
-            BuildDenoisedHorizontalSurfaceNavMeshSourceMesh(
-                layers,
-                horizontalNormal,
-                axisU,
-                axisV,
-                cellSize,
-                out int sourceCellCount,
-                out int layerCount);
+        NavMeshSourceGeometry geometry =
+            new NavMeshSourceGeometry
+            {
+                LayerCount = layers.Count
+            };
 
-        if (mesh == null ||
-            mesh.vertexCount == 0)
-        {
-            Debug.LogWarning(
-                $"PlaneFinder: denoised horizontal surface mesh has no triangles. layers={layers.Count}");
-            return false;
-        }
+        BuildDenoisedHorizontalSurfaceGeometry(
+            layers,
+            horizontalNormal,
+            axisU,
+            axisV,
+            cellSize,
+            guaranteedFootprints,
+            geometry);
 
+        return geometry;
+    }
+
+    // NavMeshソースメッシュを生成済みオブジェクトに割り当ててNavMeshを登録する。
+    // prebuiltNavMeshDataがnullの場合はその場で同期ビルドする。
+    private void ApplyNavMeshSourceMesh(
+        Mesh mesh,
+        NavMeshData prebuiltNavMeshData)
+    {
         GameObject navMeshRoot =
             GetOrCreateGeneratedChild(generatedNavMeshObjectName);
         navMeshRoot.transform.localPosition = Vector3.zero;
@@ -2103,23 +2460,16 @@ public class PlaneFinder : MonoBehaviour
             navMeshRoot,
             "SurfaceNavMesh",
             mesh,
-            generatedNavMeshSourceColor);
-
-        vertexCount = mesh.vertexCount;
-        triangleCount = mesh.triangles.Length / 3;
-        cellCount = sourceCellCount;
-
-        Debug.Log(
-            $"PlaneFinder: denoised surface NavMesh built. layers={layerCount}/{layers.Count}, cells={sourceCellCount}, cellSize={cellSize:F3}, normal={horizontalNormal}");
-
-        return true;
+            generatedNavMeshSourceColor,
+            prebuiltNavMeshData);
     }
 
     private void BuildDirectNavMeshObject(
         GameObject parent,
         string objectName,
         Mesh mesh,
-        Color meshColor)
+        Color meshColor,
+        NavMeshData prebuiltNavMeshData = null)
     {
         GameObject navMeshObject =
             GetOrCreateChild(parent, objectName);
@@ -2170,9 +2520,11 @@ public class PlaneFinder : MonoBehaviour
             owner = navMeshObject.AddComponent<GeneratedNavMeshDataOwner>();
 
         owner.SetNavMeshData(
-            BuildDirectNavMeshData(
-                mesh,
-                navMeshObject.transform.localToWorldMatrix));
+            prebuiltNavMeshData != null
+                ? prebuiltNavMeshData
+                : BuildDirectNavMeshData(
+                    mesh,
+                    navMeshObject.transform.localToWorldMatrix));
     }
 
     private void ClearDirectNavMeshObject(
@@ -2240,7 +2592,39 @@ public class PlaneFinder : MonoBehaviour
             return null;
         }
 
-        NavMeshBuildSettings buildSettings =
+        CreateDirectNavMeshBuildInputs(
+            mesh,
+            sourceTransform,
+            out NavMeshBuildSettings buildSettings,
+            out List<NavMeshBuildSource> sources,
+            out Bounds bounds);
+
+        NavMeshData navMeshData =
+            NavMeshBuilder.BuildNavMeshData(
+                buildSettings,
+                sources,
+                bounds,
+                Vector3.zero,
+                Quaternion.identity);
+
+        if (navMeshData == null)
+        {
+            Debug.LogWarning(
+                "PlaneFinder: direct NavMesh build returned null.");
+            return null;
+        }
+
+        return navMeshData;
+    }
+
+    private void CreateDirectNavMeshBuildInputs(
+        Mesh mesh,
+        Matrix4x4 sourceTransform,
+        out NavMeshBuildSettings buildSettings,
+        out List<NavMeshBuildSource> sources,
+        out Bounds bounds)
+    {
+        buildSettings =
             NavMesh.GetSettingsByID(pointCloudNavMeshAgentTypeId);
         buildSettings.agentRadius =
             Mathf.Max(pointCloudNavMeshIgnoredAgentRadius, 0.001f);
@@ -2261,7 +2645,7 @@ public class PlaneFinder : MonoBehaviour
         buildSettings.minRegionArea =
             Mathf.Max(pointCloudNavMeshMinRegionArea, 0f);
 
-        List<NavMeshBuildSource> sources =
+        sources =
             new List<NavMeshBuildSource>
             {
                 new NavMeshBuildSource
@@ -2273,26 +2657,9 @@ public class PlaneFinder : MonoBehaviour
                 }
             };
 
-        Bounds bounds =
+        bounds =
             TransformBounds(mesh.bounds, sourceTransform);
         bounds.Expand(Vector3.one * 2f);
-
-        NavMeshData navMeshData =
-            NavMeshBuilder.BuildNavMeshData(
-                buildSettings,
-                sources,
-                bounds,
-                Vector3.zero,
-                Quaternion.identity);
-
-        if (navMeshData == null)
-        {
-            Debug.LogWarning(
-                "PlaneFinder: direct NavMesh build returned null.");
-            return null;
-        }
-
-        return navMeshData;
     }
 
     private Bounds TransformBounds(
@@ -2683,54 +3050,93 @@ public class PlaneFinder : MonoBehaviour
         return result;
     }
 
-    private List<Vector3> BuildPointsWithAuxiliaryFloorPriority(
-        List<Vector3> sourcePoints,
-        out int addedCount,
-        out int removedCount)
+    // 補助床オブジェクトを点群に反映するための入力。Transformやメッシュを読む部分をメインスレッドで
+    // 済ませておき、点群との突き合わせ(MergeAuxiliaryFloorPoints)はバックグラウンドスレッドでも行えるようにする。
+    private class AuxiliaryFloorMergeInputs
     {
-        addedCount = 0;
-        removedCount = 0;
+        public Vector3 Normal;
+        public Vector3 AxisU;
+        public Vector3 AxisV;
+        // nullの場合はfootprint内の実点群を除去しない。
+        public List<AuxiliaryFloorFootprint> Footprints;
+        public readonly List<Vector3> AuxiliaryPoints = new List<Vector3>();
+    }
+
+    private AuxiliaryFloorMergeInputs PrepareAuxiliaryFloorMerge()
+    {
+        if (!useAuxiliaryFloorPoints ||
+            auxiliaryFloorObjects == null ||
+            auxiliaryFloorObjects.Count == 0)
+        {
+            return null;
+        }
+
+        AuxiliaryFloorMergeInputs inputs =
+            new AuxiliaryFloorMergeInputs();
 
         if (!TryGetAuxiliaryFloorNormal(out Vector3 normal))
         {
-            List<Vector3> appended =
-                new List<Vector3>(sourcePoints);
-            addedCount =
-                CollectAuxiliaryFloorPoints(appended, Vector3.up, false);
-            return appended;
+            CollectAuxiliaryFloorPoints(inputs.AuxiliaryPoints, Vector3.up, false);
+            return inputs;
         }
 
         CreateHorizontalAxes(normal, out Vector3 axisU, out Vector3 axisV);
 
-        List<Vector3> baseResult;
+        inputs.Normal = normal;
+        inputs.AxisU = axisU;
+        inputs.AxisV = axisV;
 
         if (prioritizeAuxiliaryFloorOverPointCloud)
         {
-            List<AuxiliaryFloorFootprint> footprints =
+            inputs.Footprints =
                 BuildAuxiliaryFloorFootprints(normal, axisU, axisV);
+        }
 
-            baseResult =
-                RemovePointsInsideAuxiliaryFootprints(
+        CollectAuxiliaryFloorPoints(
+            inputs.AuxiliaryPoints,
+            normal,
+            prioritizeAuxiliaryFloorOverPointCloud);
+
+        return inputs;
+    }
+
+    private List<Vector3> MergeAuxiliaryFloorPoints(
+        List<Vector3> sourcePoints,
+        AuxiliaryFloorMergeInputs inputs,
+        out int addedCount,
+        out int removedCount)
+    {
+        removedCount = 0;
+
+        List<Vector3> result =
+            inputs.Footprints != null
+                ? RemovePointsInsideAuxiliaryFootprints(
                     sourcePoints,
-                    footprints,
-                    normal,
-                    axisU,
-                    axisV,
-                    out removedCount);
-        }
-        else
+                    inputs.Footprints,
+                    inputs.Normal,
+                    inputs.AxisU,
+                    inputs.AxisV,
+                    out removedCount)
+                : new List<Vector3>(sourcePoints);
+
+        result.AddRange(inputs.AuxiliaryPoints);
+        addedCount = inputs.AuxiliaryPoints.Count;
+
+        return result;
+    }
+
+    private void LogAuxiliaryFloorOverride(
+        int addedCount,
+        int removedCount)
+    {
+        if (addedCount <= 0 &&
+            removedCount <= 0)
         {
-            baseResult =
-                new List<Vector3>(sourcePoints);
+            return;
         }
 
-        addedCount =
-            CollectAuxiliaryFloorPoints(
-                baseResult,
-                normal,
-                prioritizeAuxiliaryFloorOverPointCloud);
-
-        return baseResult;
+        Debug.Log(
+            $"PlaneFinder: auxiliary floor override applied. addedPoints={addedCount}, removedPoints={removedCount}, objects={auxiliaryFloorObjects.Count}.");
     }
 
     private bool TryGetAuxiliaryFloorNormal(
@@ -2909,21 +3315,21 @@ public class PlaneFinder : MonoBehaviour
         }
     }
 
-    private Mesh BuildDenoisedHorizontalSurfaceNavMeshSourceMesh(
+    private void BuildDenoisedHorizontalSurfaceGeometry(
         Dictionary<int, HorizontalSurfaceLayer> layers,
         Vector3 normal,
         Vector3 axisU,
         Vector3 axisV,
         float cellSize,
-        out int sourceCellCount,
-        out int usedLayerCount)
+        List<AuxiliaryFloorFootprint> guaranteedFootprints,
+        NavMeshSourceGeometry geometry)
     {
-        sourceCellCount = 0;
-        usedLayerCount = 0;
+        int sourceCellCount = 0;
+        int usedLayerCount = 0;
         List<Vector3> vertices =
-            new List<Vector3>();
+            geometry.Vertices;
         List<int> triangles =
-            new List<int>();
+            geometry.Triangles;
         int minLayerPoints =
             Mathf.Max(minHorizontalSurfaceLayerPoints, 1);
 
@@ -2967,13 +3373,13 @@ public class PlaneFinder : MonoBehaviour
             usedLayerCount++;
         }
 
-        if (useAuxiliaryFloorPoints &&
-            prioritizeAuxiliaryFloorOverPointCloud)
+        if (guaranteedFootprints != null)
         {
             int guaranteedCellCount =
                 AppendAuxiliaryFloorGuaranteedQuads(
                     vertices,
                     triangles,
+                    guaranteedFootprints,
                     normal,
                     axisU,
                     axisV,
@@ -2986,32 +3392,42 @@ public class PlaneFinder : MonoBehaviour
             }
         }
 
-        return CreateNavMeshSourceMesh(
-            generatedNavMeshObjectName + "Mesh",
-            vertices,
-            triangles);
+        geometry.SourceCellCount = sourceCellCount;
+        geometry.UsedLayerCount = usedLayerCount;
+    }
+
+    // 補助床を無条件に敷くためのfootprint。Transformやメッシュを読むのでメインスレッドで用意する。
+    private List<AuxiliaryFloorFootprint> GetAuxiliaryFloorGuaranteedFootprints(
+        Vector3 normal,
+        Vector3 axisU,
+        Vector3 axisV)
+    {
+        if (!useAuxiliaryFloorPoints ||
+            !prioritizeAuxiliaryFloorOverPointCloud ||
+            auxiliaryFloorObjects == null ||
+            auxiliaryFloorObjects.Count == 0)
+        {
+            return null;
+        }
+
+        return BuildAuxiliaryFloorFootprints(normal, axisU, axisV);
     }
 
     private int AppendAuxiliaryFloorGuaranteedQuads(
         List<Vector3> vertices,
         List<int> triangles,
+        List<AuxiliaryFloorFootprint> footprints,
         Vector3 normal,
         Vector3 axisU,
         Vector3 axisV,
         float cellSize)
     {
-        if (auxiliaryFloorObjects == null ||
-            auxiliaryFloorObjects.Count == 0)
-            return 0;
-
         // 点群由来の穴埋め/ノイズ除去(垂直構造の除去・薄いセルの除去など)は、
         // 実世界で確実に平面だとわかっている補助オブジェクトのfootprintには適用したくない。
         // footprint内のセルは、点群側で既に何らかのセルが(別の高さで)存在していても
         // 無条件に補助平面の高さで埋め直し、完全な床を保証する
         // (「既に埋まっているからスキップ」という判定は、家具などのノイズが
         // 同じ(x,y)セルの別の高さに存在するだけで補助平面側が抜けてしまうため使わない)。
-        List<AuxiliaryFloorFootprint> footprints =
-            BuildAuxiliaryFloorFootprints(normal, axisU, axisV);
         int addedCellCount = 0;
 
         foreach (AuxiliaryFloorFootprint footprint in footprints)
@@ -3020,6 +3436,8 @@ public class PlaneFinder : MonoBehaviour
             int maxX = Mathf.FloorToInt(footprint.UMax / cellSize);
             int minY = Mathf.FloorToInt(footprint.VMin / cellSize);
             int maxY = Mathf.FloorToInt(footprint.VMax / cellSize);
+            Dictionary<Vector2Int, float> cells =
+                new Dictionary<Vector2Int, float>();
 
             for (int x = minX; x <= maxX; x++)
             {
@@ -3036,19 +3454,20 @@ public class PlaneFinder : MonoBehaviour
                     if (!IsPointInsideFootprintShape(footprint, centerU, centerV, 0f))
                         continue;
 
-                    AddHorizontalSurfaceQuad(
-                        vertices,
-                        triangles,
-                        new Vector2Int(x, y),
-                        footprint.Height,
-                        normal,
-                        axisU,
-                        axisV,
-                        cellSize);
-
-                    addedCellCount++;
+                    cells[new Vector2Int(x, y)] = footprint.Height;
                 }
             }
+
+            AppendHorizontalSurfaceQuads(
+                cells,
+                vertices,
+                triangles,
+                normal,
+                axisU,
+                axisV,
+                cellSize);
+
+            addedCellCount += cells.Count;
         }
 
         return addedCellCount;
@@ -3089,18 +3508,109 @@ public class PlaneFinder : MonoBehaviour
         Vector3 axisV,
         float cellSize)
     {
-        foreach (KeyValuePair<Vector2Int, float> cell in heights)
+        if (!mergeNavMeshSourceQuads)
         {
-            AddHorizontalSurfaceQuad(
+            foreach (KeyValuePair<Vector2Int, float> cell in heights)
+            {
+                AddHorizontalSurfaceRect(
+                    vertices,
+                    triangles,
+                    cell.Key,
+                    1,
+                    1,
+                    cell.Value,
+                    normal,
+                    axisU,
+                    axisV,
+                    cellSize);
+            }
+
+            return;
+        }
+
+        // セル1個につき四角形1枚だと三角形数が多くNavMeshビルドが重いので、貪欲法で長方形にまとめる。
+        // 走査順(v→u)で未使用の最初のセルを起点に、まずu方向、次にv方向へ、高さが起点から
+        // 許容範囲内の未使用セルだけで埋まっている限り長方形を伸ばす。
+        float tolerance =
+            Mathf.Max(navMeshQuadMergeHeightTolerance, 0f);
+        List<Vector2Int> keys =
+            new List<Vector2Int>(heights.Keys);
+        HashSet<Vector2Int> merged =
+            new HashSet<Vector2Int>();
+
+        keys.Sort((a, b) =>
+            a.y != b.y
+                ? a.y.CompareTo(b.y)
+                : a.x.CompareTo(b.x));
+
+        foreach (Vector2Int key in keys)
+        {
+            if (merged.Contains(key))
+                continue;
+
+            float seedHeight =
+                heights[key];
+            int width = 1;
+
+            while (CanMergeHorizontalSurfaceRow(heights, merged, key.x + width, key.y, 1, seedHeight, tolerance))
+                width++;
+
+            int depth = 1;
+
+            while (CanMergeHorizontalSurfaceRow(heights, merged, key.x, key.y + depth, width, seedHeight, tolerance))
+                depth++;
+
+            float heightSum = 0f;
+
+            for (int dy = 0; dy < depth; dy++)
+            {
+                for (int dx = 0; dx < width; dx++)
+                {
+                    Vector2Int cell =
+                        new Vector2Int(key.x + dx, key.y + dy);
+
+                    merged.Add(cell);
+                    heightSum += heights[cell];
+                }
+            }
+
+            AddHorizontalSurfaceRect(
                 vertices,
                 triangles,
-                cell.Key,
-                cell.Value,
+                key,
+                width,
+                depth,
+                heightSum / (width * depth),
                 normal,
                 axisU,
                 axisV,
                 cellSize);
         }
+    }
+
+    private bool CanMergeHorizontalSurfaceRow(
+        Dictionary<Vector2Int, float> heights,
+        HashSet<Vector2Int> merged,
+        int startX,
+        int y,
+        int width,
+        float seedHeight,
+        float tolerance)
+    {
+        for (int dx = 0; dx < width; dx++)
+        {
+            Vector2Int cell =
+                new Vector2Int(startX + dx, y);
+
+            if (merged.Contains(cell) ||
+                !heights.TryGetValue(cell, out float height) ||
+                Mathf.Abs(height - seedHeight) > tolerance)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private Dictionary<Vector2Int, float> BuildRawDenoisedHorizontalLayerCells(
@@ -3563,10 +4073,13 @@ public class PlaneFinder : MonoBehaviour
         return cluster;
     }
 
-    private void AddHorizontalSurfaceQuad(
+    // セル(key)を左下の角とする、幅width×奥行depthセル分の長方形を1枚追加する。
+    private void AddHorizontalSurfaceRect(
         List<Vector3> vertices,
         List<int> triangles,
         Vector2Int key,
+        int width,
+        int depth,
         float height,
         Vector3 normal,
         Vector3 axisU,
@@ -3576,11 +4089,11 @@ public class PlaneFinder : MonoBehaviour
         float u0 =
             key.x * cellSize;
         float u1 =
-            (key.x + 1) * cellSize;
+            (key.x + width) * cellSize;
         float v0 =
             key.y * cellSize;
         float v1 =
-            (key.y + 1) * cellSize;
+            (key.y + depth) * cellSize;
         Vector3 basePoint =
             normal * height;
 

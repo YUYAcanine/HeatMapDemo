@@ -135,7 +135,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   subjectName: sora
-  skeletonSource: 0
+  skeletonSource: 2
   filteredMode: 1
   skeletonVariant: 
   kinectId: A
