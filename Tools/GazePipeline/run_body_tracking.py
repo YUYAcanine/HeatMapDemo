@@ -11,8 +11,8 @@ Unity ごと落ちることがあるため、記録は映像だけにして (シ
 
 使い方 (Tools/GazePipeline で):
   .venv\\Scripts\\python.exe run_body_tracking.py
-      実験の名前・実験対象者を一覧から番号で選ぶ
-  .venv\\Scripts\\python.exe run_body_tracking.py --experiment 0928sansouken --subject test1 --kinects B C
+      データの場所 (Assets / D:\\HomeExperiment) → 実験の名前 → 実験対象者 の順に一覧から番号で選ぶ
+  .venv\\Scripts\\python.exe run_body_tracking.py --data-root D:\\HomeExperiment --experiment 0928sansouken --subject test1 --kinects B C
 
 必要なもの: Azure Kinect Body Tracking SDK 1.1.x のインストール (C:\\Program Files\\Azure Kinect Body Tracking SDK).
 その tools フォルダにある k4a.dll / k4arecord.dll / k4abt.dll / 骨格推定モデル / CUDA の DLL を使う.
@@ -30,7 +30,7 @@ import time
 from ctypes import POINTER, Structure, byref, c_char_p, c_float, c_int, c_int32, c_uint32, c_uint64, c_void_p
 from pathlib import Path
 
-from run_pipeline import DATA_ROOT, _choose, _list_experiments, _list_subjects
+from run_pipeline import _choose, _list_experiments, _list_subjects, home_data_root
 
 DEFAULT_SDK_TOOLS = Path(r"C:\Program Files\Azure Kinect Body Tracking SDK\tools")
 
@@ -259,6 +259,7 @@ def track_kinect(sdk: KinectSdk, raw_dir: Path, kinect_id: str, mode: str, gpu_i
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    home_data_root.add_argument(parser)
     parser.add_argument("--experiment", help="実験の名前 (省略すると一覧から選ぶ)")
     parser.add_argument("--subject", help="実験対象者 (省略すると一覧から選ぶ)")
     parser.add_argument("--kinects", nargs="*", help="骨格を作るキネクト (省略時は Raw~ にある全部)")
@@ -273,16 +274,19 @@ def main() -> int:
                         help="確認用: <ID>_skeleton<これ>.json に書く (例 _test. シーン2〜4 は読み込まない)")
     args = parser.parse_args()
 
+    data_root = home_data_root.choose_data_root(args.data_root)
+    if data_root is None:
+        return 1
     if not args.experiment:
-        args.experiment = _choose("実験の名前", _list_experiments())
+        args.experiment = _choose("実験の名前", _list_experiments(data_root))
         if args.experiment is None:
             return 1
     if not args.subject:
-        args.subject = _choose(f"実験対象者 ({args.experiment})", _list_subjects(args.experiment))
+        args.subject = _choose(f"実験対象者 ({args.experiment})", _list_subjects(data_root, args.experiment))
         if args.subject is None:
             return 1
 
-    subject_dir = DATA_ROOT / args.experiment / "Skeleton" / args.subject
+    subject_dir = data_root / args.experiment / "Skeleton" / args.subject
     raw_dir = subject_dir / "Raw~"
     kinect_ids = args.kinects or sorted(p.name[:-len("_raw_index.json")] for p in raw_dir.glob("*_raw_index.json"))
     if not kinect_ids:

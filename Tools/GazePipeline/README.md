@@ -13,10 +13,13 @@ cd Tools/GazePipeline
 .venv\Scripts\python.exe run_pipeline.py
 ```
 
-実験の名前と実験対象者は、生データ (Raw~) があるものの一覧から番号で選ぶ(名前を入力してもよい)。
-`--experiment sansoken1 --subject Yoshi` のように指定すれば、選ばずにそのまま解析する。
+最初にデータの場所を選ぶ(1: `Assets/Data/HomeExperiment` / 2: `D:\HomeExperiment` / 他のフォルダはパスを入力)。
+Unity のインスペクターの Data Root Directory と同じフォルダを選ぶ。
+続いて実験の名前と実験対象者を、生データ (Raw~) があるものの一覧から番号で選ぶ(名前を入力してもよい)。
+`--data-root D:\HomeExperiment --experiment sansoken1 --subject Yoshi` のように指定すれば、選ばずにそのまま解析する
+(`--data-root assets` で `Assets/Data/HomeExperiment`)。
 
-- 出力: `Assets/Data/HomeExperiment/<実験>/Skeleton/<対象者>/Filtered/filtered_Image.json`
+- 出力: `<データの場所>/<実験>/Skeleton/<対象者>/Filtered/filtered_Image.json`
 - シーン4 で `Skeleton Source = Image` にすると使える (`Image Direction` で目の視線 / 頭の向きを選ぶ)
 - `--step 2` … 2フレームごと(15fps)に解析して時間を半分にする
 - `--reuse` … 画像の解析結果 (`Raw~/<ID>_image_pose.pkl`) を使い回して、まとめ方だけやり直す
@@ -38,7 +41,7 @@ cd Tools/GazePipeline
 .venv\Scripts\python.exe run_body_tracking.py
 ```
 
-- 出力: `Assets/Data/HomeExperiment/<実験>/Skeleton/<対象者>/<ID>_skeleton.json`
+- 出力: `<データの場所>/<実験>/Skeleton/<対象者>/<ID>_skeleton.json`
   (シーン1で記録していたものと同じ形式・同じ時間軸 `recordingTimeSec`。シーン2〜4 でそのまま使える。
   同じ名前のファイルがあれば `<ID>_skeleton_old_<日時>.json` に名前を変えて残す)
 - Unity とは別のプログラムとして動くので、万一 SDK の不具合で落ちても記録には影響しない(やり直せばよい)

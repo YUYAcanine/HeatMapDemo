@@ -4,12 +4,15 @@
 
 使い方 (Tools/GazePipeline で):
   .venv\\Scripts\\python.exe run_pipeline.py
-      実験の名前・実験対象者を一覧から番号で選ぶ(名前を入力してもよい)
+      データの場所 (Assets / D:\\HomeExperiment) → 実験の名前 → 実験対象者 の順に一覧から番号で選ぶ(名前を入力してもよい)
+  .venv\\Scripts\\python.exe run_pipeline.py --data-root D:\\HomeExperiment
+      データの場所を指定する (assets と書くと Assets/Data/HomeExperiment)
   .venv\\Scripts\\python.exe run_pipeline.py --experiment sansoken1 --subject Yoshi
       指定したものをそのまま使う(片方だけ指定すると、もう片方を選ぶ)
 
-入力: Assets/Data/HomeExperiment/<実験>/Skeleton/<対象者>/Raw~/<ID>.mkv, <ID>_raw_index.json, <ID>_calibration.json
-出力: Assets/Data/HomeExperiment/<実験>/Skeleton/<対象者>/Filtered/filtered_Image.json
+入力: <データの場所>/<実験>/Skeleton/<対象者>/Raw~/<ID>.mkv, <ID>_raw_index.json, <ID>_calibration.json
+出力: <データの場所>/<実験>/Skeleton/<対象者>/Filtered/filtered_Image.json
+      (<データの場所> は Assets/Data/HomeExperiment か D:\\HomeExperiment など. Unity の Data Root Directory と同じ)
       (シーン3の filtered_*.json と同じ形式 + 頭の位置・頭の向き・視線. シーン4で Skeleton Source を Image にすると使える)
 途中結果: Raw~/<ID>_image_pose.pkl (まとめ方だけ変えて作り直すときは --reuse で画像の解析を飛ばせる)
 """
@@ -21,24 +24,24 @@ import sys
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = PROJECT_ROOT / "Assets" / "Data" / "HomeExperiment"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import home_data_root  # noqa: E402  Tools/home_data_root.py
 
 
 def _has_raw_data(subject_dir: Path) -> bool:
     return any((subject_dir / "Raw~").glob("*_raw_index.json"))
 
 
-def _list_experiments() -> list[str]:
+def _list_experiments(data_root: Path) -> list[str]:
     """生データ (Raw~/*_raw_index.json) がある実験対象者を1人以上持つ実験."""
-    if not DATA_ROOT.exists():
+    if not data_root.exists():
         return []
-    return sorted(p.name for p in DATA_ROOT.iterdir()
+    return sorted(p.name for p in data_root.iterdir()
                   if p.is_dir() and any(_has_raw_data(s) for s in (p / "Skeleton").glob("*") if s.is_dir()))
 
 
-def _list_subjects(experiment: str) -> list[str]:
-    skeleton_dir = DATA_ROOT / experiment / "Skeleton"
+def _list_subjects(data_root: Path, experiment: str) -> list[str]:
+    skeleton_dir = data_root / experiment / "Skeleton"
     if not skeleton_dir.exists():
         return []
     return sorted(p.name for p in skeleton_dir.iterdir() if p.is_dir() and _has_raw_data(p))
@@ -70,6 +73,7 @@ def _choose(label: str, options: list[str]) -> str | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    home_data_root.add_argument(parser)
     parser.add_argument("--experiment", help="実験の名前 (省略すると一覧から選ぶ)")
     parser.add_argument("--subject", help="実験対象者 (省略すると一覧から選ぶ)")
     parser.add_argument("--kinects", nargs="*", help="解析するキネクト(省略時は Raw~ にある全部)")
@@ -82,12 +86,15 @@ def main() -> int:
                              "(シーン2の骨格の再生と0秒・時間軸がそろう), device: キネクト本体の時刻 (確認用)")
     args = parser.parse_args()
 
+    data_root = home_data_root.choose_data_root(args.data_root)
+    if data_root is None:
+        return 1
     if not args.experiment:
-        args.experiment = _choose("実験の名前", _list_experiments())
+        args.experiment = _choose("実験の名前", _list_experiments(data_root))
         if args.experiment is None:
             return 1
     if not args.subject:
-        args.subject = _choose(f"実験対象者 ({args.experiment})", _list_subjects(args.experiment))
+        args.subject = _choose(f"実験対象者 ({args.experiment})", _list_subjects(data_root, args.experiment))
         if args.subject is None:
             return 1
     print(f"\n{args.experiment} / {args.subject} を解析します\n", flush=True)
@@ -98,7 +105,7 @@ def main() -> int:
     from gazepipe.process import load_cache, process_recording, save_cache
     from gazepipe.timebase import align_to_device_clock, describe_recording_time
 
-    subject_dir = DATA_ROOT / args.experiment / "Skeleton" / args.subject
+    subject_dir = data_root / args.experiment / "Skeleton" / args.subject
     raw_dir = subject_dir / "Raw~"
     if not raw_dir.exists():
         print(f"生データのフォルダがありません: {raw_dir}")
