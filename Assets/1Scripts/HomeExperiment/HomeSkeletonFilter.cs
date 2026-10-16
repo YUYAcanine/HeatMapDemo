@@ -45,7 +45,7 @@ using UnityEngine.UI;
 //   Skeleton(右上)    … 表示する人物(グループ)を1つ選ぶ。選ぶとその人が最初に出てくる時刻へ移動する
 //   Groups(右上)      … 人物IDにチェックを入れて Make group / Ungroup でグループを解除
 [RequireComponent(typeof(HomeEnvLoader))]
-public class HomeSkeletonFilter : MonoBehaviour
+public class HomeSkeletonFilter : MonoBehaviour, IHomeDataRootProvider
 {
     public enum ConfidenceMode
     {
@@ -66,6 +66,13 @@ public class HomeSkeletonFilter : MonoBehaviour
     // 統合の作り方の版。変えたら保存済みの filtered を作り直す
     //   1: 同じ時刻に同じ人物IDが2つ付くことがあった / 2: 人物IDは1時刻に1つ
     private const int FusionVersion = 2;
+
+    [Header("Data Location")]
+    [Tooltip("データのルートフォルダ。<ここ>/<実験の名前>/Skeleton/<実験対象者>/ から骨格データを読み、Filtered/・Analysis/Groups/ に保存する。\n" +
+             "空なら既定の Assets/Data/HomeExperiment。例: D:\\HomeExperiment\n" +
+             "Env(キネクト位置・部屋オブジェクト)もここの <実験の名前>/Env/ から読む。シーン0と同じフォルダを指定する。")]
+    [HomeDataRootFolder]
+    [SerializeField] private string dataRootDirectory = "";
 
     [Header("Subject")]
     [HomeExperimentFolder(HomeExperimentFolderAttribute.Kind.Subject)]
@@ -131,6 +138,8 @@ public class HomeSkeletonFilter : MonoBehaviour
     private static readonly Color UngroupedColor = new Color(0.55f, 0.55f, 0.55f);
 
     private HomeEnvLoader env;
+
+    public string DataRootDirectory => dataRootDirectory;
     private HomeFilteredSkeletonList data;
     private float[] frameTimes = new float[0];
     private Transform visualRoot;
@@ -200,7 +209,7 @@ public class HomeSkeletonFilter : MonoBehaviour
         };
 
         // 以前 Analysis/ の直下に置いていたグループなどを種類ごとのフォルダへ移す
-        HomeExperimentPaths.MigrateLegacyAnalysisFiles(env.ExperimentName, subjectName);
+        HomeExperimentPaths.MigrateLegacyAnalysisFiles(dataRootDirectory, env.ExperimentName, subjectName);
 
         LoadOrBuild();
         LoadPersonGroups();
@@ -326,10 +335,11 @@ public class HomeSkeletonFilter : MonoBehaviour
         Stop();
         data = null;
 
-        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out string error) ||
+        if (!HomeExperimentPaths.IsValidRootDirectory(dataRootDirectory, out string error) ||
+            !HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out error) ||
             !HomeExperimentPaths.IsValidFolderName(subjectName, out error))
         {
-            Debug.LogError($"[HomeSkeletonFilter] 実験の名前/実験対象者を正しく入力してください。{error}");
+            Debug.LogError($"[HomeSkeletonFilter] データのフォルダ/実験の名前/実験対象者を正しく指定してください。{error}");
         }
         else if (source == Source.Image)
         {
@@ -353,12 +363,12 @@ public class HomeSkeletonFilter : MonoBehaviour
                 if (saved != null)
                     Debug.Log($"[HomeSkeletonFilter] 保存済みの filtered_{ModeName}.json と設定・作り方が違うので統合し直します(人物IDが変わります)。");
 
-                List<HomeSkeletonTrack> sources = HomeSkeletonIO.LoadSubject(env.ExperimentName, subjectName, "HomeSkeletonFilter");
+                List<HomeSkeletonTrack> sources = HomeSkeletonIO.LoadSubject(dataRootDirectory, env.ExperimentName, subjectName, "HomeSkeletonFilter");
 
                 if (sources.Count > 0)
                 {
                     data = Filter(sources);
-                    SaveJson(HomeExperimentPaths.GetFilteredSkeletonPath(env.ExperimentName, subjectName, ModeName), data, "filtered");
+                    SaveJson(HomeExperimentPaths.GetFilteredSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, ModeName), data, "filtered");
                     LogSummary(data, sources);
                 }
             }
@@ -398,7 +408,7 @@ public class HomeSkeletonFilter : MonoBehaviour
 
     private HomeFilteredSkeletonList LoadFilteredFile(string modeName)
     {
-        string path = HomeExperimentPaths.GetFilteredSkeletonPath(env.ExperimentName, subjectName, modeName);
+        string path = HomeExperimentPaths.GetFilteredSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, modeName);
 
         if (!File.Exists(path))
             return null;
@@ -684,7 +694,7 @@ public class HomeSkeletonFilter : MonoBehaviour
             return;
         }
 
-        string path = HomeExperimentPaths.GetPersonGroupsPath(env.ExperimentName, subjectName, PersonIdSourceName);
+        string path = HomeExperimentPaths.GetPersonGroupsPath(dataRootDirectory, env.ExperimentName, subjectName, PersonIdSourceName);
 
         if (File.Exists(path))
         {
@@ -722,7 +732,7 @@ public class HomeSkeletonFilter : MonoBehaviour
 
     private void SavePersonGroups()
     {
-        string path = HomeExperimentPaths.GetPersonGroupsPath(env.ExperimentName, subjectName, PersonIdSourceName);
+        string path = HomeExperimentPaths.GetPersonGroupsPath(dataRootDirectory, env.ExperimentName, subjectName, PersonIdSourceName);
 
         try
         {
@@ -906,7 +916,7 @@ public class HomeSkeletonFilter : MonoBehaviour
             grouped.frames.Add(groupedFrame);
         }
 
-        SaveJson(HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, ModeName), grouped, "人物ごとの骨格");
+        SaveJson(HomeExperimentPaths.GetGroupedSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, ModeName), grouped, "人物ごとの骨格");
         groupedDirty = false;
     }
 
@@ -940,9 +950,9 @@ public class HomeSkeletonFilter : MonoBehaviour
         if (data == null || personGroups.Count == 0)
             return;
 
-        string groupedPath = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, ModeName);
-        string filteredPath = HomeExperimentPaths.GetFilteredSkeletonPath(env.ExperimentName, subjectName, ModeName);
-        string groupsPath = HomeExperimentPaths.GetPersonGroupsPath(env.ExperimentName, subjectName, PersonIdSourceName);
+        string groupedPath = HomeExperimentPaths.GetGroupedSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, ModeName);
+        string filteredPath = HomeExperimentPaths.GetFilteredSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, ModeName);
+        string groupsPath = HomeExperimentPaths.GetPersonGroupsPath(dataRootDirectory, env.ExperimentName, subjectName, PersonIdSourceName);
 
         if (!File.Exists(groupedPath))
         {

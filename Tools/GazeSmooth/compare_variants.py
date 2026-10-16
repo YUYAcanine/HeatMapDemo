@@ -9,6 +9,7 @@
 
 使い方:
   python Tools/GazeSmooth/compare_variants.py <実験の名前> <実験対象者>
+  (最初にデータの場所 Assets / D:\\HomeExperiment を選ぶ。--data-root D:\\HomeExperiment で指定もできる)
   (引数を省くと、フォルダの一覧から選ぶ)
 Python の標準ライブラリだけで動く。
 """
@@ -20,8 +21,8 @@ import csv
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = PROJECT_ROOT / "Assets" / "Data" / "HomeExperiment"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import home_data_root  # noqa: E402  Tools/home_data_root.py
 
 KEY_COLUMNS = ["type", "person", "other", "target"]
 PREFIX = "interaction_"
@@ -46,15 +47,20 @@ def _subdirs(path: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    home_data_root.add_argument(parser)
     parser.add_argument("experiment", nargs="?", help="実験の名前 (省略すると一覧から選ぶ)")
     parser.add_argument("subject", nargs="?", help="実験対象者 (省略すると一覧から選ぶ)")
     args = parser.parse_args()
 
-    experiment = args.experiment or _choose("実験の名前", _subdirs(DATA_ROOT))
+    data_root = home_data_root.choose_data_root(args.data_root)
+    if data_root is None:
+        return 1
+
+    experiment = args.experiment or _choose("実験の名前", _subdirs(data_root))
     if not experiment:
         return 1
 
-    skeleton_root = DATA_ROOT / experiment / "Skeleton"
+    skeleton_root = data_root / experiment / "Skeleton"
     subject = args.subject or _choose("実験対象者", _subdirs(skeleton_root))
     if not subject:
         return 1

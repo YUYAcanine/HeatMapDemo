@@ -33,7 +33,7 @@ using UnityEngine.UI;
 //                         押した時点で一度だけ計算する。もう一度押す・再生する・人物や時間範囲を変えると元の表示
 //                         (maxHeatDisplay 基準)に戻るので、正規化し直すときはもう一度押す
 [RequireComponent(typeof(HomeEnvLoader))]
-public class HomeGazeAnalyzer : MonoBehaviour
+public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
 {
     public enum SkeletonSource
     {
@@ -74,6 +74,13 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     private const string NoHitLabel = "None";
     private const string NoDataLabel = "NoData";
+
+    [Header("Data Location")]
+    [Tooltip("データのルートフォルダ。<ここ>/<実験の名前>/Skeleton/<実験対象者>/ から人物ごとの骨格を読み、Analysis/HeatMap/・Analysis/Score/ に保存する。\n" +
+             "空なら既定の Assets/Data/HomeExperiment。例: D:\\HomeExperiment\n" +
+             "Env(キネクト位置・部屋オブジェクト)もここの <実験の名前>/Env/ から読む。シーン0と同じフォルダを指定する。")]
+    [HomeDataRootFolder]
+    [SerializeField] private string dataRootDirectory = "";
 
     [Header("Subject")]
     [HomeExperimentFolder(HomeExperimentFolderAttribute.Kind.Subject)]
@@ -183,6 +190,8 @@ public class HomeGazeAnalyzer : MonoBehaviour
     [SerializeField] private TMP_Text scoreText;
 
     private HomeEnvLoader env;
+
+    public string DataRootDirectory => dataRootDirectory;
     private readonly List<Sample> samples = new List<Sample>();
     private readonly List<HeatMesh> heatMeshes = new List<HeatMesh>();
     private readonly HashSet<MeshFilter> overlayFilters = new HashSet<MeshFilter>();
@@ -300,7 +309,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
         };
 
         // 以前 Analysis/ の直下に置いていたグループ・ヒートマップ・スコアを種類ごとのフォルダへ移す
-        HomeExperimentPaths.MigrateLegacyAnalysisFiles(env.ExperimentName, subjectName);
+        HomeExperimentPaths.MigrateLegacyAnalysisFiles(dataRootDirectory, env.ExperimentName, subjectName);
         LoadSamples();
         SetupHeatMeshes();
         SetupScoreTargets();
@@ -502,10 +511,11 @@ public class HomeGazeAnalyzer : MonoBehaviour
     [ContextMenu("Save")]
     public void Save()
     {
-        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
+        if (!HomeExperimentPaths.IsValidRootDirectory(dataRootDirectory, out _) ||
+            !HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
             !HomeExperimentPaths.IsValidFolderName(subjectName, out _))
         {
-            Debug.LogError("[HomeGazeAnalyzer] 実験の名前/実験対象者が正しくないため保存できません。");
+            Debug.LogError("[HomeGazeAnalyzer] データのフォルダ/実験の名前/実験対象者が正しくないため保存できません。");
             return;
         }
 
@@ -520,8 +530,8 @@ public class HomeGazeAnalyzer : MonoBehaviour
         GetHeatWindow(out float windowStart, out float windowEnd);
         Debug.Log($"[HomeGazeAnalyzer] {windowStart:F1}〜{windowEnd:F1} 秒の結果を保存します。");
 
-        string heatMapPath = HomeExperimentPaths.GetGazeHeatMapPath(env.ExperimentName, subjectName, OutputName);
-        string scorePath = HomeExperimentPaths.GetGazeScorePath(env.ExperimentName, subjectName, OutputName);
+        string heatMapPath = HomeExperimentPaths.GetGazeHeatMapPath(dataRootDirectory, env.ExperimentName, subjectName, OutputName);
+        string scorePath = HomeExperimentPaths.GetGazeScorePath(dataRootDirectory, env.ExperimentName, subjectName, OutputName);
 
         try
         {
@@ -558,7 +568,13 @@ public class HomeGazeAnalyzer : MonoBehaviour
         personNames.Clear();
         personFirstTimes.Clear();
 
-        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out string error))
+        if (!HomeExperimentPaths.IsValidRootDirectory(dataRootDirectory, out string error))
+        {
+            Debug.LogError($"[HomeGazeAnalyzer] データのフォルダを正しく指定してください。{error}");
+            return;
+        }
+
+        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out error))
         {
             Debug.LogError($"[HomeGazeAnalyzer] 実験の名前を正しく入力してください。{error}");
             return;
@@ -612,7 +628,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
     // シーン3で作った人物ごとの骨格(grouped_<Mode>.json)を読み込む
     private void LoadFiltered(string modeName)
     {
-        string path = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName, skeletonVariant);
+        string path = HomeExperimentPaths.GetGroupedSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, modeName, skeletonVariant);
 
         if (!File.Exists(path))
         {
@@ -672,7 +688,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
         if (string.IsNullOrWhiteSpace(skeletonVariant))
             return;
 
-        string basePath = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName);
+        string basePath = HomeExperimentPaths.GetGroupedSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, modeName);
 
         if (File.Exists(basePath) && File.GetLastWriteTimeUtc(basePath) > File.GetLastWriteTimeUtc(path))
             Debug.LogWarning($"[HomeGazeAnalyzer] 平滑化した骨格({skeletonVariant.Trim()})が grouped_{modeName}.json より古いです。" +
@@ -681,7 +697,7 @@ public class HomeGazeAnalyzer : MonoBehaviour
 
     private void LoadKinect()
     {
-        foreach (HomeSkeletonTrack track in HomeSkeletonIO.LoadSubject(env.ExperimentName, subjectName, "HomeGazeAnalyzer"))
+        foreach (HomeSkeletonTrack track in HomeSkeletonIO.LoadSubject(dataRootDirectory, env.ExperimentName, subjectName, "HomeGazeAnalyzer"))
         {
             if (track.kinectId != kinectId.Trim())
                 continue;

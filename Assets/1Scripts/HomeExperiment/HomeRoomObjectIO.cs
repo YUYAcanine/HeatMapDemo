@@ -36,9 +36,9 @@ public static class HomeRoomObjectIO
     }
 
     // roots 配下の「表示中でメッシュを持つ」オブジェクトを保存する。保存した部屋オブジェクトの個数を返す。
-    public static int Save(string experimentName, IEnumerable<Transform> roots, out int targetCount)
+    public static int Save(string rootDirectory, string experimentName, IEnumerable<Transform> roots, out int targetCount)
     {
-        string meshDir = HomeExperimentPaths.GetMeshDirectory(experimentName);
+        string meshDir = HomeExperimentPaths.GetMeshDirectory(rootDirectory, experimentName);
 
         // 前回保存したメッシュが残らないように作り直す
         if (Directory.Exists(meshDir))
@@ -55,8 +55,8 @@ public static class HomeRoomObjectIO
         foreach (Transform root in roots)
             Collect(root, context, false, null);
 
-        WriteList(HomeExperimentPaths.GetRoomObjectsPath(experimentName), context.rooms, "部屋オブジェクト");
-        WriteList(HomeExperimentPaths.GetTargetObjectsPath(experimentName), context.targets, "対象物体");
+        WriteList(HomeExperimentPaths.GetRoomObjectsPath(rootDirectory, experimentName), context.rooms, "部屋オブジェクト");
+        WriteList(HomeExperimentPaths.GetTargetObjectsPath(rootDirectory, experimentName), context.targets, "対象物体");
 
         HashSet<string> groups = new HashSet<string>();
 
@@ -285,9 +285,9 @@ public static class HomeRoomObjectIO
     // ------------------------------------------------------------
     // Env/RoomObjects.json を読み込み、parent の子として部屋オブジェクトを再生成する。
     // ファイルが無い場合は null を返す。
-    public static List<GameObject> Load(string experimentName, Transform parent)
+    public static List<GameObject> Load(string rootDirectory, string experimentName, Transform parent)
     {
-        string path = HomeExperimentPaths.GetRoomObjectsPath(experimentName);
+        string path = HomeExperimentPaths.GetRoomObjectsPath(rootDirectory, experimentName);
 
         if (!File.Exists(path))
         {
@@ -295,26 +295,26 @@ public static class HomeRoomObjectIO
             return null;
         }
 
-        return LoadList(experimentName, path, parent, "部屋オブジェクト");
+        return LoadList(rootDirectory, experimentName, path, parent, "部屋オブジェクト");
     }
 
     // Env/TargetObjects.json を読み込み、parent の子として対象物体を再生成する。
     // 各物体には group を持つ HomeTargetObject を付ける。ファイルが無い(対象物体を置いていない)場合は空のリストを返す。
-    public static List<GameObject> LoadTargets(string experimentName, Transform parent)
+    public static List<GameObject> LoadTargets(string rootDirectory, string experimentName, Transform parent)
     {
-        string path = HomeExperimentPaths.GetTargetObjectsPath(experimentName);
+        string path = HomeExperimentPaths.GetTargetObjectsPath(rootDirectory, experimentName);
 
         if (!File.Exists(path))
             return new List<GameObject>();
 
-        return LoadList(experimentName, path, parent, "対象物体");
+        return LoadList(rootDirectory, experimentName, path, parent, "対象物体");
     }
 
-    private static List<GameObject> LoadList(string experimentName, string path, Transform parent, string label)
+    private static List<GameObject> LoadList(string rootDirectory, string experimentName, string path, Transform parent, string label)
     {
         HomeRoomObjectList list = JsonUtility.FromJson<HomeRoomObjectList>(File.ReadAllText(path));
         List<GameObject> created = new List<GameObject>();
-        string meshDir = HomeExperimentPaths.GetMeshDirectory(experimentName);
+        string meshDir = HomeExperimentPaths.GetMeshDirectory(rootDirectory, experimentName);
 
         foreach (HomeRoomObjectData data in list.objects)
         {

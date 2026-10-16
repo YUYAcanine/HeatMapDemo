@@ -5,6 +5,7 @@ using UnityEngine;
 
 // シーン1(1HeadDirRecording)用。Spaceキーで全キネクトの骨格データ記録を同時に開始/終了し、
 // Assets/Data/HomeExperiment/<実験の名前>/Skeleton/<実験対象者>/<ID>_skeleton.json に保存する(Record Skeleton オフのときは保存しない)。
+// Data Root Directory を指定すると、Assets/Data/HomeExperiment の代わりにそのフォルダ(例: D:\HomeExperiment)に保存する。
 // Record Raw Mkv にチェックを入れると、同じタイミングで全キネクトの生データ(カラー・深度・赤外線の MKV)も
 // Raw~/ に記録する(画像での推定 Tools/GazePipeline 用)。
 // Record Skeleton をオフ・Record Raw Mkv をオンにすると「映像のみ」記録になる(Body Tracking をしないので複数台運用時の負荷が下がる)。
@@ -12,8 +13,16 @@ using UnityEngine;
 // キネクトの表示/非表示を HomeEnvLoader(DefaultExecutionOrder -100)が見る前に反映するため、それより先に Awake を実行する。
 [DefaultExecutionOrder(-200)]
 [RequireComponent(typeof(HomeEnvLoader))]
-public class HomeSkeletonRecordingController : MonoBehaviour
+public class HomeSkeletonRecordingController : MonoBehaviour, IHomeDataRootProvider
 {
+    [Header("Data Location")]
+    [Tooltip("骨格データ・生データの保存先のルートフォルダ。<ここ>/<実験の名前>/Skeleton/<実験対象者>/ に保存する。\n" +
+             "空なら既定の Assets/Data/HomeExperiment。例: D:\\HomeExperiment\n" +
+             "Env(キネクト位置・部屋オブジェクト)もここの <実験の名前>/Env/ から読む。シーン0と同じフォルダを指定する。")]
+    [HomeDataRootFolder]
+    [UnityEngine.Serialization.FormerlySerializedAs("saveRootDirectory")]
+    [SerializeField] private string dataRootDirectory = "";
+
     [Header("Subject")]
     [HomeExperimentFolder(HomeExperimentFolderAttribute.Kind.Subject)]
     [SerializeField] private string subjectName = "";
@@ -51,6 +60,8 @@ public class HomeSkeletonRecordingController : MonoBehaviour
     [SerializeField] private bool showStatus = true;
 
     private HomeEnvLoader env;
+
+    public string DataRootDirectory => dataRootDirectory;
     private readonly List<HomeSkeletonRecorder> activeRecorders = new List<HomeSkeletonRecorder>();
     private bool isRecording;
     private double recordingStartClock;
@@ -138,6 +149,12 @@ public class HomeSkeletonRecordingController : MonoBehaviour
             return;
         }
 
+        if (!HomeExperimentPaths.IsValidRootDirectory(dataRootDirectory, out error))
+        {
+            SetMessage($"保存先を正しく指定してください。{error}", true);
+            return;
+        }
+
         if (requireEnvLoaded && !env.IsLoaded)
         {
             SetMessage("Envを読み込めていないため記録を開始しません。コンソールのエラーを確認してください。", true);
@@ -175,7 +192,7 @@ public class HomeSkeletonRecordingController : MonoBehaviour
         recordingStartClock = HomeSkeletonRecorder.ClockSeconds;
         recordingStartedAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
 
-        string rawDir = HomeExperimentPaths.GetRawDirectory(env.ExperimentName, subjectName);
+        string rawDir = HomeExperimentPaths.GetRawDirectory(dataRootDirectory, env.ExperimentName, subjectName);
         bool anyRaw = activeRecorders.Exists(r => r.recordRawMkv);
 
         if (anyRaw)
@@ -204,7 +221,7 @@ public class HomeSkeletonRecordingController : MonoBehaviour
 
         isRecording = false;
 
-        string subjectDir = HomeExperimentPaths.GetSubjectDirectory(env.ExperimentName, subjectName);
+        string subjectDir = HomeExperimentPaths.GetSubjectDirectory(dataRootDirectory, env.ExperimentName, subjectName);
         Directory.CreateDirectory(subjectDir);
 
         string backupSuffix = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -222,7 +239,7 @@ public class HomeSkeletonRecordingController : MonoBehaviour
                 continue;
             }
 
-            string path = HomeExperimentPaths.GetSkeletonPath(env.ExperimentName, subjectName, recorder.KinectId);
+            string path = HomeExperimentPaths.GetSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, recorder.KinectId);
 
             // 同じ実験対象者で撮り直した場合、前のデータは上書きせず名前を変えて残す
             if (File.Exists(path))

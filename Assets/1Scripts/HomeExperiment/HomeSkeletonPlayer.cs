@@ -9,8 +9,15 @@ using UnityEngine.UI;
 // 骨格データは部屋座標で記録されているので、キネクトの位置は使わない。
 // 実験の名前と部屋オブジェクトの再現は同じGameObjectの HomeEnvLoader が担当する。
 [RequireComponent(typeof(HomeEnvLoader))]
-public class HomeSkeletonPlayer : MonoBehaviour
+public class HomeSkeletonPlayer : MonoBehaviour, IHomeDataRootProvider
 {
+    [Header("Data Location")]
+    [Tooltip("データのルートフォルダ。<ここ>/<実験の名前>/Skeleton/<実験対象者>/ から骨格データを読む。\n" +
+             "空なら既定の Assets/Data/HomeExperiment。例: D:\\HomeExperiment\n" +
+             "Env(キネクト位置・部屋オブジェクト)もここの <実験の名前>/Env/ から読む。シーン0と同じフォルダを指定する。")]
+    [HomeDataRootFolder]
+    [SerializeField] private string dataRootDirectory = "";
+
     [Header("Subject")]
     [HomeExperimentFolder(HomeExperimentFolderAttribute.Kind.Subject)]
     [SerializeField] private string subjectName = "";
@@ -43,6 +50,8 @@ public class HomeSkeletonPlayer : MonoBehaviour
     [SerializeField] private TMP_Text frameText;
 
     private HomeEnvLoader env;
+
+    public string DataRootDirectory => dataRootDirectory;
     private Transform visualRoot;
     private readonly List<Track> tracks = new List<Track>();
     private HomeSkeletonBodyVisual.Style visualStyle;
@@ -149,7 +158,7 @@ public class HomeSkeletonPlayer : MonoBehaviour
     // ------------------------------------------------------------
     private void LoadTracks()
     {
-        foreach (HomeSkeletonTrack source in HomeSkeletonIO.LoadSubject(env.ExperimentName, subjectName, "HomeSkeletonPlayer"))
+        foreach (HomeSkeletonTrack source in HomeSkeletonIO.LoadSubject(dataRootDirectory, env.ExperimentName, subjectName, "HomeSkeletonPlayer"))
         {
             tracks.Add(new Track
             {

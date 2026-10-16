@@ -5,7 +5,7 @@ using UnityEngine;
 //   選べるのは Skeleton/<実験対象者>/Filtered/grouped_<Mode>_<名前>.json の <名前>
 //   (Tools/GazeSmooth/smooth_skeleton.py で作った、頭の向きを平滑化した骨格)と、平滑化前(空)。
 //   実験の名前は同じGameObjectの HomeEnvLoader から、実験対象者と Mode は同じコンポーネントの
-//   subjectName / skeletonSource / filteredMode から取得する。
+//   subjectName / skeletonSource / filteredMode / Data Root Directory から取得する。
 [CustomPropertyDrawer(typeof(HomeSkeletonVariantAttribute))]
 public class HomeSkeletonVariantDrawer : PropertyDrawer
 {
@@ -25,19 +25,19 @@ public class HomeSkeletonVariantDrawer : PropertyDrawer
 
         EditorGUI.PropertyField(fieldRect, property, label);
 
-        bool found = TryGetSource(property, out string experimentName, out string subjectName, out string modeName);
+        bool found = TryGetSource(property, out string rootDirectory, out string experimentName, out string subjectName, out string modeName);
 
         using (new EditorGUI.DisabledScope(!found))
         {
             if (GUI.Button(buttonRect, "選択"))
-                ShowMenu(property, experimentName, subjectName, modeName);
+                ShowMenu(property, rootDirectory, experimentName, subjectName, modeName);
         }
     }
 
-    // 探す場所(実験の名前・実験対象者・Mode)。キネクト1台分の骨格(Kinect)には平滑化した骨格がないので false
-    private static bool TryGetSource(SerializedProperty property, out string experimentName, out string subjectName, out string modeName)
+    // 探す場所(データのルート・実験の名前・実験対象者・Mode)。キネクト1台分の骨格(Kinect)には平滑化した骨格がないので false
+    private static bool TryGetSource(SerializedProperty property, out string rootDirectory, out string experimentName, out string subjectName, out string modeName)
     {
-        experimentName = subjectName = modeName = null;
+        rootDirectory = experimentName = subjectName = modeName = null;
 
         Component component = property.serializedObject.targetObject as Component;
         IHomeExperimentNameProvider provider =
@@ -50,7 +50,10 @@ public class HomeSkeletonVariantDrawer : PropertyDrawer
         if (provider == null || subject == null || source == null || mode == null)
             return false;
 
-        if (!HomeExperimentPaths.IsValidFolderName(provider.ExperimentName, out _) ||
+        rootDirectory = HomeExperimentPaths.GetDataRootDirectory(component);
+
+        if (!HomeExperimentPaths.IsValidRootDirectory(rootDirectory, out _) ||
+            !HomeExperimentPaths.IsValidFolderName(provider.ExperimentName, out _) ||
             !HomeExperimentPaths.IsValidFolderName(subject.stringValue, out _))
             return false;
 
@@ -67,9 +70,9 @@ public class HomeSkeletonVariantDrawer : PropertyDrawer
         return true;
     }
 
-    private static void ShowMenu(SerializedProperty property, string experimentName, string subjectName, string modeName)
+    private static void ShowMenu(SerializedProperty property, string rootDirectory, string experimentName, string subjectName, string modeName)
     {
-        string[] names = HomeExperimentPaths.GetGroupedSkeletonVariants(experimentName, subjectName, modeName);
+        string[] names = HomeExperimentPaths.GetGroupedSkeletonVariants(rootDirectory, experimentName, subjectName, modeName);
         GenericMenu menu = new GenericMenu();
 
         AddItem(menu, property, NoneLabel, "");

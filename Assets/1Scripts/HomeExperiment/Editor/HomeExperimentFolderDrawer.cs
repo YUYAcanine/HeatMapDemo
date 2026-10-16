@@ -2,9 +2,10 @@ using UnityEditor;
 using UnityEngine;
 
 // [HomeExperimentFolder] を付けた文字列フィールドを「テキスト入力 + 既存フォルダから選ぶボタン」で表示する。
-//   Experiment: Assets/Data/HomeExperiment/ 直下のフォルダ
-//   Subject   : Assets/Data/HomeExperiment/<実験の名前>/Skeleton/ 直下のフォルダ
+//   Experiment: <データのルート>/ 直下のフォルダ
+//   Subject   : <データのルート>/<実験の名前>/Skeleton/ 直下のフォルダ
 //               (実験の名前は同じGameObjectの HomeEnvLoader / HomeEnvSetup から取得)
+//   データのルートは同じGameObjectのコンポーネントの Data Root Directory。空なら Assets/Data/HomeExperiment。
 [CustomPropertyDrawer(typeof(HomeExperimentFolderAttribute))]
 public class HomeExperimentFolderDrawer : PropertyDrawer
 {
@@ -36,17 +37,22 @@ public class HomeExperimentFolderDrawer : PropertyDrawer
 
     private static string GetParentDirectory(SerializedProperty property, HomeExperimentFolderAttribute.Kind kind)
     {
-        if (kind == HomeExperimentFolderAttribute.Kind.Experiment)
-            return HomeExperimentPaths.RootDirectory;
-
         Component component = property.serializedObject.targetObject as Component;
+        string rootDirectory = HomeExperimentPaths.GetDataRootDirectory(component);
+
+        if (!HomeExperimentPaths.IsValidRootDirectory(rootDirectory, out _))
+            return null;
+
+        if (kind == HomeExperimentFolderAttribute.Kind.Experiment)
+            return HomeExperimentPaths.ResolveRootDirectory(rootDirectory);
+
         IHomeExperimentNameProvider provider =
             component != null ? component.GetComponent<IHomeExperimentNameProvider>() : null;
 
         if (provider == null || !HomeExperimentPaths.IsValidFolderName(provider.ExperimentName, out _))
             return null;
 
-        return HomeExperimentPaths.GetSkeletonRootDirectory(provider.ExperimentName);
+        return HomeExperimentPaths.GetSkeletonRootDirectory(rootDirectory, provider.ExperimentName);
     }
 
     private static void ShowMenu(SerializedProperty property, string parentDirectory)

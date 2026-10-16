@@ -295,7 +295,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: Oono
+  experimentName: 1014drive
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1217085267}
   kinects:
@@ -594,7 +594,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   deviceIndex: 0
-  syncMode: 1
+  syncMode: 0
 --- !u!1 &1422476024
 GameObject:
   m_ObjectHideFlags: 0
@@ -848,13 +848,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4d102865fa54dc9ab7b2a30057bf041, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: none
+  dataRootDirectory: D:\HomeExperiment
+  subjectName: 1014subjectyuya
   recorders: []
   kinectDeviceIndices:
   - kinectId: A
     use: 1
     deviceIndex: 0
-    syncMode: 2
+    syncMode: 1
   - kinectId: B
     use: 0
     deviceIndex: 1

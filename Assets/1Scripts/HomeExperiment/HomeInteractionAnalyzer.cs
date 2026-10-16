@@ -31,7 +31,7 @@ using UnityEngine.UI;
 //   Analyze All         … 時間範囲をデータ全体にして保存
 //   Save                … 今の時間範囲の結果を Analysis/Interaction/interaction_<骨格>.json と CSV に保存
 [RequireComponent(typeof(HomeEnvLoader))]
-public class HomeInteractionAnalyzer : MonoBehaviour
+public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
 {
     public enum MeasureType
     {
@@ -49,6 +49,13 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         JointAttention,
         Persons
     }
+
+    [Header("Data Location")]
+    [Tooltip("データのルートフォルダ。<ここ>/<実験の名前>/Skeleton/<実験対象者>/ から人物ごとの骨格を読み、Analysis/Interaction/ に保存する。\n" +
+             "空なら既定の Assets/Data/HomeExperiment。例: D:\\HomeExperiment\n" +
+             "Env(キネクト位置・部屋オブジェクト)もここの <実験の名前>/Env/ から読む。シーン0と同じフォルダを指定する。")]
+    [HomeDataRootFolder]
+    [SerializeField] private string dataRootDirectory = "";
 
     [Header("Subject")]
     [HomeExperimentFolder(HomeExperimentFolderAttribute.Kind.Subject)]
@@ -168,6 +175,8 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     private const int CylinderRingSegments = 24;
 
     private HomeEnvLoader env;
+
+    public string DataRootDirectory => dataRootDirectory;
     private readonly List<Sample> samples = new List<Sample>();
     private readonly List<Target> targets = new List<Target>();
     // 人物IDごとの映っていた時間(秒)
@@ -263,7 +272,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         sharedLineMaterial = lineMaterial != null ? lineMaterial : new Material(Shader.Find("Sprites/Default"));
 
         // 以前 Analysis/ の直下に置いていた解析結果を種類ごとのフォルダへ移す
-        HomeExperimentPaths.MigrateLegacyAnalysisFiles(env.ExperimentName, subjectName);
+        HomeExperimentPaths.MigrateLegacyAnalysisFiles(dataRootDirectory, env.ExperimentName, subjectName);
         LoadSamples();
         BuildUnits();
         SetupTargets();
@@ -384,10 +393,11 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     [ContextMenu("Save")]
     public void Save()
     {
-        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
+        if (!HomeExperimentPaths.IsValidRootDirectory(dataRootDirectory, out _) ||
+            !HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out _) ||
             !HomeExperimentPaths.IsValidFolderName(subjectName, out _))
         {
-            Debug.LogError("[HomeInteractionAnalyzer] 実験の名前/実験対象者が正しくないため保存できません。");
+            Debug.LogError("[HomeInteractionAnalyzer] データのフォルダ/実験の名前/実験対象者が正しくないため保存できません。");
             return;
         }
 
@@ -396,9 +406,9 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         GetRangeIndices(out int start, out int end);
         RunAnalysis(start, end);
 
-        string jsonPath = HomeExperimentPaths.GetInteractionPath(env.ExperimentName, subjectName, OutputName);
-        string summaryPath = HomeExperimentPaths.GetInteractionSummaryCsvPath(env.ExperimentName, subjectName, OutputName);
-        string episodesPath = HomeExperimentPaths.GetInteractionEpisodesCsvPath(env.ExperimentName, subjectName, OutputName);
+        string jsonPath = HomeExperimentPaths.GetInteractionPath(dataRootDirectory, env.ExperimentName, subjectName, OutputName);
+        string summaryPath = HomeExperimentPaths.GetInteractionSummaryCsvPath(dataRootDirectory, env.ExperimentName, subjectName, OutputName);
+        string episodesPath = HomeExperimentPaths.GetInteractionEpisodesCsvPath(dataRootDirectory, env.ExperimentName, subjectName, OutputName);
 
         try
         {
@@ -428,7 +438,13 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         personNames.Clear();
         personFirstTimes.Clear();
 
-        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out string error))
+        if (!HomeExperimentPaths.IsValidRootDirectory(dataRootDirectory, out string error))
+        {
+            Debug.LogError($"[HomeInteractionAnalyzer] データのフォルダを正しく指定してください。{error}");
+            return;
+        }
+
+        if (!HomeExperimentPaths.IsValidFolderName(env.ExperimentName, out error))
         {
             Debug.LogError($"[HomeInteractionAnalyzer] 実験の名前を正しく入力してください。{error}");
             return;
@@ -483,7 +499,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
     private void LoadFiltered(string modeName)
     {
         // シーン3で作った人物ごとの骨格
-        string path = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName, skeletonVariant);
+        string path = HomeExperimentPaths.GetGroupedSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, modeName, skeletonVariant);
 
         if (!File.Exists(path))
         {
@@ -540,7 +556,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
         if (string.IsNullOrWhiteSpace(skeletonVariant))
             return;
 
-        string basePath = HomeExperimentPaths.GetGroupedSkeletonPath(env.ExperimentName, subjectName, modeName);
+        string basePath = HomeExperimentPaths.GetGroupedSkeletonPath(dataRootDirectory, env.ExperimentName, subjectName, modeName);
 
         if (File.Exists(basePath) && File.GetLastWriteTimeUtc(basePath) > File.GetLastWriteTimeUtc(path))
             Debug.LogWarning($"[HomeInteractionAnalyzer] 平滑化した骨格({skeletonVariant.Trim()})が grouped_{modeName}.json より古いです。" +
@@ -549,7 +565,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour
 
     private void LoadKinect()
     {
-        foreach (HomeSkeletonTrack track in HomeSkeletonIO.LoadSubject(env.ExperimentName, subjectName, "HomeInteractionAnalyzer"))
+        foreach (HomeSkeletonTrack track in HomeSkeletonIO.LoadSubject(dataRootDirectory, env.ExperimentName, subjectName, "HomeInteractionAnalyzer"))
         {
             if (track.kinectId != kinectId.Trim())
                 continue;

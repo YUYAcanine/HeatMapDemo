@@ -102,11 +102,18 @@ public static class HomeSkeletonIO
     }
 
     // 実験対象者のフォルダ直下の *_skeleton.json をすべて読み込む。エラー時は空のリストを返す。
-    public static List<HomeSkeletonTrack> LoadSubject(string experimentName, string subjectName, string logTag)
+    // rootDirectory が空なら既定の Assets/Data/HomeExperiment から読む。
+    public static List<HomeSkeletonTrack> LoadSubject(string rootDirectory, string experimentName, string subjectName, string logTag)
     {
         List<HomeSkeletonTrack> tracks = new List<HomeSkeletonTrack>();
 
-        if (!HomeExperimentPaths.IsValidFolderName(experimentName, out string error))
+        if (!HomeExperimentPaths.IsValidRootDirectory(rootDirectory, out string error))
+        {
+            Debug.LogError($"[{logTag}] データのフォルダを正しく指定してください。{error}");
+            return tracks;
+        }
+
+        if (!HomeExperimentPaths.IsValidFolderName(experimentName, out error))
         {
             Debug.LogError($"[{logTag}] 実験の名前を正しく入力してください。{error}");
             return tracks;
@@ -118,7 +125,7 @@ public static class HomeSkeletonIO
             return tracks;
         }
 
-        string subjectDir = HomeExperimentPaths.GetSubjectDirectory(experimentName, subjectName);
+        string subjectDir = HomeExperimentPaths.GetSubjectDirectory(rootDirectory, experimentName, subjectName);
 
         if (!Directory.Exists(subjectDir))
         {

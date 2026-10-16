@@ -14,6 +14,7 @@
 
 使い方:
   python Tools/GazeTimeline/make_gaze_timeline.py <実験の名前> <実験対象者>
+  (最初にデータの場所 Assets / D:\\HomeExperiment を選ぶ。--data-root D:\\HomeExperiment で指定もできる)
   (引数を省くと、フォルダの一覧から選ぶ)
   骨格データが2つ以上あるとき(平滑化した骨格 Tools/GazeSmooth でもシーン5で Save したときなど)は、グラフにする骨格も一覧から選ぶ
   (1,3 のように複数選べる。何も入力しなければ全部)。--sources filtered_HeadJoints_smooth05 のように指定すれば選ばずに作る。
@@ -28,8 +29,8 @@ import json
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = PROJECT_ROOT / "Assets" / "Data" / "HomeExperiment"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import home_data_root  # noqa: E402  Tools/home_data_root.py
 
 
 def _choose(label: str, options: list[str]) -> str | None:
@@ -104,21 +105,26 @@ def load_source(interaction_dir: Path, source: str) -> dict | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="二人の注視対象の時系列グラフ(HTML)を作る")
-    parser.add_argument("experiment", nargs="?", help="実験の名前 (Assets/Data/HomeExperiment/<実験の名前>)")
+    home_data_root.add_argument(parser)
+    parser.add_argument("experiment", nargs="?", help="実験の名前 (<データの場所>/<実験の名前>)")
     parser.add_argument("subject", nargs="?", help="実験対象者 (Skeleton/<実験対象者>)")
     parser.add_argument("--sources", nargs="+", metavar="骨格",
                         help="グラフにする骨格データ (interaction_<骨格>_episodes.csv の <骨格>。省略すると一覧から選ぶ)")
     args = parser.parse_args()
 
-    experiment = args.experiment or _choose("実験の名前", _subdirs(DATA_ROOT))
+    data_root = home_data_root.choose_data_root(args.data_root)
+    if data_root is None:
+        return 1
+
+    experiment = args.experiment or _choose("実験の名前", _subdirs(data_root))
     if not experiment:
         return 1
 
-    subject = args.subject or _choose("実験対象者", _subdirs(DATA_ROOT / experiment / "Skeleton"))
+    subject = args.subject or _choose("実験対象者", _subdirs(data_root / experiment / "Skeleton"))
     if not subject:
         return 1
 
-    analysis_dir = DATA_ROOT / experiment / "Skeleton" / subject / "Analysis"
+    analysis_dir = data_root / experiment / "Skeleton" / subject / "Analysis"
     interaction_dir = analysis_dir / "Interaction"
     names = sorted(p.name[len("interaction_"):-len("_episodes.csv")] for p in interaction_dir.glob("interaction_*_episodes.csv"))
 

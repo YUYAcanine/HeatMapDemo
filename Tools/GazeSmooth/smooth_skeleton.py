@@ -24,6 +24,7 @@
 
 使い方:
   python Tools/GazeSmooth/smooth_skeleton.py <実験の名前> <実験対象者>
+  (最初にデータの場所 Assets / D:\\HomeExperiment を選ぶ。--data-root D:\\HomeExperiment で指定もできる)
   (引数を省くと、フォルダの一覧から選ぶ)
   --mode HeadJoints            … 読み込む grouped_<Mode>.json (AllJoints / HeadJoints / Image)
   --median 0.5 --mean 0.3      … 窓の長さ(秒)を指定して1つだけ作る。名前は --name (省略時は custom)
@@ -41,8 +42,8 @@ from pathlib import Path
 
 import numpy as np
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = PROJECT_ROOT / "Assets" / "Data" / "HomeExperiment"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import home_data_root  # noqa: E402  Tools/home_data_root.py
 
 # Head を中心に回す関節(頭の向きの計算に使う関節)
 ROTATED_JOINTS = ("Nose", "EyeLeft", "EyeRight", "EarLeft", "EarRight")
@@ -223,6 +224,7 @@ def _report_line(label: str, angles: np.ndarray) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    home_data_root.add_argument(parser)
     parser.add_argument("experiment", nargs="?", help="実験の名前 (省略すると一覧から選ぶ)")
     parser.add_argument("subject", nargs="?", help="実験対象者 (省略すると一覧から選ぶ)")
     parser.add_argument("--mode", default="HeadJoints", help="読み込む grouped_<Mode>.json の Mode (既定 HeadJoints)")
@@ -232,13 +234,17 @@ def main() -> int:
     parser.add_argument("--max-gap", type=float, default=0.2, help="これより長い記録の途切れはまたがない(秒, 既定 0.2)")
     args = parser.parse_args()
 
+    data_root = home_data_root.choose_data_root(args.data_root)
+    if data_root is None:
+        return 1
+
     grouped_name = f"grouped_{args.mode}.json"
 
-    experiment = args.experiment or _choose("実験の名前", _subdirs(DATA_ROOT))
+    experiment = args.experiment or _choose("実験の名前", _subdirs(data_root))
     if not experiment:
         return 1
 
-    skeleton_root = DATA_ROOT / experiment / "Skeleton"
+    skeleton_root = data_root / experiment / "Skeleton"
     subject = args.subject or _choose(
         "実験対象者", [s for s in _subdirs(skeleton_root) if (skeleton_root / s / "Filtered" / grouped_name).exists()])
     if not subject:

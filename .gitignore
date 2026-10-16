@@ -36,3 +36,7 @@ obj/
 .vsconfig
 Assets/joint_positions.json
 *.config
+
+# Python
+__pycache__/
+*.pyc

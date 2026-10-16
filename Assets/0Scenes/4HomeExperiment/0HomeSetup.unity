@@ -409,7 +409,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8518186b09c645c6968fe66a5ce39f6e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: Oono
+  dataRootDirectory: D:\HomeExperiment
+  experimentName: 1014drive
   roomRoots:
   - {fileID: 1717023521}
   saveRoomObjects: 1

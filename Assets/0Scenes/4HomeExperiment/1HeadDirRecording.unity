@@ -825,7 +825,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4d102865fa54dc9ab7b2a30057bf041, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: none2
+  dataRootDirectory: C:\Users\futon\UnityResearch\UnityBackUP\20260310satoshidemo\Assets\Data\HomeExperiment
+  subjectName: 1014test
   recorders: []
   kinectDeviceIndices:
   - kinectId: A

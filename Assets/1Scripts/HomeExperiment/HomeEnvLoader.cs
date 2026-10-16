@@ -3,6 +3,7 @@ using UnityEngine;
 
 // シーン1(1HeadDirRecording) / シーン2(2HeadDirViewer) / シーン3(3HeadDirFilter) / シーン4(4GazeAnalyze)用。
 // シーン開始時に Assets/Data/HomeExperiment/<実験の名前>/Env/ から
+// (同じGameObjectのコンポーネントの Data Root Directory を指定していればそのフォルダ。例: D:\HomeExperiment)
 //   - 部屋オブジェクト(RoomObjects.json)
 //   - 対象物体(TargetObjects.json)  ※シーン0で部屋オブジェクトの下に物体を置いた場合のみ
 //   - キネクトの位置姿勢(Kinect<ID>_Transform.json)  ※kinectsを設定した場合のみ
@@ -35,13 +36,21 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
 
     private void Awake()
     {
-        if (!HomeExperimentPaths.IsValidFolderName(experimentName, out string error))
+        string rootDirectory = HomeExperimentPaths.GetDataRootDirectory(this);
+
+        if (!HomeExperimentPaths.IsValidRootDirectory(rootDirectory, out string error))
+        {
+            Debug.LogError($"[HomeEnvLoader] データのフォルダを正しく指定してください。{error}");
+            return;
+        }
+
+        if (!HomeExperimentPaths.IsValidFolderName(experimentName, out error))
         {
             Debug.LogError($"[HomeEnvLoader] 実験の名前を正しく入力してください。{error}");
             return;
         }
 
-        string envDir = HomeExperimentPaths.GetEnvDirectory(experimentName);
+        string envDir = HomeExperimentPaths.GetEnvDirectory(rootDirectory, experimentName);
 
         if (!System.IO.Directory.Exists(envDir))
         {
@@ -54,14 +63,14 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
         if (loadRoomObjects)
         {
             Transform parent = roomObjectParent != null ? roomObjectParent : transform;
-            List<GameObject> created = HomeRoomObjectIO.Load(experimentName, parent);
+            List<GameObject> created = HomeRoomObjectIO.Load(rootDirectory, experimentName, parent);
 
             if (created != null)
                 RoomObjects = created;
 
             ok &= created != null;
 
-            TargetObjects = HomeRoomObjectIO.LoadTargets(experimentName, parent);
+            TargetObjects = HomeRoomObjectIO.LoadTargets(rootDirectory, experimentName, parent);
         }
 
         if (kinects != null)
@@ -72,7 +81,7 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
                 if (kinect == null || !kinect.gameObject.activeInHierarchy)
                     continue;
 
-                string path = HomeExperimentPaths.GetKinectTransformPath(experimentName, kinect.KinectId);
+                string path = HomeExperimentPaths.GetKinectTransformPath(rootDirectory, experimentName, kinect.KinectId);
 
                 if (!kinect.TryLoadPose(path))
                 {

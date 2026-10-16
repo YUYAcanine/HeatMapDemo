@@ -134,8 +134,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3f7c35e62a474047afac2892be954c27, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: sora
-  source: 1
+  dataRootDirectory: D:\HomeExperiment
+  subjectName: 1014subjectyuya
+  source: 0
   forceRebuild: 0
   confidenceMode: 1
   headJoints: 1a0000001b0000001c0000001e0000001d0000001f000000
@@ -500,7 +501,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: Oono
+  experimentName: 1014drive
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1133163295}
   kinects: []

@@ -134,7 +134,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ce064c76d24441da571abd536d4f943, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  subjectName: sora
+  dataRootDirectory: D:\HomeExperiment
+  subjectName: 1014subject
   skeletonSource: 2
   filteredMode: 1
   skeletonVariant: 
@@ -896,7 +897,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: Oono
+  experimentName: 1014drive
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1133163295}
   kinects: []
