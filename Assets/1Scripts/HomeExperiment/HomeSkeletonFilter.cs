@@ -1197,8 +1197,14 @@ public class HomeSkeletonFilter : MonoBehaviour, IHomeDataRootProvider
 
         string members = unit.isGroup ? $" [{string.Join(",", unit.ids)}]" : "";
         string first = firstTime == float.MaxValue ? "-" : $"{firstTime:F1} s -";
-        return $"{unit.name}{members} ({first}, {frames} frames)";
+        return FormatPersonRow(frames, $"{unit.name}{members} ({first})");
     }
+
+    // 一覧の1行。フレーム数を左にそろえて先に書き、名前などはその右に書く
+    private static string FormatPersonRow(int frames, string rest) =>
+        $"{frames} frames<pos={FrameColumnWidth}>{rest}";
+
+    private const float FrameColumnWidth = 140f;
 
     // 表示する人物(グループなら全員)を選ぶ(null なら全員)。選ぶと、その人が最初に出てくる時刻へ移動する
     private void SetSkeletonUnit(DisplayUnit unit)
@@ -1255,8 +1261,9 @@ public class HomeSkeletonFilter : MonoBehaviour, IHomeDataRootProvider
 
     //   [Skeleton : All  v]
     //   (o) All
-    //   ( ) mother [0,3,7] (0.1 s -, 100 frames)
-    //   ( ) person_5 (12.3 s -, 23 frames)
+    //   ( ) 100 frames  mother [0,3,7] (0.1 s -)
+    //   ( ) 23 frames   person_5 (12.3 s -)
+    //   (選んでも一覧は閉じない。見出しを押すと閉じる)
     private void SetupSkeletonSelector(Canvas canvas)
     {
         RectTransform root = CreateDropdown(canvas, "SkeletonSelector", 0, out skeletonHeaderText, out skeletonListRect, out skeletonListContent);
@@ -1297,11 +1304,10 @@ public class HomeSkeletonFilter : MonoBehaviour, IHomeDataRootProvider
 
     private void OnSkeletonToggle(DisplayUnit unit, bool isOn)
     {
-        // 1つだけ選ぶ。選び直すと一覧を閉じる(選んでいるものを外そうとしたときは選んだままにする)
+        // 1つだけ選ぶ。続けて選び直せるように一覧は開いたままにする(選んでいるものを外そうとしたときは選んだままにする)
         if (isOn)
         {
             SetSkeletonUnit(unit);
-            skeletonListRect.gameObject.SetActive(false);
         }
         else
         {
@@ -1316,9 +1322,9 @@ public class HomeSkeletonFilter : MonoBehaviour, IHomeDataRootProvider
     //   └──────────────────────────────┘
     //   Groups:
     //     mother: 0, 3, 7                [Ungroup]  … 赤いボタンで解除
-    //   Person IDs (check to group):
-    //   [x] person_0 (0.1 s -, 100 frames)  [mother]
-    //   [ ] person_5 (12.3 s -, 23 frames)
+    //   Person IDs (check to group):              … まだグループに入っていない人物IDだけ
+    //   [x] 100 frames  person_1 (0.1 s -)
+    //   [ ] 23 frames   person_5 (12.3 s -)
     private void SetupGroupPanel(Canvas canvas)
     {
         RectTransform root = CreateDropdown(canvas, "GroupPanel", 1, out groupHeaderText, out groupListRect, out groupListContent);
@@ -1381,13 +1387,17 @@ public class HomeSkeletonFilter : MonoBehaviour, IHomeDataRootProvider
         TMP_Text idsTitle = CreateLabelRow(groupListContent, "Person IDs (check to group):", row++, 0f).GetComponentInChildren<TMP_Text>();
         idsTitle.fontStyle = FontStyles.Bold;
 
-        // まとめる人物を選ぶ
+        // まとめる人物を選ぶ。すでにグループに入っている人物IDは出さない(解除すると、また選べるようになる)
+        groupCandidateIds.RemoveWhere(id => FindGroup(id) != null);
+
         foreach (int id in personFrameCounts.Keys)
         {
+            if (FindGroup(id) != null)
+                continue;
+
             personFrameCounts.TryGetValue(id, out int frames);
             personFirstTimes.TryGetValue(id, out float firstTime);
-            HomePersonGroup group = FindGroup(id);
-            string label = $"person_{id} ({firstTime:F1} s -, {frames} frames){(group != null ? $"  [{group.name}]" : "")}";
+            string label = FormatPersonRow(frames, $"person_{id} ({firstTime:F1} s -)");
 
             Toggle toggle = CreateToggleRow(groupListContent, label, row++ * DropdownRowHeight, DropdownRowHeight);
             toggle.SetIsOnWithoutNotify(groupCandidateIds.Contains(id));
@@ -1425,7 +1435,7 @@ public class HomeSkeletonFilter : MonoBehaviour, IHomeDataRootProvider
     // ------------------------------------------------------------
     // UI helpers (シーン4と同じ見た目)
     // ------------------------------------------------------------
-    private const float DropdownWidth = 320f;
+    private const float DropdownWidth = 480f;
     private const float DropdownRowHeight = 30f;
     private const int DropdownMaxVisibleRows = 14;
 
