@@ -135,6 +135,18 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
              "選んだ人物がその時刻に映っていなければ、最初に出てくる時刻へ移動する。表示だけで、解析は全員分を行う。")]
     [SerializeField] private int skeletonPersonId = -1;
 
+    [Header("First Person (画面下の 1st Person ボタン)")]
+    [Tooltip("Skeleton で選んだ人物の頭の位置・視線の向きにこのカメラを置く。空なら Main Camera。")]
+    [SerializeField] private Camera viewCamera;
+    [SerializeField] private float firstPersonFieldOfView = 70f;
+    [Tooltip("頭の中から部屋を見るので、近くまで描く")]
+    [SerializeField] private float firstPersonNearClipPlane = 0.05f;
+    [Tooltip("カメラを頭の位置・向きへなめらかに近づける(0RealTimeGaze と同じ)。オフなら毎フレームそのまま合わせる。")]
+    [SerializeField] private bool smoothFirstPersonCamera = true;
+    [SerializeField] private float firstPersonLerpSpeed = 15f;
+    [Tooltip("画面中央に出す視線のコーン(Cone Angle)の輪の色")]
+    [SerializeField] private Color coneCircleColor = new Color(1f, 0.85f, 0.1f, 0.9f);
+
     [Header("Playback")]
     [SerializeField] private float playbackSpeed = 1f;
     [SerializeField] private KeyCode playStopKey = KeyCode.Space;
@@ -241,6 +253,17 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
     private bool isScrubbing;
     private Sprite checkmarkSprite;
 
+    // 一人称視点
+    private bool firstPerson;
+    private bool firstPersonVisible;
+    private bool snapFirstPersonCamera;
+    private Vector3 savedCameraPosition;
+    private Quaternion savedCameraRotation;
+    private float savedFieldOfView;
+    private float savedNearClipPlane;
+    private GameObject coneCircle;
+    private TMP_Text firstPersonButtonText;
+
     private string SourceName =>
         skeletonSource == HomeGazeAnalyzer.SkeletonSource.Filtered ? $"filtered_{filteredMode}{VariantSuffix}" :
         skeletonSource == HomeGazeAnalyzer.SkeletonSource.Image ? $"image_{imageDirection}{VariantSuffix}" :
@@ -291,15 +314,6 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
         if (saveButton != null)
             saveButton.onClick.AddListener(Save);
 
-        // 一人称視点のシーンから戻ってきたときは、そこで見ていた人物・時刻に合わせる
-        HomeFirstPersonRequest.Settings back = HomeFirstPersonRequest.TakeReturning();
-
-        if (back != null && back.subjectName == subjectName && back.experimentName == env.ExperimentName)
-        {
-            playbackTime = Mathf.Clamp(back.time, 0f, duration);
-            SetSkeletonPerson(back.personId);
-        }
-
         ShowSample(FindSampleIndex(playbackTime));
         UpdateText();
     }
@@ -334,6 +348,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
         }
 
         ShowSample(FindSampleIndex(playbackTime));
+        UpdateFirstPersonCamera();
         UpdateTimelineUI();
         UpdateText();
     }
@@ -376,6 +391,7 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
     public void Seek(float time)
     {
         playbackTime = Mathf.Clamp(time, 0f, duration);
+        snapFirstPersonCamera = true;
         ShowSample(FindSampleIndex(playbackTime));
     }
 
@@ -391,34 +407,134 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
         page = (Page)(((int)page + 1) % System.Enum.GetValues(typeof(Page)).Length);
     }
 
-    // Skeleton で選んでいる人物の一人称視点のシーン(6FirstPersonView)を、今の時刻から開く
-    public void OpenFirstPersonView()
+    // Skeleton で選んでいる人物の一人称視点に切り替える / 元のカメラに戻す
+    public void ToggleFirstPerson()
     {
-        if (skeletonPersonId < 0)
+        SetFirstPerson(!firstPerson);
+    }
+
+    public void SetFirstPerson(bool on)
+    {
+        if (on && skeletonPersonId < 0)
         {
             Debug.LogWarning("[HomeInteractionAnalyzer] 一人称視点で見る人物を、右上の Skeleton で選んでください。");
+            on = false;
+        }
+
+        Camera cam = viewCamera != null ? viewCamera : Camera.main;
+
+        if (on == firstPerson || cam == null)
+        {
+            RefreshFirstPersonButton();
             return;
         }
 
-        HomeFirstPersonRequest.Open(new HomeFirstPersonRequest.Settings
+        firstPerson = on;
+
+        if (on)
         {
-            dataRootDirectory = dataRootDirectory,
-            experimentName = env.ExperimentName,
-            subjectName = subjectName,
-            skeletonSource = skeletonSource,
-            filteredMode = filteredMode,
-            skeletonVariant = skeletonVariant,
-            kinectId = kinectId,
-            imageDirection = imageDirection,
-            maxFrameDuration = maxFrameDuration,
-            headDirectionMethod = headDirectionMethod,
-            downwardAngle = downwardAngle,
-            coneAngle = coneAngle,
-            minPersonSeconds = minPersonSeconds,
-            personId = skeletonPersonId,
-            time = playbackTime,
-            returnScenePath = UnityEngine.SceneManagement.SceneManager.GetActiveScene().path
-        });
+            // 元のカメラの位置・設定を覚えておき、戻すときに使う
+            savedCameraPosition = cam.transform.position;
+            savedCameraRotation = cam.transform.rotation;
+            savedFieldOfView = cam.fieldOfView;
+            savedNearClipPlane = cam.nearClipPlane;
+            cam.fieldOfView = firstPersonFieldOfView;
+            cam.nearClipPlane = firstPersonNearClipPlane;
+            snapFirstPersonCamera = true;
+
+            if (coneCircle == null)
+                CreateConeCircle(cam.transform);
+        }
+        else
+        {
+            cam.transform.SetPositionAndRotation(savedCameraPosition, savedCameraRotation);
+            cam.fieldOfView = savedFieldOfView;
+            cam.nearClipPlane = savedNearClipPlane;
+        }
+
+        if (coneCircle != null)
+            coneCircle.SetActive(on);
+
+        shownSample = -2; // 自分の骨格の表示/非表示を切り替えるため描き直す
+        ShowSample(FindSampleIndex(playbackTime));
+        RefreshFirstPersonButton();
+    }
+
+    // 選んだ人物の頭の位置・視線の向きへカメラを近づける(3RealtimeDemo/0RealTimeGaze の HeadDirectionAlpha と同じ)。
+    // その時刻に映っていなければ、最後に映っていたときの視点のまま止める
+    private void UpdateFirstPersonCamera()
+    {
+        firstPersonVisible = false;
+
+        if (!firstPerson)
+            return;
+
+        Camera cam = viewCamera != null ? viewCamera : Camera.main;
+        int index = FindSampleIndex(playbackTime);
+
+        if (cam == null || index < 0)
+            return;
+
+        foreach (Person person in samples[index].persons)
+        {
+            if (person.id != skeletonPersonId || !person.hasGaze)
+                continue;
+
+            Vector3 up = Mathf.Abs(Vector3.Dot(person.direction, Vector3.up)) > 0.99f ? Vector3.forward : Vector3.up;
+            Quaternion rotation = Quaternion.LookRotation(person.direction, up);
+
+            if (smoothFirstPersonCamera && !snapFirstPersonCamera)
+            {
+                float t = Mathf.Clamp01(Time.deltaTime * firstPersonLerpSpeed);
+                cam.transform.SetPositionAndRotation(Vector3.Lerp(cam.transform.position, person.origin, t),
+                                                     Quaternion.Slerp(cam.transform.rotation, rotation, t));
+            }
+            else
+            {
+                cam.transform.SetPositionAndRotation(person.origin, rotation);
+            }
+
+            snapFirstPersonCamera = false;
+            firstPersonVisible = true;
+            return;
+        }
+    }
+
+    // カメラの前 1m に、視線のコーン(半角 coneAngle)の輪と中心の印を描く
+    private void CreateConeCircle(Transform cameraTransform)
+    {
+        const int segments = 48;
+        const float distance = 1f;
+        float radius = Mathf.Tan(coneAngle * Mathf.Deg2Rad) * distance;
+
+        coneCircle = new GameObject("FirstPersonCone");
+        coneCircle.transform.SetParent(cameraTransform, false);
+
+        LineRenderer ring = CreateLine("Ring", coneCircleColor, 0.003f);
+        ring.transform.SetParent(coneCircle.transform, false);
+        ring.useWorldSpace = false;
+        ring.enabled = true;
+        ring.loop = true;
+        ring.positionCount = segments;
+
+        for (int i = 0; i < segments; i++)
+        {
+            float a = i * Mathf.PI * 2f / segments;
+            ring.SetPosition(i, new Vector3(Mathf.Cos(a) * radius, Mathf.Sin(a) * radius, distance));
+        }
+
+        LineRenderer center = CreateLine("Center", coneCircleColor, 0.003f);
+        center.transform.SetParent(coneCircle.transform, false);
+        center.useWorldSpace = false;
+        center.enabled = true;
+        center.SetPosition(0, new Vector3(-0.01f, 0f, distance));
+        center.SetPosition(1, new Vector3(0.01f, 0f, distance));
+    }
+
+    private void RefreshFirstPersonButton()
+    {
+        if (firstPersonButtonText != null)
+            firstPersonButtonText.text = firstPerson ? "Exit 1st Person" : "1st Person";
     }
 
     // 時間範囲をデータ全体にして保存する
@@ -1453,10 +1569,12 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
             // 選んだ人物(-1 なら全員)
             int selected = skeletonPersonId >= 0 && unitOfPerson.TryGetValue(skeletonPersonId, out int selectedUnit) ? selectedUnit : -1;
             bool filtered = skeletonPersonId >= 0;
+            // 一人称視点では、自分の骨格は出さず(カメラが頭の中に入るため)、他の人を出す
+            bool firstPersonView = firstPerson && filtered;
 
             foreach (Person person in sample.persons)
             {
-                if (filtered && person.id != skeletonPersonId)
+                if (firstPersonView ? person.id == skeletonPersonId : filtered && person.id != skeletonPersonId)
                     continue;
 
                 ShowPerson(person);
@@ -1720,9 +1838,12 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
                 ? $"Range : {windowStart:F1} - {windowEnd:F1} s ({analyzedEnd - analyzedStart} frames)"
                 : $"Preparing target gaze {(samples.Count > 0 ? precomputed * 100f / samples.Count : 0f):F0}%";
 
+            string view = !firstPerson ? "" :
+                firstPersonVisible ? "  [1st person]" : "  [1st person: not detected now - holding last view]";
+
             frameText.text =
                 $"{subjectName} ({OutputName})  Time : {playbackTime:F1} / {duration:F1} s\n" +
-                $"{status}  Skeleton : {SkeletonLabel}\n" +
+                $"{status}  Skeleton : {SkeletonLabel}{view}\n" +
                 nowText;
         }
 
@@ -1948,8 +2069,8 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
         Button pageButton = CreateButton(row2, "", 920f, 230f, out pageText);
         pageButton.onClick.AddListener(NextPage);
 
-        Button firstPerson = CreateButton(row2, "1st Person", 1160f, 150f, out _);
-        firstPerson.onClick.AddListener(OpenFirstPersonView);
+        Button firstPersonButton = CreateButton(row2, "1st Person", 1160f, 170f, out firstPersonButtonText);
+        firstPersonButton.onClick.AddListener(ToggleFirstPerson);
 
         foreach (Slider slider in new[] { timelineSlider, rangeStartSlider, rangeEndSlider })
         {
@@ -2132,6 +2253,11 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
     {
         skeletonPersonId = id;
         appliedSkeletonPersonId = id;
+        snapFirstPersonCamera = true;
+
+        // All にしたら一人称視点をやめる(人物を選び直したときは、その人の視点に切り替わる)
+        if (id < 0 && firstPerson)
+            SetFirstPerson(false);
 
         // 選んだ人物が今の時刻に映っていなければ、最初に出てくる時刻へ移動する
         if (id >= 0 && !IsPersonInSample(FindSampleIndex(playbackTime), id) && personFirstTimes.TryGetValue(id, out float firstTime))

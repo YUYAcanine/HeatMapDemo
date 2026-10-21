@@ -26,12 +26,6 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
 
     public string ExperimentName => experimentName;
 
-    // 実験の名前を差し替える(一人称視点のシーンがシーン5から開かれたとき)。Awake で読み込むので、それより前に呼ぶ
-    public void SetExperimentName(string name)
-    {
-        experimentName = name;
-    }
-
     public bool IsLoaded { get; private set; }
 
     // 再生成した部屋オブジェクト(Awakeで作られるので、Start以降で参照する)
