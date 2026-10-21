@@ -291,6 +291,15 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
         if (saveButton != null)
             saveButton.onClick.AddListener(Save);
 
+        // 一人称視点のシーンから戻ってきたときは、そこで見ていた人物・時刻に合わせる
+        HomeFirstPersonRequest.Settings back = HomeFirstPersonRequest.TakeReturning();
+
+        if (back != null && back.subjectName == subjectName && back.experimentName == env.ExperimentName)
+        {
+            playbackTime = Mathf.Clamp(back.time, 0f, duration);
+            SetSkeletonPerson(back.personId);
+        }
+
         ShowSample(FindSampleIndex(playbackTime));
         UpdateText();
     }
@@ -380,6 +389,36 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
     public void NextPage()
     {
         page = (Page)(((int)page + 1) % System.Enum.GetValues(typeof(Page)).Length);
+    }
+
+    // Skeleton で選んでいる人物の一人称視点のシーン(6FirstPersonView)を、今の時刻から開く
+    public void OpenFirstPersonView()
+    {
+        if (skeletonPersonId < 0)
+        {
+            Debug.LogWarning("[HomeInteractionAnalyzer] 一人称視点で見る人物を、右上の Skeleton で選んでください。");
+            return;
+        }
+
+        HomeFirstPersonRequest.Open(new HomeFirstPersonRequest.Settings
+        {
+            dataRootDirectory = dataRootDirectory,
+            experimentName = env.ExperimentName,
+            subjectName = subjectName,
+            skeletonSource = skeletonSource,
+            filteredMode = filteredMode,
+            skeletonVariant = skeletonVariant,
+            kinectId = kinectId,
+            imageDirection = imageDirection,
+            maxFrameDuration = maxFrameDuration,
+            headDirectionMethod = headDirectionMethod,
+            downwardAngle = downwardAngle,
+            coneAngle = coneAngle,
+            minPersonSeconds = minPersonSeconds,
+            personId = skeletonPersonId,
+            time = playbackTime,
+            returnScenePath = UnityEngine.SceneManagement.SceneManager.GetActiveScene().path
+        });
     }
 
     // 時間範囲をデータ全体にして保存する
@@ -1908,6 +1947,9 @@ public class HomeInteractionAnalyzer : MonoBehaviour, IHomeDataRootProvider
 
         Button pageButton = CreateButton(row2, "", 920f, 230f, out pageText);
         pageButton.onClick.AddListener(NextPage);
+
+        Button firstPerson = CreateButton(row2, "1st Person", 1160f, 150f, out _);
+        firstPerson.onClick.AddListener(OpenFirstPersonView);
 
         foreach (Slider slider in new[] { timelineSlider, rangeStartSlider, rangeEndSlider })
         {
