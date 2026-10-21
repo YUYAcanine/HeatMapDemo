@@ -26,7 +26,10 @@
   python Tools/GazeSmooth/smooth_skeleton.py <実験の名前> <実験対象者>
   (最初にデータの場所 Assets / D:\\HomeExperiment を選ぶ。--data-root D:\\HomeExperiment で指定もできる)
   (引数を省くと、フォルダの一覧から選ぶ)
-  --mode HeadJoints            … 読み込む grouped_<Mode>.json (AllJoints / HeadJoints / Image)
+  データの場所 → 実験の名前 → 実験対象者 → 平滑化する骨格ファイル の順に番号で選ぶ。
+  骨格ファイルは Filtered/ にある grouped_<Mode>.json の一覧から選ぶ
+  (grouped_Image.json = 画像から推定した骨格 / grouped_HeadJoints.json = キネクトの骨格 など。作成済みの平滑化も表示する)
+  --mode Image                 … 選ばずに grouped_<Mode>.json を指定する (AllJoints / HeadJoints / Image)
   --median 0.5 --mean 0.3      … 窓の長さ(秒)を指定して1つだけ作る。名前は --name (省略時は custom)
 numpy が必要(Tools/GazePipeline の .venv にも入っている)。
 grouped_<Mode>.json を作り直したら、このスクリプトも実行し直す。
@@ -70,6 +73,51 @@ def _choose(label: str, options: list[str]) -> str | None:
 
 def _subdirs(path: Path) -> list[str]:
     return sorted(p.name for p in path.iterdir() if p.is_dir()) if path.exists() else []
+
+
+# grouped_<Mode>.json の Mode ごとの説明(一覧に出す)
+MODE_DESCRIPTIONS = {
+    "Image": "画像から推定した骨格 (Tools/GazePipeline)",
+    "HeadJoints": "キネクトの骨格 (シーン3, 頭部の関節の信頼度で選択)",
+    "AllJoints": "キネクトの骨格 (シーン3, 全関節の信頼度で選択)",
+}
+
+
+def _grouped_modes(filtered_dir: Path) -> list[str]:
+    """Filtered/ にある平滑化前の grouped_<Mode>.json の Mode の一覧(平滑化した grouped_<Mode>_<名前>.json は除く)"""
+    if not filtered_dir.exists():
+        return []
+    modes = [p.stem[len("grouped_"):] for p in filtered_dir.glob("grouped_*.json")]
+    return sorted((m for m in modes if m and "_" not in m), key=lambda m: (m != "Image", m))
+
+
+def _choose_mode(filtered_dir: Path) -> str | None:
+    """平滑化する骨格ファイル(grouped_<Mode>.json)を一覧から選ぶ。1つしかなければそれを使う"""
+    modes = _grouped_modes(filtered_dir)
+    if not modes:
+        print(f"人物ごとの骨格 (grouped_<Mode>.json) がありません。シーン3でグループを作って Save grouped を押してください: {filtered_dir}")
+        return None
+
+    def describe(mode: str) -> str:
+        path = filtered_dir / f"grouped_{mode}.json"
+        updated = time.strftime("%Y-%m-%d %H:%M", time.localtime(path.stat().st_mtime))
+        made = sorted(p.stem[len(f"grouped_{mode}_"):] for p in filtered_dir.glob(f"grouped_{mode}_*.json"))
+        made_text = f"  作成済み: {', '.join(made)}" if made else ""
+        return (f"{path.name}  … {MODE_DESCRIPTIONS.get(mode, mode)}"
+                f"  ({path.stat().st_size / 1e6:.0f} MB, {updated} 更新){made_text}")
+
+    if len(modes) == 1:
+        print(f"\n平滑化する骨格ファイル: {describe(modes[0])}")
+        return modes[0]
+
+    print("\n平滑化する骨格ファイルを選んでください:")
+    for i, mode in enumerate(modes, 1):
+        print(f"  {i}. {describe(mode)}")
+    answer = input("骨格ファイルの番号: ").strip()
+    if answer.isdigit() and 1 <= int(answer) <= len(modes):
+        return modes[int(answer) - 1]
+    print("番号が正しくありません。")
+    return None
 
 
 def _unit(v: np.ndarray) -> np.ndarray:
@@ -227,7 +275,7 @@ def main() -> int:
     home_data_root.add_argument(parser)
     parser.add_argument("experiment", nargs="?", help="実験の名前 (省略すると一覧から選ぶ)")
     parser.add_argument("subject", nargs="?", help="実験対象者 (省略すると一覧から選ぶ)")
-    parser.add_argument("--mode", default="HeadJoints", help="読み込む grouped_<Mode>.json の Mode (既定 HeadJoints)")
+    parser.add_argument("--mode", help="読み込む grouped_<Mode>.json の Mode (AllJoints / HeadJoints / Image。省略すると一覧から選ぶ)")
     parser.add_argument("--median", type=float, help="中央値フィルタの窓(秒)。指定するとこの1通りだけ作る")
     parser.add_argument("--mean", type=float, help="移動平均の窓(秒)。--median と一緒に指定する(省略時 0 = 平均なし)")
     parser.add_argument("--name", help="--median を指定したときの出力の名前 (省略時 custom)")
@@ -238,19 +286,29 @@ def main() -> int:
     if data_root is None:
         return 1
 
-    grouped_name = f"grouped_{args.mode}.json"
-
     experiment = args.experiment or _choose("実験の名前", _subdirs(data_root))
     if not experiment:
         return 1
 
+    # 実験対象者は、平滑化できる骨格(--mode を指定したらその Mode の grouped)があるものだけ出す
     skeleton_root = data_root / experiment / "Skeleton"
-    subject = args.subject or _choose(
-        "実験対象者", [s for s in _subdirs(skeleton_root) if (skeleton_root / s / "Filtered" / grouped_name).exists()])
+
+    def can_smooth(subject_name: str) -> bool:
+        modes = _grouped_modes(skeleton_root / subject_name / "Filtered")
+        return args.mode in modes if args.mode else bool(modes)
+
+    subject = args.subject or _choose("実験対象者", [s for s in _subdirs(skeleton_root) if can_smooth(s)])
     if not subject:
         return 1
 
     filtered_dir = skeleton_root / subject / "Filtered"
+
+    if not args.mode:
+        args.mode = _choose_mode(filtered_dir)
+        if not args.mode:
+            return 1
+
+    grouped_name = f"grouped_{args.mode}.json"
     source_path = filtered_dir / grouped_name
 
     if not source_path.exists():
