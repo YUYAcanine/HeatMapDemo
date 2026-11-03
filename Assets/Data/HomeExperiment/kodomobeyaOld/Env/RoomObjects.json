@@ -1,0 +1,46 @@
+{
+    "experimentName": "kodomobeyaOld",
+    "savedAt": "2026-11-02 20:28:54",
+    "objects": [
+        {
+            "name": "mesh",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "b1cf8ee7425a53c47aff7ee16e6f6520",
+            "meshAssetPath": "Assets/3DObject/20260317KidsRoom/20260317KidsRoom.obj",
+            "meshLocalId": -8670151273213183110,
+            "meshFile": "",
+            "position": {
+                "x": 0.3799999952316284,
+                "y": 0.0,
+                "z": -0.10000000149011612
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": -0.7071068286895752,
+                "z": 0.0,
+                "w": 0.7071068286895752
+            },
+            "scale": {
+                "x": 1.000000238418579,
+                "y": 1.0,
+                "z": 1.000000238418579
+            },
+            "materials": [
+                {
+                    "assetGuid": "b1cf8ee7425a53c47aff7ee16e6f6520",
+                    "assetPath": "Assets/3DObject/20260317KidsRoom/20260317KidsRoom.obj",
+                    "localId": 3758952881610933197,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        }
+    ]
+}

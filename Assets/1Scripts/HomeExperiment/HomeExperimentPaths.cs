@@ -33,10 +33,23 @@ using UnityEngine.EventSystems;
 //                   │   └ heatmap_<骨格>.json … 視線コーンのヒートマップ(シーン4, 部屋メッシュの頂点ごとのヒート)
 //                   ├ Score/
 //                   │   └ score_<骨格>.json   … 対象物体ごとのスコアとフレームごとの注視対象(シーン4)
+//                   ├ Export/
+//                   │   └ <骨格>/                            … Python で解析する用の書き出し(シーン5 5GazeExport)
+//                   │       ├ <人物>_gaze.csv              … フレームごとの注視対象(対象物体だけ)
+//                   │       ├ <人物>_gaze_persons.csv      … フレームごとの注視対象(相手の人物も含める。人物が2人以上のときだけ)
+//                   │       ├ <人物>_distance.csv          … フレームごとの対象物体・相手までの水平距離
+//                   │       └ export_params.json           … 書き出しに使った設定
 //                   ├ Interaction/
-//                   │   ├ interaction_<骨格>.json          … 人物どうし・対象物体の相互作用の解析(シーン5)
+//                   │   ├ interaction_<骨格>.json          … 人物どうし・対象物体の相互作用の解析(旧シーン5, Backnumber/5InteractionAnalyze)
 //                   │   ├ interaction_<骨格>_summary.csv   … 同じ集計を表にしたもの(Excel などで開く)
 //                   │   └ interaction_<骨格>_episodes.csv  … 1回1回の出来事(注視・相互注視など)の開始・終了時刻
+//                   ├ GazeBehavior/
+//                   │   ├ gaze_behavior_<骨格>_hypotheses_results.csv    … 4つの仮説の結果(シーン6)
+//                   │   ├ gaze_behavior_<骨格>_hypotheses_approaches.csv … 子供の接近1回ごとの、親・物が視野に入っていた割合(シーン6)
+//                   │   ├ gaze_behavior_<骨格>_hypotheses_frames.csv     … 子供のフレームごとの位置・向き・視野(シーン6)
+//                   │   ├ gaze_behavior_<骨格>_hypotheses_params.json    … 解析に使った定義(シーン6)
+//                   │   └ hypotheses_kinect_vs_image.html              … キネクトと画像の骨格での仮説の比較(Tools/GazeBehavior/compare_hypotheses.py)
+//                   │   (gaze_behavior_<骨格>_frames.csv などは、書き換える前のシーン6の探索用の出力。Tools/GazeBehavior の他のスクリプトが読む)
 //                   └ Figures/
 //                       └ gaze_timeline.html … 2人の注視の時系列グラフ(Tools/GazeTimeline/make_gaze_timeline.py で Interaction/ から作る)
 //                   (<骨格> は filtered_HeadJoints / KinectA など、解析に使った骨格データ)
@@ -55,11 +68,14 @@ public static class HomeExperimentPaths
     public const string HeatMapFolderName = "HeatMap";
     public const string ScoreFolderName = "Score";
     public const string InteractionFolderName = "Interaction";
+    public const string GazeBehaviorFolderName = "GazeBehavior";
+    public const string ExportFolderName = "Export";
 
     public const string PersonGroupsFilePrefix = "person_groups_";
     public const string HeatMapFilePrefix = "heatmap_";
     public const string ScoreFilePrefix = "score_";
     public const string InteractionFilePrefix = "interaction_";
+    public const string GazeBehaviorFilePrefix = "gaze_behavior_";
     public const string RawFolderName = "Raw~";
 
     public static string RootDirectory =>
@@ -207,6 +223,17 @@ public static class HomeExperimentPaths
 
     public static string GetInteractionEpisodesCsvPath(string rootDirectory, string experimentName, string subjectName, string sourceName) =>
         Path.Combine(GetInteractionDirectory(rootDirectory, experimentName, subjectName), $"{InteractionFilePrefix}{sourceName}_episodes.csv");
+
+    // シーン6の視線と行動の解析(fileKind: frames.csv / approaches.csv / summary.csv / params.json)
+    public static string GetGazeBehaviorDirectory(string rootDirectory, string experimentName, string subjectName) =>
+        Path.Combine(GetAnalysisDirectory(rootDirectory, experimentName, subjectName), GazeBehaviorFolderName);
+
+    public static string GetGazeBehaviorPath(string rootDirectory, string experimentName, string subjectName, string sourceName, string fileKind) =>
+        Path.Combine(GetGazeBehaviorDirectory(rootDirectory, experimentName, subjectName), $"{GazeBehaviorFilePrefix}{sourceName}_{fileKind}");
+
+    // シーン5の書き出し(Python で解析する用。<骨格> ごとのフォルダに、人物ごとの CSV)
+    public static string GetExportDirectory(string rootDirectory, string experimentName, string subjectName, string sourceName) =>
+        Path.Combine(GetAnalysisDirectory(rootDirectory, experimentName, subjectName), ExportFolderName, sourceName);
 
     // 以前 Analysis/ の直下に置いていたファイルを、種類ごとのフォルダ(Groups / HeatMap / Score / Interaction)へ移す。
     // Unity の .meta も一緒に移す。移す先に同じ名前のファイルがあれば、更新日時の新しい方だけを残す(解析結果は古い版を残さない)。

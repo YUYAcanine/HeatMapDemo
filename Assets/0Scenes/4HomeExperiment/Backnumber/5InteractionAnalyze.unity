@@ -134,9 +134,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9ce064c76d24441da571abd536d4f943, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  dataRootDirectory: D:\HomeExperiment
-  subjectName: 1014subject
-  skeletonSource: 2
+  dataRootDirectory: 
+  subjectName: sora
+  skeletonSource: 0
   filteredMode: 1
   skeletonVariant: 
   kinectId: A
@@ -174,6 +174,12 @@ MonoBehaviour:
   showPersonCylinder: 1
   cylinderLineWidth: 0.008
   skeletonPersonId: -1
+  viewCamera: {fileID: 0}
+  firstPersonFieldOfView: 70
+  firstPersonNearClipPlane: 0.05
+  smoothFirstPersonCamera: 1
+  firstPersonLerpSpeed: 15
+  coneCircleColor: {r: 1, g: 0.85, b: 0.1, a: 0.9}
   playbackSpeed: 1
   playStopKey: 32
   rangeStart: 0
@@ -897,7 +903,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: 1014drive
+  experimentName: Oono
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1133163295}
   kinects: []

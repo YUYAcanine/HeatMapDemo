@@ -15,7 +15,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Unity のプロジェクトのフォルダ(このファイルから上にたどって、最初に Assets/ があるフォルダ)。
+# Tools/ の中でフォルダを移しても既定のデータの場所が変わらないようにする
+PROJECT_ROOT = next((p for p in Path(__file__).resolve().parents if (p / "Assets").is_dir()),
+                    Path(__file__).resolve().parents[1])
 ASSETS_DATA_ROOT = PROJECT_ROOT / "Assets" / "Data" / "HomeExperiment"
 DRIVE_DATA_ROOT = Path("D:/HomeExperiment")
 

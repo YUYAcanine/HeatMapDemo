@@ -1,0 +1,126 @@
+{
+    "experimentName": "kodomobeyaOld",
+    "savedAt": "2026-11-02 20:28:54",
+    "objects": [
+        {
+            "name": "Light1",
+            "group": "Light1",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_000_Light1.json",
+            "position": {
+                "x": -0.8430002927780151,
+                "y": 0.3458999991416931,
+                "z": -0.5160001516342163
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0000001192092896
+            },
+            "scale": {
+                "x": 0.23000000417232514,
+                "y": 0.29989609122276308,
+                "z": 0.23000000417232514
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Light2",
+            "group": "Light2",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_001_Light2.json",
+            "position": {
+                "x": -0.7760001420974731,
+                "y": 0.2167000025510788,
+                "z": 1.263000249862671
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0000001192092896
+            },
+            "scale": {
+                "x": 0.2800000011920929,
+                "y": 0.17071719467639924,
+                "z": 0.2800000011920929
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Light3",
+            "group": "Light3",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_002_Light3.json",
+            "position": {
+                "x": 0.9070001244544983,
+                "y": 0.20229999721050263,
+                "z": 0.39200010895729067
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0000001192092896
+            },
+            "scale": {
+                "x": 0.23000000417232514,
+                "y": 0.15630580484867097,
+                "z": 0.23000000417232514
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        }
+    ]
+}
