@@ -9,14 +9,18 @@ using UnityEngine;
 // フレームごとの CSV に書き出す。集計はしない(集計・グラフは Python で行う)。
 //
 // 書き出すもの(Skeleton/<実験対象者>/Analysis/Export/<骨格>/。人物 = シーン3のグループ):
-//   <人物>_gaze.csv          … 注視対象(対象物体だけ)。視線コーンに頂点が入った対象物体のうち、コーン軸に最も近いもの
-//                             (シーン4の gazeTarget・旧シーン5の TargetGaze と同じ判定)
+//   <人物>_gaze.csv          … 注視対象(対象物体だけ)。視線コーンに表面(メッシュの三角形)が入った対象物体のうち、
+//                             コーン軸に最も近いもの(シーン4の gazeTarget と同じ判定。軸が貫けば 0 度で、0 度どうしなら近い方)
 //   <人物>_gaze_persons.csv  … 注視対象(相手の人物も対象に含める)。人物が2人以上のときだけ。
 //                             相手は旧シーン5と同じ縦の円柱(直径 personDiameter、上部 faceHeight が顔)で表し、
-//                             対象物体と相手のうちコーン軸に最も近いものを注視対象にする
+//                             対象物体と相手のうちコーン軸に最も近いものを注視対象にする(軸が円柱を貫けば 0 度)
 //   <人物>_distance.csv      … 対象物体までの水平距離(骨盤から、物のメッシュの頂点を囲む床に平行な箱まで。箱の中なら 0。
 //                             シーン6/7と同じ)。人物が2人以上のときは相手の骨盤までの水平距離も
-//   export_params.json       … 書き出しに使った設定
+//                             (gaze.csv の最後の列に、肩の位置 shoulderLeft/RightX,Y,Z も入れる。頭と肩の向きの解析に使う)
+//   <人物>_skeleton.csv      … 骨格の全関節(Azure Kinect の 32 関節)の位置と信頼度。列は <関節>X,<関節>Y,<関節>Z,<関節>C
+//                             (部屋の座標。C = 0:None 1:Low 2:Medium 3:High)。無い関節は空。手で触った物の判定など、
+//                             書き出し直さずに Python 側で必要な関節を取り出して解析するため
+//   export_params.json       … 書き出しに使った設定(対象物体の中心 targetCenters と大きさ targetSizes も入れる)
 // 行は骨格データの全フレーム(全員で同じ時刻の並び)。その人物が映っていないフレームは present = 0 で、値は空にする。
 // target は 対象の名前 / None(視線はあるが何も見ていない)/ NoData(映っていない・視線が取れない)。
 //
@@ -186,6 +190,7 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
                     written.Add(WriteGazeCsv(Path.Combine(folder, $"{fileName}_gaze_persons.csv"), u, true));
 
                 written.Add(WriteDistanceCsv(Path.Combine(folder, $"{fileName}_distance.csv"), u));
+                written.Add(WriteSkeletonCsv(Path.Combine(folder, $"{fileName}_skeleton.csv"), u));
             }
 
             string paramsPath = Path.Combine(folder, "export_params.json");
@@ -367,6 +372,10 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
             person.hasHead = true;
             person.head = head;
         }
+
+        person.hasShoulders = person.joints != null &&
+                              HomeSkeletonIO.TryGetJointPosition(person.joints, JointId.ShoulderLeft, out person.shoulderLeft) &&
+                              HomeSkeletonIO.TryGetJointPosition(person.joints, JointId.ShoulderRight, out person.shoulderRight);
 
         if (person.joints != null && HomeSkeletonIO.TryGetJointPosition(person.joints, JointId.Pelvis, out Vector3 pelvis))
         {
@@ -555,7 +564,7 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
 
     private void AddTarget(string targetName, List<GameObject> objects)
     {
-        List<VertexCloud> clouds = new List<VertexCloud>();
+        List<HomeConeSurface> clouds = new List<HomeConeSurface>();
         Bounds bounds = new Bounds();
         bool hasBounds = false;
 
@@ -571,7 +580,7 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
                 if (vertices.Length == 0)
                     continue;
 
-                VertexCloud cloud = new VertexCloud(meshFilter.transform, vertices);
+                HomeConeSurface cloud = new HomeConeSurface(meshFilter.transform, vertices, meshFilter.sharedMesh.triangles);
                 clouds.Add(cloud);
 
                 foreach (Vector3 position in cloud.positions)
@@ -664,50 +673,71 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
     // ------------------------------------------------------------
     // 注視の判定
     // ------------------------------------------------------------
-    // 対象物体ごとのコーン軸との角度(シーン4と同じ: コーンに入った頂点のうち最小の角度。入らなければ -1)
+    // 対象物体ごとのコーン軸との角度(シーン4と同じ: コーン軸と表面との最小角度。軸が貫けば 0。コーンに入らなければ -1)
     private void ComputeGaze()
     {
-        Cone cone = new Cone(coneAngle, coneDistance);
+        float coneAngleRad = Mathf.Max(coneAngle, 0.0001f) * Mathf.Deg2Rad;
 
         foreach (Sample sample in samples)
         {
             foreach (Person person in sample.persons)
             {
                 person.targetAngles = new float[targets.Count];
+                person.targetDistances = new float[targets.Count];
 
                 for (int t = 0; t < targets.Count; t++)
+                {
                     person.targetAngles[t] = -1f;
+                    person.targetDistances[t] = float.MaxValue;
+                }
 
                 if (!person.hasGaze)
                     continue;
 
-                cone.Set(person.origin, person.direction);
-
                 for (int t = 0; t < targets.Count; t++)
                 {
                     float best = float.MaxValue;
+                    float bestDistance = float.MaxValue;
 
-                    foreach (VertexCloud cloud in targets[t].clouds)
+                    foreach (HomeConeSurface cloud in targets[t].clouds)
                     {
-                        if (cloud.MinConeAngle(cone, out float angleRad) && angleRad < best)
-                            best = angleRad;
+                        if (cloud.MinConeAngle(person.origin, person.direction, coneAngleRad, coneDistance,
+                                               out float angleRad, out float distance) &&
+                            HomeConeSurface.IsBetter(angleRad * Mathf.Rad2Deg, distance, best, bestDistance))
+                        {
+                            best = angleRad * Mathf.Rad2Deg;
+                            bestDistance = distance;
+                        }
                     }
 
                     if (best < float.MaxValue)
-                        person.targetAngles[t] = best * Mathf.Rad2Deg;
+                    {
+                        person.targetAngles[t] = best;
+                        person.targetDistances[t] = bestDistance;
+                    }
                 }
             }
         }
     }
 
     // viewer の視線のコーンが、other の円柱の高さ bottomY 〜 topY の部分に当たるときのコーン軸との角度(度)。当たらなければ -1。
-    // 旧シーン5の LooksAtCylinder と同じく、円柱の上に並べた点で判定する
-    private float CylinderAngle(Person viewer, Person other, float bottomY, float topY)
+    // 軸が円柱を貫けば 0 度(distance は手前の面まで)。貫かなければ旧シーン5の LooksAtCylinder と同じく、円柱の上に並べた点で判定する
+    private float CylinderAngle(Person viewer, Person other, float bottomY, float topY, out float distance)
     {
+        distance = float.MaxValue;
+
         if (!viewer.hasGaze || !other.hasCylinder)
             return -1f;
 
         float radius = personDiameter * 0.5f;
+
+        if (RayHitsCylinder(viewer.origin, viewer.direction, other.axisX, other.axisZ, radius, bottomY, topY, out float hit) &&
+            hit > 0.05f && hit <= lookAtPersonDistance)
+        {
+            distance = hit;
+            return 0f;
+        }
+
         int rings = Mathf.Max(1, Mathf.CeilToInt((topY - bottomY) / CylinderStep));
         float bestDot = -2f;
 
@@ -728,18 +758,71 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
                 }
 
                 Vector3 toPoint = p - viewer.origin;
-                float distance = toPoint.magnitude;
+                float pointDistance = toPoint.magnitude;
 
-                if (distance <= 0.05f || distance > lookAtPersonDistance)
+                if (pointDistance <= 0.05f || pointDistance > lookAtPersonDistance)
                     continue;
 
-                bestDot = Mathf.Max(bestDot, Vector3.Dot(viewer.direction, toPoint) / distance);
+                float dot = Vector3.Dot(viewer.direction, toPoint) / pointDistance;
+
+                if (dot > bestDot)
+                {
+                    bestDot = dot;
+                    distance = pointDistance;
+                }
             }
         }
 
         return bestDot >= Mathf.Cos(coneAngle * Mathf.Deg2Rad)
             ? Mathf.Acos(Mathf.Clamp(bestDot, -1f, 1f)) * Mathf.Rad2Deg
             : -1f;
+    }
+
+    // 始点 origin・向き direction の半直線が、縦の円柱(中心軸 axisX, axisZ・半径 radius・高さ bottomY 〜 topY)に
+    // 外から入るときの距離。始点が円柱の中(水平に見て円の中)のときは false
+    private static bool RayHitsCylinder(Vector3 origin, Vector3 direction, float axisX, float axisZ, float radius,
+                                        float bottomY, float topY, out float distance)
+    {
+        distance = float.MaxValue;
+        float ox = origin.x - axisX;
+        float oz = origin.z - axisZ;
+        float c = ox * ox + oz * oz - radius * radius;
+
+        if (c <= 0f)
+            return false;
+
+        // 側面
+        float a = direction.x * direction.x + direction.z * direction.z;
+        float b = ox * direction.x + oz * direction.z;
+
+        if (a > 1e-8f && b < 0f && b * b - a * c >= 0f)
+        {
+            float s = (-b - Mathf.Sqrt(b * b - a * c)) / a;
+            float y = origin.y + s * direction.y;
+
+            if (s > 0f && y >= bottomY && y <= topY)
+                distance = s;
+        }
+
+        // 上下の面
+        if (Mathf.Abs(direction.y) > 1e-6f)
+        {
+            foreach (float capY in new[] { bottomY, topY })
+            {
+                float s = (capY - origin.y) / direction.y;
+
+                if (s <= 0f || s >= distance)
+                    continue;
+
+                float x = ox + s * direction.x;
+                float z = oz + s * direction.z;
+
+                if (x * x + z * z <= radius * radius)
+                    distance = s;
+            }
+        }
+
+        return distance < float.MaxValue;
     }
 
     private float FaceBottomY(Person person) => Mathf.Max(person.bottomY, person.topY - faceHeight);
@@ -765,6 +848,7 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
             foreach (Unit other in others)
                 line.Append(',').Append(Csv("angle_" + other.name)).Append(',').Append(Csv("face_" + other.name));
 
+            line.Append(",shoulderLeftX,shoulderLeftY,shoulderLeftZ,shoulderRightX,shoulderRightY,shoulderRightZ");
             writer.WriteLine(line.ToString());
 
             foreach (Sample sample in samples)
@@ -776,23 +860,25 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
                 if (person == null || !person.hasGaze)
                 {
                     line.Append(person == null ? ",0,0," : ",1,0,").Append(NoDataLabel).Append(',').Append(NoDataLabel).Append(",");
-                    line.Append(',', 6 + targets.Count + others.Count * 2);
+                    line.Append(',', 6 + targets.Count + others.Count * 2 + 6);
                     writer.WriteLine(line.ToString());
                     continue;
                 }
 
-                // 対象物体と相手のうち、コーン軸に最も近いもの
+                // 対象物体と相手のうち、コーン軸に最も近いもの(同じ角度なら近い方)
                 string best = NoHitLabel;
                 string bestType = NoHitLabel;
                 float bestAngle = float.MaxValue;
+                float bestDistance = float.MaxValue;
 
                 for (int t = 0; t < targets.Count; t++)
                 {
                     float angle = person.targetAngles[t];
 
-                    if (angle >= 0f && angle < bestAngle)
+                    if (angle >= 0f && HomeConeSurface.IsBetter(angle, person.targetDistances[t], bestAngle, bestDistance))
                     {
                         bestAngle = angle;
+                        bestDistance = person.targetDistances[t];
                         best = targets[t].name;
                         bestType = "Object";
                     }
@@ -804,12 +890,15 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
                 for (int o = 0; o < others.Count; o++)
                 {
                     Person other = FindPerson(sample, others[o].id);
-                    personAngles[o] = other != null ? CylinderAngle(person, other, other.bottomY, other.topY) : -1f;
-                    faces[o] = other != null && personAngles[o] >= 0f && CylinderAngle(person, other, FaceBottomY(other), other.topY) >= 0f;
+                    float personDistance = float.MaxValue;
+                    personAngles[o] = other != null ? CylinderAngle(person, other, other.bottomY, other.topY, out personDistance) : -1f;
+                    faces[o] = other != null && personAngles[o] >= 0f &&
+                               CylinderAngle(person, other, FaceBottomY(other), other.topY, out _) >= 0f;
 
-                    if (personAngles[o] >= 0f && personAngles[o] < bestAngle)
+                    if (personAngles[o] >= 0f && HomeConeSurface.IsBetter(personAngles[o], personDistance, bestAngle, bestDistance))
                     {
                         bestAngle = personAngles[o];
+                        bestDistance = personDistance;
                         best = others[o].name;
                         bestType = "Person";
                     }
@@ -826,6 +915,17 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
 
                 for (int o = 0; o < others.Count; o++)
                     line.Append(',').Append(F(personAngles[o])).Append(',').Append(faces[o] ? "1" : "0");
+
+                if (person.hasShoulders)
+                {
+                    foreach (float v in new[] { person.shoulderLeft.x, person.shoulderLeft.y, person.shoulderLeft.z,
+                                                person.shoulderRight.x, person.shoulderRight.y, person.shoulderRight.z })
+                        line.Append(',').Append(F(v));
+                }
+                else
+                {
+                    line.Append(',', 6);
+                }
 
                 writer.WriteLine(line.ToString());
             }
@@ -886,6 +986,61 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
         return path;
     }
 
+    // 列: timeSec, durationSec, present, そして関節ごと(JointId の順)に <関節>X, <関節>Y, <関節>Z, <関節>C
+    private string WriteSkeletonCsv(string path, int unitIndex)
+    {
+        Unit unit = units[unitIndex];
+        int jointCount = (int)JointId.Count;
+        string[] names = new string[jointCount];
+
+        using (StreamWriter writer = new StreamWriter(path, false, new UTF8Encoding(true)))
+        {
+            StringBuilder line = new StringBuilder("timeSec,durationSec,present");
+
+            for (int j = 0; j < jointCount; j++)
+            {
+                names[j] = ((JointId)j).ToString();
+                line.Append(',').Append(names[j]).Append("X,").Append(names[j]).Append("Y,")
+                    .Append(names[j]).Append("Z,").Append(names[j]).Append('C');
+            }
+
+            writer.WriteLine(line.ToString());
+            Dictionary<string, HomeSkeletonJoint> byName = new Dictionary<string, HomeSkeletonJoint>();
+
+            foreach (Sample sample in samples)
+            {
+                line.Clear();
+                line.Append(F(sample.time)).Append(',').Append(F(sample.duration));
+                Person person = FindPerson(sample, unit.id);
+                line.Append(person == null ? ",0" : ",1");
+                byName.Clear();
+
+                if (person != null && person.joints != null)
+                {
+                    foreach (HomeSkeletonJoint joint in person.joints)
+                        byName[joint.jointId] = joint;
+                }
+
+                for (int j = 0; j < jointCount; j++)
+                {
+                    if (byName.TryGetValue(names[j], out HomeSkeletonJoint joint))
+                    {
+                        line.Append(',').Append(F(joint.position.x)).Append(',').Append(F(joint.position.y))
+                            .Append(',').Append(F(joint.position.z)).Append(',').Append(joint.confidence);
+                    }
+                    else
+                    {
+                        line.Append(',', 4);
+                    }
+                }
+
+                writer.WriteLine(line.ToString());
+            }
+        }
+
+        return path;
+    }
+
     // 位置から箱(床に平行)までの水平の最短距離。箱の中なら 0(シーン6/7と同じ)
     private static float HorizontalDistance(Bounds bounds, Vector3 position)
     {
@@ -914,7 +1069,8 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
             frameCount = samples.Count,
             noHitLabel = NoHitLabel,
             noDataLabel = NoDataLabel,
-            distanceDefinition = "骨盤(無ければ頭)から、対象物体のメッシュの頂点を囲む床に平行な箱までの水平距離(箱の中なら0)。相手は骨盤どうしの水平距離"
+            distanceDefinition = "骨盤(無ければ頭)から、対象物体のメッシュの頂点を囲む床に平行な箱までの水平距離(箱の中なら0)。相手は骨盤どうしの水平距離",
+            gazeHitTest = "surface: コーン軸と対象物体の表面(メッシュの三角形)との最小角度。軸が貫けば0度。同じ角度なら近い方。相手は円柱(貫けば0度、それ以外は円柱上の点)"
         };
 
         foreach (Unit unit in units)
@@ -924,7 +1080,11 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
         }
 
         foreach (Target target in targets)
+        {
             p.targets.Add(target.name);
+            p.targetCenters.Add(target.bounds.center);
+            p.targetSizes.Add(target.bounds.size);
+        }
 
         return p;
     }
@@ -965,6 +1125,11 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
         public bool hasHead;
         public Vector3 head;
 
+        // 肩の位置(頭と肩の向きの解析に使う。画像での推定など関節が無いときは false)
+        public bool hasShoulders;
+        public Vector3 shoulderLeft;
+        public Vector3 shoulderRight;
+
         // 距離に使う位置(骨盤。無ければ頭)
         public bool hasPosition;
         public Vector3 position;
@@ -979,6 +1144,8 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
 
         // 対象物体ごとのコーン軸との角度(度)。コーンに入らなければ -1
         public float[] targetAngles;
+        // 対象物体ごとの、その角度の点までの距離(同じ角度のときに近い方を選ぶため)
+        public float[] targetDistances;
     }
 
     private class Unit
@@ -991,7 +1158,7 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
     private class Target
     {
         public string name;
-        public List<VertexCloud> clouds;
+        public List<HomeConeSurface> clouds;
         // 頂点を囲む箱(距離に使う)
         public Bounds bounds;
     }
@@ -1016,144 +1183,12 @@ public class HomeGazeExporter : MonoBehaviour, IHomeDataRootProvider
         public string noHitLabel;
         public string noDataLabel;
         public string distanceDefinition;
+        public string gazeHitTest;
         public List<string> persons = new List<string>();
         public List<float> personSeconds = new List<float>();
         public List<string> targets = new List<string>();
-    }
-
-    private struct Cone
-    {
-        public Vector3 origin;
-        public Vector3 direction;
-        public readonly float distance;
-        public readonly float angleRad;
-        public readonly float cosAngle;
-
-        public Cone(float angleDeg, float distance)
-        {
-            origin = Vector3.zero;
-            direction = Vector3.forward;
-            this.distance = distance;
-            angleRad = Mathf.Max(angleDeg, 0.0001f) * Mathf.Deg2Rad;
-            cosAngle = Mathf.Cos(angleRad);
-        }
-
-        public void Set(Vector3 origin, Vector3 direction)
-        {
-            this.origin = origin;
-            this.direction = direction;
-        }
-    }
-
-    // HomeGazeAnalyzer.VertexCloud と同じ。ワールド座標の頂点を格子に分け、コーンと交わらない格子をまとめて飛ばす
-    private class VertexCloud
-    {
-        private const float CellSize = 0.25f;
-
-        private class Cell
-        {
-            public Vector3 center;
-            public float radius;
-            public int[] indices;
-        }
-
-        public readonly Vector3[] positions;
-        private readonly List<Cell> cells = new List<Cell>();
-        private readonly Vector3 center;
-        private readonly float radius;
-
-        public VertexCloud(Transform transform, Vector3[] localVertices)
-        {
-            positions = new Vector3[localVertices.Length];
-            Dictionary<Vector3Int, List<int>> grid = new Dictionary<Vector3Int, List<int>>();
-
-            for (int i = 0; i < localVertices.Length; i++)
-            {
-                Vector3 position = transform.TransformPoint(localVertices[i]);
-                positions[i] = position;
-
-                Vector3Int key = Vector3Int.FloorToInt(position / CellSize);
-
-                if (!grid.TryGetValue(key, out List<int> indices))
-                {
-                    indices = new List<int>();
-                    grid[key] = indices;
-                }
-
-                indices.Add(i);
-            }
-
-            foreach (List<int> indices in grid.Values)
-            {
-                Bounds bounds = new Bounds(positions[indices[0]], Vector3.zero);
-
-                foreach (int i in indices)
-                    bounds.Encapsulate(positions[i]);
-
-                cells.Add(new Cell { center = bounds.center, radius = bounds.extents.magnitude, indices = indices.ToArray() });
-            }
-
-            Bounds all = new Bounds(positions.Length > 0 ? positions[0] : Vector3.zero, Vector3.zero);
-
-            foreach (Vector3 position in positions)
-                all.Encapsulate(position);
-
-            center = all.center;
-            radius = all.extents.magnitude;
-        }
-
-        // コーンに入った頂点があれば true。minAngleRad はコーン軸との最小角度
-        public bool MinConeAngle(Cone cone, out float minAngleRad)
-        {
-            minAngleRad = float.MaxValue;
-
-            if (!MayIntersect(center, radius, cone))
-                return false;
-
-            float bestDot = -2f;
-
-            foreach (Cell cell in cells)
-            {
-                if (!MayIntersect(cell.center, cell.radius, cone))
-                    continue;
-
-                foreach (int i in cell.indices)
-                {
-                    Vector3 toVertex = positions[i] - cone.origin;
-                    float distance = toVertex.magnitude;
-
-                    if (distance <= 0f || distance > cone.distance)
-                        continue;
-
-                    float dot = Vector3.Dot(cone.direction, toVertex / distance);
-
-                    if (dot >= cone.cosAngle && dot > bestDot)
-                        bestDot = dot;
-                }
-            }
-
-            if (bestDot < -1f)
-                return false;
-
-            minAngleRad = Mathf.Acos(Mathf.Clamp(bestDot, -1f, 1f));
-            return true;
-        }
-
-        private static bool MayIntersect(Vector3 sphereCenter, float sphereRadius, Cone cone)
-        {
-            Vector3 toCenter = sphereCenter - cone.origin;
-            float distance = toCenter.magnitude;
-
-            if (distance <= sphereRadius)
-                return true;
-
-            if (distance - sphereRadius > cone.distance)
-                return false;
-
-            float angle = Mathf.Acos(Mathf.Clamp(Vector3.Dot(cone.direction, toCenter / distance), -1f, 1f));
-            float spread = Mathf.Asin(Mathf.Clamp01(sphereRadius / distance));
-
-            return angle <= cone.angleRad + spread;
-        }
+        // 対象物体の頂点を囲む箱の中心と大きさ(targets と同じ順)
+        public List<Vector3> targetCenters = new List<Vector3>();
+        public List<Vector3> targetSizes = new List<Vector3>();
     }
 }

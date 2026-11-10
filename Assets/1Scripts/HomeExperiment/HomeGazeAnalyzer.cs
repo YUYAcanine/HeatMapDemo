@@ -9,7 +9,8 @@ using UnityEngine.UI;
 // シーン4(4GazeAnalyze)用。骨格データから視線コーンを求め、
 //   - 部屋メッシュのヒートマップ   → Skeleton/<実験対象者>/Analysis/HeatMap/heatmap_<骨格>.json
 //   - 対象物体ごとのスコア/注視対象 → Skeleton/<実験対象者>/Analysis/Score/score_<骨格>.json
-// を作る。視線コーンの判定は ConeHeatMapShow / ScoreHeat / ScoreHeatSummary と同じ。
+// を作る。ヒートの判定は ConeHeatMapShow / ScoreHeat / ScoreHeatSummary と同じ(コーンに入った頂点に足す)。
+// 対象物体を見ているか・注視対象・角度は表面(メッシュの三角形)で判定する(HomeConeSurface。軸が貫けば 0 度、0 度どうしなら近い方)。
 //
 // 骨格データは次のどれかを選ぶ(<骨格> の部分のファイル名になる):
 //   Filtered … シーン3で作った人物ごとの骨格 Filtered/grouped_<Mode>.json (人物 = シーン3のグループ)
@@ -899,6 +900,7 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
             AddMeshFilters(obj, meshFilters);
 
         List<VertexCloud> clouds = new List<VertexCloud>();
+        List<HomeConeSurface> surfaces = new List<HomeConeSurface>();
 
         foreach (MeshFilter meshFilter in meshFilters)
         {
@@ -908,7 +910,10 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
             Vector3[] vertices = meshFilter.sharedMesh.vertices;
 
             if (vertices.Length > 0)
+            {
                 clouds.Add(new VertexCloud(meshFilter.transform, vertices));
+                surfaces.Add(new HomeConeSurface(meshFilter.transform, vertices, meshFilter.sharedMesh.triangles));
+            }
         }
 
         if (clouds.Count == 0)
@@ -917,7 +922,7 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
             return;
         }
 
-        targets.Add(new ScoreTarget { name = targetName, clouds = clouds });
+        targets.Add(new ScoreTarget { name = targetName, clouds = clouds, surfaces = surfaces });
     }
 
     // Env から再生成した部屋オブジェクトと対象物体
@@ -1211,16 +1216,18 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
             heatClouds[m] = heatMeshes[m].cloud;
 
         List<VertexCloud>[] targetClouds = new List<VertexCloud>[targets.Count];
+        List<HomeConeSurface>[] targetSurfaces = new List<HomeConeSurface>[targets.Count];
         string[] targetNames = new string[targets.Count];
 
         for (int t = 0; t < targets.Count; t++)
         {
             targetClouds[t] = targets[t].clouds;
+            targetSurfaces[t] = targets[t].surfaces;
             targetNames[t] = targets[t].name;
         }
 
         System.Threading.Thread thread = new System.Threading.Thread(
-            () => BuildCache(generation, parameters, sampleList, heatClouds, targetClouds, targetNames))
+            () => BuildCache(generation, parameters, sampleList, heatClouds, targetClouds, targetSurfaces, targetNames))
         {
             IsBackground = true,
             Name = "HomeGazeAnalyzer_HeatCache",
@@ -1266,7 +1273,7 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
 
     // 別スレッド。全フレームの注視記録と、CacheChunkSize フレームごとの人物別ヒートの小計(当たった頂点だけ)を作る
     private void BuildCache(int generation, ConeParams parameters, List<Sample> sampleList, VertexCloud[] heatClouds,
-                            List<VertexCloud>[] targetClouds, string[] targetNames)
+                            List<VertexCloud>[] targetClouds, List<HomeConeSurface>[] targetSurfaces, string[] targetNames)
     {
         try
         {
@@ -1295,7 +1302,8 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
                 int end = Mathf.Min(start + CacheChunkSize, count);
 
                 for (int i = start; i < end; i++)
-                    ComputeSample(i, sampleList[i], ref cone, parameters, heatClouds, targetClouds, targetNames, scratch, result);
+                    ComputeSample(i, sampleList[i], ref cone, parameters, heatClouds, targetClouds, targetSurfaces, targetNames,
+                                  scratch, result);
 
                 HeatChunk chunk = new HeatChunk();
 
@@ -1322,7 +1330,7 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
 
     // 1フレーム分の注視記録を作り、人物ごとのヒートを scratch に足す(別スレッドから呼ぶ)
     private static void ComputeSample(int index, Sample sample, ref Cone cone, ConeParams parameters, VertexCloud[] heatClouds,
-                                      List<VertexCloud>[] targetClouds, string[] targetNames,
+                                      List<VertexCloud>[] targetClouds, List<HomeConeSurface>[] targetSurfaces, string[] targetNames,
                                       Dictionary<int, ScratchHeat> scratch, HeatCache result)
     {
         HomeGazeFrameRecord[] frameRecords = new HomeGazeFrameRecord[sample.persons.Count];
@@ -1364,33 +1372,47 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
                 AccumulateCone(heatClouds[m], cone, parameters, personScratch.values[m], 1f, personScratch.touched[m], false, out _, out _);
 
             float bestAngle = float.MaxValue;
+            float bestDistance = float.MaxValue;
             int bestIndex = -1;
 
             for (int t = 0; t < targetClouds.Length; t++)
             {
-                float heat = 0f;
-                float minAngle = float.MaxValue;
+                // 見ているかどうかと角度は表面(三角形)で判定する: コーン軸と表面との最小角度(軸が貫けば 0)
+                float minAngleDeg = float.MaxValue;
+                float minDistance = float.MaxValue;
 
-                foreach (VertexCloud cloud in targetClouds[t])
+                foreach (HomeConeSurface surface in targetSurfaces[t])
                 {
-                    if (AccumulateCone(cloud, cone, parameters, null, 1f, null, true, out float cloudHeat, out float cloudAngle))
+                    if (surface.MinConeAngle(cone.origin, cone.direction, cone.angleRad, cone.distance,
+                                             out float surfaceAngle, out float surfaceDistance) &&
+                        HomeConeSurface.IsBetter(surfaceAngle * Mathf.Rad2Deg, surfaceDistance, minAngleDeg, minDistance))
                     {
-                        heat += cloudHeat;
-                        minAngle = Mathf.Min(minAngle, cloudAngle);
+                        minAngleDeg = surfaceAngle * Mathf.Rad2Deg;
+                        minDistance = surfaceDistance;
                     }
                 }
 
-                if (minAngle == float.MaxValue)
+                if (minAngleDeg == float.MaxValue)
                     continue;
 
-                float minAngleDeg = minAngle * Mathf.Rad2Deg;
+                // スコアのヒートは今まで通り、コーンに入った頂点から足す(近くで見て頂点が入らないときは 0)
+                float heat = 0f;
+
+                foreach (VertexCloud cloud in targetClouds[t])
+                {
+                    if (AccumulateCone(cloud, cone, parameters, null, 1f, null, false, out float cloudHeat, out _))
+                        heat += cloudHeat;
+                }
+
                 record.heats[t] = heat;
                 record.angles[t] = minAngleDeg;
                 record.hitTargets.Add(targetNames[t]);
 
-                if (minAngleDeg < bestAngle)
+                // 同じ角度(視線が両方を貫いて 0 度など)なら近い方
+                if (HomeConeSurface.IsBetter(minAngleDeg, minDistance, bestAngle, bestDistance))
                 {
                     bestAngle = minAngleDeg;
+                    bestDistance = minDistance;
                     bestIndex = t;
                 }
             }
@@ -3036,7 +3058,10 @@ public class HomeGazeAnalyzer : MonoBehaviour, IHomeDataRootProvider
     private class ScoreTarget
     {
         public string name;
+        // ヒートの合計に使う頂点
         public List<VertexCloud> clouds;
+        // 注視の判定(見ているか・角度)に使う表面
+        public List<HomeConeSurface> surfaces;
         public float totalHeat;
         public int hitFrames;
         public float hitSeconds;

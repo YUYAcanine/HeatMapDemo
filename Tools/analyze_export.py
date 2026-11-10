@@ -23,7 +23,16 @@
   5 ライト         … light_log.json があれば、ライトごとに 点灯中 / 消灯中 の注視の割合と距離の平均
   6 2人のとき      … 同じ対象を同時に見ていた時間(gaze.csv)、相手を見ていた時間・お互いを見ていた時間(gaze_persons.csv)、
                      2人の距離
-  時系列の図       … 注視対象の帯と、対象物体までの距離の折れ線(マウスを乗せると時刻と値)
+  7 頭と肩の向き   … 頭が肩よりどれだけ物体の方を向いているか(|肩の正面から物体への水平の角度| − |頭の向きから物体への水平の角度|)。
+                     体は正面のまま頭だけを物体へ向けているほど大きい。物体ごとに、見ているとき / 見ていないとき / 到達の前の平均。
+                     7b で到達の前の時間変化(4b と同じ形。平均だけ)
+  8 頭の向きの変化 … 頭の向きが変わる速さ(度/秒)と、急に向きを変えたところ(--turn-speed 度/秒を超え、--turn-min-angle 度以上変わった)。
+                     向いた先の物体ごとの回数・その後1秒以内にその物体を見たか・到達の前にあったか。
+                     8b で到達の前の「頭を物体の方へ向ける速さ」の時間変化
+                     (7・8 の頭と肩の向きは --smooth 秒幅の中央値で飛び値を消してから平均でならす。肩の位置と対象物体の中心は
+                      シーン5の書き出しに入っている。古い書き出しには無いので、シーン5で書き出し直す)
+  時系列の図       … 注視対象の帯と、対象物体までの距離の折れ線(マウスを乗せると時刻と値)。
+                     頭の動きの図: 注視対象の帯・7 の値・頭の向きが変わる速さと急な変化
 
 書き出すもの(毎回上書き。Skeleton/<実験対象者>/Analysis/Export/<骨格>/report/):
   report.html           … 上の集計と図(ブラウザで開く)
@@ -31,7 +40,10 @@
   distance_summary.csv  … 2 の表(人物 × 対象)
   episodes.csv          … 注視の1回ごと(人物・対象・開始・終了)
   approaches.csv        … 接近の1回ごと(人物・対象・着いた時刻・接近の前に見ていた割合)
-  retrospective.csv     … 4b の値(人物・到達の番号・到達した物体・物体・到達した物体か・到達からの時刻・注視スコア)
+  retrospective.csv     … 4b・7b・8b の値(人物・metric(gazeScore / towardDeg / turnSpeedDegPerSec)・到達の番号・到達した物体・物体・
+                          到達した物体か・到達からの時刻・値)
+  head_motion.csv       … 7・8 のフレームごとの値(肩に対する頭の向き twistDeg・向きが変わる速さ・物体ごとの toward / angle / turn)
+  quick_turns.csv       … 8 の急な変化の1回ごと(開始・終了・変わった角度・最大の速さ・向いた先・その後1秒以内に見た物体)
 
 使い方:
   python Tools/analyze_export.py
@@ -41,14 +53,14 @@
       指定したものは選ばずにそのまま使う(--data-root は assets / D:\\HomeExperiment / 任意のフォルダ)
   --near 0.4 --leave 1.0 --before 5 … 接近の定義(m, m, 秒。--near はシーン6/7(0.6)より近くした。--leave / --before はシーン6/7と同じ)
   --merge-gap 0.3 --min-episode 0.5 … 注視の1回の定義(秒。旧シーン5と同じ既定値)
-  --retro-window 10 --retro-step 2  … 4b で到達の何秒前から見るか・何秒ごとに点を打つか
+  --retro-window 10 --retro-step 2  … 4b・7b・8b で到達の何秒前から見るか・何秒ごとに点を打つか
+  --smooth 0.3 --turn-speed 150 --turn-min-angle 30 --toward-high 30 … 7・8 の設定(秒, 度/秒, 度, 度)
 numpy が必要(Tools/Backnumber/GazePipeline の .venv にも入っている)。
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import html
 import json
 import sys
@@ -58,120 +70,21 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from toolbox import home_data_root  # noqa: E402  Tools/toolbox/home_data_root.py
+from toolbox.export_data import (  # noqa: E402  Tools/toolbox/export_data.py
+    NO_DATA, NO_HIT, Person, angle_between, approaches, body_forward, choose, episodes, find_sources, load_light_log,
+    signed_yaw, smooth_vectors, span_pairs, state_at, subdirs,
+)
+from toolbox.report_html import (  # noqa: E402  Tools/toolbox/report_html.py
+    GAZE_SCALE, SCRIPT, SERIES_DARK, SERIES_LIGHT, STYLE, hover_line, legend, nice_range, num, pct, retro_chart,
+    table_html, write_csv,
+)
 
-NO_HIT = "None"
-NO_DATA = "NoData"
 DISTANCE_BINS = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, float("inf")]
-# 映っていない時間がこれを超えたら、接近を数え直す(秒。シーン6と同じ)
-TRACK_GAP = 1.0
-
-# 対象の色(固定の順。対象物体 → 相手の人物 の順に割り当てる)
-SERIES_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
-SERIES_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
-
-
-# ------------------------------------------------------------
-# 読み込み
-# ------------------------------------------------------------
-def read_csv(path: Path) -> dict[str, np.ndarray]:
-    with path.open(encoding="utf-8-sig", newline="") as f:
-        rows = list(csv.reader(f))
-
-    header, body = rows[0], rows[1:]
-    columns = {}
-
-    for i, name in enumerate(header):
-        values = [row[i] if i < len(row) else "" for row in body]
-
-        try:
-            columns[name] = np.array([float(v) if v != "" else np.nan for v in values])
-        except ValueError:
-            columns[name] = np.array(values, dtype=object)
-
-    return columns
-
-
-class Person:
-    def __init__(self, folder: Path, name: str):
-        self.name = name
-        self.gaze = read_csv(folder / f"{name}_gaze.csv")
-        persons_path = folder / f"{name}_gaze_persons.csv"
-        self.gaze_persons = read_csv(persons_path) if persons_path.exists() else None
-        self.distance = read_csv(folder / f"{name}_distance.csv")
-        self.time = self.gaze["timeSec"]
-        self.dt = self.gaze["durationSec"]
-        self.present = self.gaze["present"] == 1
-        self.target = self.gaze["target"]
-
-
-def find_sources(export_dir: Path) -> list[str]:
-    return sorted(p.name for p in export_dir.iterdir() if p.is_dir() and any(p.glob("*_gaze.csv"))) if export_dir.is_dir() else []
-
-
-def choose(label: str, options: list[str], notes: dict[str, str] | None = None) -> str | None:
-    """一覧から番号で選ぶ(Tools/Backnumber の各スクリプトと同じ)。notes は名前の後ろに出す補足"""
-    if not options:
-        print(f"{label} がありません。")
-        return None
-
-    print()
-    for i, name in enumerate(options, 1):
-        print(f"  {i}. {name}{(notes or {}).get(name, '')}")
-
-    try:
-        answer = input(f"{label} の番号: ").strip()
-    except EOFError:
-        return None
-
-    if answer.isdigit() and 1 <= int(answer) <= len(options):
-        return options[int(answer) - 1]
-
-    print("番号が正しくありません。")
-    return None
-
-
-def subdirs(path: Path) -> list[str]:
-    return sorted(p.name for p in path.iterdir() if p.is_dir() and not p.name.endswith("~")) if path.exists() else []
-
-
-def load_light_log(path: Path) -> tuple[np.ndarray, dict[str, np.ndarray]] | None:
-    if not path.exists():
-        return None
-
-    frames = json.loads(path.read_text(encoding="utf-8")).get("frames", [])
-
-    if not frames:
-        return None
-
-    times = np.array([f["unityTime"] for f in frames])
-    lights = {k: np.array([bool(f[k]) for f in frames]) for k in frames[0] if k != "unityTime"}
-    return times, lights
-
-
-def state_at(log_times: np.ndarray, states: np.ndarray, times: np.ndarray) -> np.ndarray:
-    """各時刻の直前の記録の状態(記録より前は消灯とする)"""
-    index = np.searchsorted(log_times, times, side="right") - 1
-    return np.where(index >= 0, states[np.clip(index, 0, None)], False)
 
 
 # ------------------------------------------------------------
 # 集計
 # ------------------------------------------------------------
-def episodes(mask: np.ndarray, time: np.ndarray, dt: np.ndarray, merge_gap: float) -> list[tuple[float, float]]:
-    """mask が続いている区間 (開始, 終了)。merge_gap 秒以下の途切れはつなげる"""
-    result: list[list[float]] = []
-
-    for i in np.flatnonzero(mask):
-        start, end = time[i], time[i] + dt[i]
-
-        if result and start - result[-1][1] <= merge_gap:
-            result[-1][1] = max(result[-1][1], end)
-        else:
-            result.append([start, end])
-
-    return [(s, e) for s, e in result]
-
-
 def gaze_rows(person: Person, target_column: np.ndarray, names: list[str], args) -> tuple[list[dict], list[dict]]:
     present_seconds = person.dt[person.present].sum()
     rows, episode_rows = [], []
@@ -194,30 +107,6 @@ def gaze_rows(person: Person, target_column: np.ndarray, names: list[str], args)
                           "counted": int(e - s >= args.min_episode)} for s, e in eps]
 
     return rows, episode_rows
-
-
-def approaches(person: Person, distance: np.ndarray, args) -> list[float]:
-    """接近の時刻(--leave m より離れていたのを見た後に、--near m 以内に入った時刻)"""
-    result = []
-    armed = False
-    last_seen = -np.inf
-
-    for t, present, d in zip(person.time, person.present, distance):
-        if not present or np.isnan(d):
-            continue
-
-        if t - last_seen > TRACK_GAP:
-            armed = False
-
-        last_seen = t
-
-        if d > args.leave:
-            armed = True
-        elif d <= args.near and armed:
-            result.append(t)
-            armed = False
-
-    return result
 
 
 def distance_rows(person: Person, targets: list[str], args) -> tuple[list[dict], list[dict]]:
@@ -334,23 +223,144 @@ def pair_rows(a: Person, b: Person) -> list[list[str]]:
 
 
 # ------------------------------------------------------------
+# 頭の動き(7 頭と肩の向き / 8 頭の向きの変化)
+# ------------------------------------------------------------
+# 頭の向きが変わる速さを、何秒の間の向きの変化から求めるか(1フレームごとの差はキネクトの揺れで大きくなりすぎる)
+SPEED_SPAN = 0.3
+
+
+class HeadMotion:
+    """1人分の頭の動き。値は視線があるフレームだけ(それ以外は nan)
+
+    twist        … 肩の正面に対する頭の水平の向き(度。右が +)。肩の正面は左右の肩を結ぶ線に垂直な水平の向き
+    toward[物体] … 頭が肩よりどれだけ物体の方を向いているか(度)
+                   = |肩の正面から物体への水平の角度| - |頭の向きから物体への水平の角度|。
+                   体は正面のまま頭だけを物体へ向けると大きくなる(頭がちょうど物体を向けば、肩の正面から物体までの角度と同じ)。
+                   頭が物体と逆へ向くと -。物体が頭の真上・真下に近い(水平に 0.15 m 以内)ときは nan
+    angle[物体]  … 頭の向き(視線)と物体の中心への向きの3次元の角度(度)
+    speed        … 頭の向きが変わる速さ(度/秒。そのフレームの前後 SPEED_SPAN 秒の間に向きが変わった角度 / 時間)
+    turn[物体]   … 頭が物体の方へ向いていく速さ(度/秒。同じ間に angle が小さくなった量 / 時間。離れていくときは -)
+    """
+
+    def __init__(self, person: Person, targets: list[str], centers: dict[str, np.ndarray], args):
+        time = person.time
+        self.valid = person.present & (person.gaze["hasGaze"] == 1) & np.isfinite(person.direction).all(axis=1)
+        self.direction = smooth_vectors(time, person.direction, self.valid, args.smooth, args.max_gap)
+
+        # 肩の正面(左右の肩を結ぶ線に垂直な水平の向き)
+        forward = body_forward(person, self.direction, self.valid, args.smooth, args.max_gap)
+        head_flat = self.direction * np.array([1.0, 0.0, 1.0])
+        self.has_shoulders = bool(np.isfinite(forward).all(axis=1).any())
+        self.twist = signed_yaw(forward, head_flat)
+
+        self.toward, self.angle, self.turn = {}, {}, {}
+        self.has_centers = bool(centers)
+        # 速さは SPEED_SPAN 秒の間(そのフレームの前後)の向きの変化から求める
+        self.before, self.after, seconds = span_pairs(time, self.valid, args.max_gap, SPEED_SPAN)
+        span_ok = self.valid & np.isfinite(seconds)
+        span_sec = np.where(span_ok, seconds, 1.0)
+        self.speed = np.where(span_ok, angle_between(self.direction[self.before], self.direction[self.after]) / span_sec, np.nan)
+
+        for name in targets:
+            if name not in centers:
+                continue
+
+            to_target = centers[name][None, :] - person.origin
+            flat = to_target * np.array([1.0, 0.0, 1.0])
+            far_enough = np.linalg.norm(flat, axis=1) > 0.15
+            body_to = np.abs(signed_yaw(forward, flat))
+            head_to = np.abs(signed_yaw(head_flat, flat))
+            self.toward[name] = np.where(far_enough, body_to - head_to, np.nan)
+            self.angle[name] = angle_between(self.direction, to_target)
+            self.turn[name] = np.where(span_ok, (self.angle[name][self.before] - self.angle[name][self.after]) / span_sec, np.nan)
+
+
+def quick_turns(person: Person, motion: HeadMotion, targets: list[str], args) -> list[dict]:
+    """頭の向きが急に変わったところ(速さが --turn-speed 度/秒を超え、その間に --turn-min-angle 度以上向きが変わった)"""
+    fast = np.flatnonzero(np.nan_to_num(motion.speed) > args.turn_speed)
+    groups: list[list[int]] = []
+
+    for i in fast:
+        if groups and person.time[i] - person.time[groups[-1][-1]] <= 0.15:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+
+    events = []
+
+    for g in groups:
+        # 速さが閾値を超えた最初のフレームの少し前から、最後のフレームの少し後まで(速さを求めた範囲)
+        before, after = motion.before[g[0]], motion.after[g[-1]]
+        change = float(angle_between(motion.direction[[before]], motion.direction[[after]])[0])
+
+        if change < args.turn_min_angle:
+            continue
+
+        # 物体の方へ向いた量(向きが変わる前と後の angle の差)が最も大きい物体を「向いた先」にする
+        closer = {name: float(motion.angle[name][before] - motion.angle[name][after]) for name in motion.angle}
+        toward = max(closer, key=closer.get) if closer and max(closer.values()) >= args.turn_min_angle / 2 else NO_HIT
+        t_end = float(person.time[after])
+        later = person.present & (person.time > t_end) & (person.time <= t_end + 1.0) & np.isin(person.target, targets)
+        looked = [str(v) for v in person.target[later]]
+        events.append({
+            "person": person.name, "startSec": float(person.time[before]), "endSec": t_end,
+            "changeDeg": change, "peakSpeedDegPerSec": float(np.nanmax(motion.speed[g])),
+            "toward": toward, "towardCloserDeg": closer.get(toward, np.nan),
+            "lookedWithin1s": max(dict.fromkeys(looked), key=looked.count) if looked else NO_HIT,
+            "lookedTowardWithin1s": int(toward in looked),
+        })
+
+    return events
+
+
+def weighted_mean(values: np.ndarray, dt: np.ndarray, mask: np.ndarray) -> float:
+    use = mask & np.isfinite(values)
+    return float(np.sum(values[use] * dt[use]) / np.sum(dt[use])) if dt[use].sum() > 0 else np.nan
+
+
+def toward_table(person: Person, motion: HeadMotion, targets: list[str], arrivals: list[tuple[str, float]], args) -> list[list[str]]:
+    rows = []
+
+    for name in targets:
+        if name not in motion.toward:
+            continue
+
+        v = motion.toward[name]
+        looking = person.target == name
+        before = np.zeros(len(v), dtype=bool)
+
+        for arrived, t in arrivals:
+            if arrived == name:
+                before |= (person.time >= t - args.before) & (person.time < t)
+
+        valid = motion.valid & np.isfinite(v)
+        high = person.dt[valid & (v >= args.toward_high)].sum() / person.dt[valid].sum() if person.dt[valid].sum() > 0 else np.nan
+        rows.append([html.escape(name), num(weighted_mean(v, person.dt, valid & looking)), num(weighted_mean(v, person.dt, valid & ~looking)),
+                     pct(high), num(weighted_mean(v, person.dt, valid & before)), num(weighted_mean(v, person.dt, valid))])
+
+    return rows
+
+
+def turn_table(person: Person, events: list[dict], targets: list[str], arrivals: list[tuple[str, float]], args) -> list[list[str]]:
+    rows = []
+
+    for name in targets:
+        mine = [e for e in events if e["toward"] == name]
+        looked = sum(e["lookedTowardWithin1s"] for e in mine)
+        # その物体への到達のうち、到達の前 --before 秒にその物体の方への急な変化があった回数
+        times = [t for arrived, t in arrivals if arrived == name]
+        before = sum(1 for t in times if any(t - args.before <= e["endSec"] < t for e in mine))
+        rows.append([html.escape(name), len(mine), f"{looked}({pct(looked / len(mine)) if mine else '—'})",
+                     f"{before} / {len(times)} 回" if times else "—"])
+
+    rest = [e for e in events if e["toward"] == NO_HIT]
+    rows.append(["(どの物体の方でもない)", len(rest), "—", "—"])
+    return rows
+
+
+# ------------------------------------------------------------
 # HTML
 # ------------------------------------------------------------
-def pct(v: float) -> str:
-    return "—" if v is None or np.isnan(v) else f"{v:.0%}"
-
-
-def num(v: float, digits: int = 1) -> str:
-    return "—" if v is None or np.isnan(v) else f"{v:.{digits}f}"
-
-
-def table_html(header: list[str], rows: list[list[str]], first_is_label: bool = True) -> str:
-    head = "".join(f"<th>{h}</th>" for h in header)
-    body = "".join("<tr>" + "".join(f"<td>{c}</td>" if i or not first_is_label else f"<th scope='row'>{c}</th>"
-                                    for i, c in enumerate(row)) + "</tr>" for row in rows)
-    return f"<div class='table-wrap'><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>"
-
-
 def gaze_bars(rows: list[dict], color_of: dict[str, int]) -> str:
     """対象ごとの注視の割合の横棒(1本ずつ値のラベル付き)"""
     if not rows:
@@ -448,14 +458,98 @@ def timeline(person: Person, targets: list[str], others: list[str], color_of: di
             "time": [round(float(v), 3) for v in person.time[::step]],
             "target": [str(v) for v in target_col[::step]],
             "present": [bool(v) for v in person.present[::step]],
-            "dist": {k: [None if not np.isfinite(v) else round(float(v), 2) for v in d[::step]] for k, d in series.items()}}
+            "lines": [hover_line(k, d[::step], "m", 2) for k, d in series.items()]}
     parts.append(f"<script>timelineHover('{chart_id}', {json.dumps(data, ensure_ascii=False)});</script>")
     return "".join(parts)
 
 
-def legend(names: list[str], color_of: dict[str, int]) -> str:
-    return "<div class='legend'>" + "".join(
-        f"<span><i style='background:var(--series-{color_of[n] + 1})'></i>{html.escape(n)}</span>" for n in names) + "</div>"
+def motion_timeline(person: Person, motion: HeadMotion, events: list[dict], targets: list[str], color_of: dict[str, int],
+                    chart_id: str, args) -> str:
+    """見ていた対象の帯(上)・頭が肩より物体の方を向いている量(中)・頭の向きが変わる速さ(下)。同じ時間軸"""
+    t0, t1 = float(np.nanmin(person.time)), float(np.nanmax(person.time + person.dt))
+    width, left, right = 960, 60, 16
+    plot_w = width - left - right
+    band_h, gap, panel_h = 16, 30, 170
+    x = lambda t: left + (t - t0) / max(t1 - t0, 1e-6) * plot_w
+    top = 8
+    toward_top = top + len(targets) * band_h + gap
+    speed_top = toward_top + panel_h + gap
+    height = speed_top + panel_h + 34
+    step = max(1, len(person.time) // 1500)
+    parts = [f"<svg viewBox='0 0 {width} {height}' class='chart timeline' id='{chart_id}' role='img' "
+             f"aria-label='見ていた対象・頭が肩より物体の方を向いている量・頭の向きが変わる速さの時系列'>"]
+
+    for i, name in enumerate(targets):
+        y = top + i * band_h
+        parts.append(f"<text x='{left - 6}' y='{y + band_h * 0.72}' class='label' text-anchor='end'>{html.escape(name)}</text>")
+
+        for s, e in episodes(person.present & (person.target == name), person.time, person.dt, 0.0):
+            parts.append(f"<rect x='{x(s):.1f}' y='{y + 2}' width='{max(x(e) - x(s), 0.8):.1f}' height='{band_h - 4}' rx='2' "
+                         f"fill='var(--series-{color_of[name] + 1})'><title>{html.escape(name)} を見ていた {s:.1f}〜{e:.1f} 秒</title></rect>")
+
+    def panel(panel_top: float, lo: float, hi: float, tick_step: float, title: str):
+        y = lambda v: panel_top + (hi - np.clip(v, lo, hi)) / max(hi - lo, 1e-6) * panel_h
+
+        for tick in np.arange(lo, hi + 1e-6, tick_step):
+            cls = "axis" if tick == 0 else "grid"
+            parts.append(f"<line x1='{left}' x2='{width - right}' y1='{y(tick):.1f}' y2='{y(tick):.1f}' class='{cls}'/>")
+            parts.append(f"<text x='{left - 6}' y='{y(tick) + 4:.1f}' class='tick' text-anchor='end'>{tick:g}</text>")
+
+        parts.append(f"<text x='{left}' y='{panel_top - 8}' class='tick'>{title}</text>")
+        return y
+
+    def polyline(values: np.ndarray, y, color: str, stroke: float = 1.6):
+        segment = []
+
+        for i in list(range(0, len(person.time), step)) + [None]:
+            if i is not None and motion.valid[i] and np.isfinite(values[i]):
+                segment.append(f"{x(person.time[i]):.1f},{y(values[i]):.1f}")
+                continue
+
+            if len(segment) > 1:
+                parts.append(f"<polyline points='{' '.join(segment)}' fill='none' stroke='{color}' stroke-width='{stroke}' stroke-linejoin='round'/>")
+            segment = []
+
+    # 頭が肩より物体の方を向いている量
+    lines = [motion.toward[n] for n in targets if n in motion.toward]
+    lo, hi = nice_range(lines, 30, -30, 60, (-180, 180)) if lines else (-30.0, 60.0)
+    y_toward = panel(toward_top, lo, hi, 30, "頭が肩より物体の方を向いている量 (度)")
+
+    for name in targets:
+        if name in motion.toward:
+            polyline(motion.toward[name], y_toward, f"var(--series-{color_of[name] + 1})")
+
+    # 頭の向きが変わる速さ
+    s_hi = nice_range([motion.speed], 50, 0, args.turn_speed * 1.5, (0, 1000))[1]
+    y_speed = panel(speed_top, 0, s_hi, 50 if s_hi <= 300 else 100,
+                    f"頭の向きが変わる速さ (度/秒)。破線 = 急な変化の閾値 {args.turn_speed:g} 度/秒")
+    polyline(motion.speed, y_speed, "var(--text-2)", 1.2)
+    parts.append(f"<line x1='{left}' x2='{width - right}' y1='{y_speed(args.turn_speed):.1f}' y2='{y_speed(args.turn_speed):.1f}' "
+                 f"class='axis' stroke-dasharray='4 3'/>")
+
+    for e in events:
+        color = f"var(--series-{color_of[e['toward']] + 1})" if e["toward"] in color_of else "var(--muted)"
+        parts.append(f"<circle cx='{x(e['endSec']):.1f}' cy='{y_speed(e['peakSpeedDegPerSec']):.1f}' r='4.5' fill='{color}' "
+                     f"stroke='var(--surface)' stroke-width='1.5'><title>{e['endSec']:.1f} 秒: {e['changeDeg']:.0f} 度向きが変わった"
+                     f"(最大 {e['peakSpeedDegPerSec']:.0f} 度/秒)。向いた先: {html.escape(e['toward'])}</title></circle>")
+
+    for tick in np.linspace(t0, t1, 7):
+        parts.append(f"<text x='{x(tick):.1f}' y='{speed_top + panel_h + 18}' class='tick' text-anchor='middle'>{tick:.0f}</text>")
+
+    parts.append(f"<text x='{width - right}' y='{speed_top + panel_h + 32}' class='tick' text-anchor='end'>時刻 (秒)</text>")
+    parts.append(f"<line class='cross' x1='0' x2='0' y1='{top}' y2='{speed_top + panel_h}' visibility='hidden'/>")
+    parts.append(f"<rect class='hit' x='{left}' y='{top}' width='{plot_w}' height='{speed_top + panel_h - top}' fill='transparent'/></svg>")
+    parts.append(f"<div class='tooltip' id='{chart_id}-tip' hidden></div>")
+
+    hover = [hover_line(f"{n} の方へ", motion.toward[n][::step], "度", 0) for n in targets if n in motion.toward]
+    hover.append(hover_line("肩に対する頭の向き(右が +)", motion.twist[::step], "度", 0))
+    hover.append(hover_line("向きが変わる速さ", motion.speed[::step], "度/秒", 0))
+    data = {"t0": t0, "t1": t1, "left": left, "plotW": plot_w, "width": width,
+            "time": [round(float(v), 3) for v in person.time[::step]],
+            "target": [str(v) for v in person.target[::step]],
+            "present": [bool(v) for v in person.present[::step]], "lines": hover}
+    parts.append(f"<script>timelineHover('{chart_id}', {json.dumps(data, ensure_ascii=False)});</script>")
+    return "".join(parts)
 
 
 def retro_points(args) -> np.ndarray:
@@ -463,8 +557,9 @@ def retro_points(args) -> np.ndarray:
     return np.round(np.arange(-args.retro_window, 1e-6, args.retro_step), 6)
 
 
-def retro_curves(person: Person, targets: list[str], arrivals: list[tuple[str, float]], args) -> list[dict]:
-    """到達ごとに、物体ごとの注視スコア(各時刻までの retro_step 秒間に、その物体を見ていた割合)"""
+def retro_curves(person: Person, targets: list[str], arrivals: list[tuple[str, float]], args, metric) -> list[dict]:
+    """到達ごとに、物体ごとの値(各時刻までの retro_step 秒間の値)。
+    metric(物体, その時間の映っていたフレーム) が値を返す(4b は注視スコア = その物体を見ていた割合)"""
     points = retro_points(args)
     curves = []
 
@@ -472,13 +567,11 @@ def retro_curves(person: Person, targets: list[str], arrivals: list[tuple[str, f
         values = {}
 
         for name in targets:
-            looking = person.target == name
             row = []
 
             for r in points:
                 window = person.present & (person.time > t + r - args.retro_step) & (person.time <= t + r)
-                seen = person.dt[window].sum()
-                row.append(person.dt[window & looking].sum() / seen if seen > 0 else np.nan)
+                row.append(metric(name, window) if person.dt[window].sum() > 0 else np.nan)
 
             values[name] = row
 
@@ -487,79 +580,34 @@ def retro_curves(person: Person, targets: list[str], arrivals: list[tuple[str, f
     return curves
 
 
-def retro_chart(points: np.ndarray, series: list[dict], aria: str) -> str:
-    """到達からさかのぼった注視スコアの折れ線(y は 0〜1 で固定)。
-    series: name / values / color(CSS の色)/ emphasized(太線・大きい点)/ dashed / label(線の右端に出す名前)"""
-    width, height = 470, 230
-    left, right, top, bottom = 40, 118, 14, 32
-    plot_w, plot_h = width - left - right, height - top - bottom
-    x0, x1 = float(points[0]), float(points[-1])
-    x = lambda r: left + (r - x0) / max(x1 - x0, 1e-6) * plot_w
-    y = lambda v: top + (1 - v) * plot_h
-    parts = [f"<svg viewBox='0 0 {width} {height}' class='chart retro' role='img' aria-label='{html.escape(aria)}'>"]
+def gaze_score(person: Person):
+    def metric(name: str, window: np.ndarray) -> float:
+        return person.dt[window & (person.target == name)].sum() / person.dt[window].sum()
 
-    for v in (0, 0.5, 1):
-        parts.append(f"<line x1='{left}' x2='{left + plot_w}' y1='{y(v):.1f}' y2='{y(v):.1f}' class='grid'/>")
-        parts.append(f"<text x='{left - 6}' y='{y(v) + 4:.1f}' class='tick' text-anchor='end'>{v:g}</text>")
-
-    for r in points:
-        parts.append(f"<text x='{x(r):.1f}' y='{top + plot_h + 18}' class='tick' text-anchor='middle'>{'到達' if r == 0 else f'{r:g}s'}</text>")
-
-    parts.append(f"<line x1='{x(0):.1f}' x2='{x(0):.1f}' y1='{top}' y2='{top + plot_h}' class='axis' stroke-dasharray='3 3'/>")
-
-    # 強調する線を最後に描いて前に出す
-    labels = []
-
-    for s in sorted(series, key=lambda s: s.get("emphasized", False)):
-        values = s["values"]
-        width_px = 3 if s.get("emphasized") else 1.5
-        dash = " stroke-dasharray='5 4'" if s.get("dashed") else ""
-        segment = []
-
-        for r, v in list(zip(points, values)) + [(None, np.nan)]:
-            if r is not None and np.isfinite(v):
-                segment.append(f"{x(r):.1f},{y(v):.1f}")
-                continue
-
-            if len(segment) > 1:
-                parts.append(f"<polyline points='{' '.join(segment)}' fill='none' stroke='{s['color']}' stroke-width='{width_px}' "
-                             f"stroke-linejoin='round' stroke-linecap='round'{dash}/>")
-            segment = []
-
-        for r, v in zip(points, values):
-            if np.isfinite(v):
-                radius = 4.5 if s.get("emphasized") else 3.5
-                parts.append(f"<circle cx='{x(r):.1f}' cy='{y(v):.1f}' r='{radius}' fill='{s['color']}' stroke='var(--surface)' stroke-width='2'>"
-                             f"<title>{html.escape(s['name'])} {'到達' if r == 0 else f'{r:g} 秒'}: {v:.2f}</title></circle>")
-
-        last = next((v for v in reversed(values) if np.isfinite(v)), None)
-
-        if last is not None:
-            labels.append([y(last), s.get("label", s["name"]), s.get("emphasized", False)])
-
-    # 線の右端の名前(重ならないように 13px 以上離す)
-    labels.sort(key=lambda item: item[0])
-
-    for i in range(1, len(labels)):
-        labels[i][0] = max(labels[i][0], labels[i - 1][0] + 13)
-
-    # 下にはみ出したら、グラフの下端から上へ詰め直す(目盛りの「到達」と重ならないように)
-    for i in range(len(labels) - 1, -1, -1):
-        limit = top + plot_h - 4 if i == len(labels) - 1 else labels[i + 1][0] - 13
-        labels[i][0] = min(labels[i][0], limit)
-
-    for label_y, text, emphasized in labels:
-        weight = " font-weight='600'" if emphasized else ""
-        parts.append(f"<text x='{left + plot_w + 8}' y='{label_y + 4:.1f}' class='label'{weight}>{html.escape(text)}</text>")
-
-    parts.append("</svg>")
-    return "".join(parts)
+    return metric
 
 
-def retro_section(curves: list[dict], targets: list[str], color_of: dict[str, int], args) -> str:
+def retro_scale(curves: list[dict], step: float, low: float, high: float, clip: tuple[float, float], digits: int, unit: str) -> dict:
+    """平均のグラフだけを出すとき(7b・8b)の縦軸。到達した物体ごとの平均の線が入る範囲にする"""
+    values = []
+
+    with np.errstate(all="ignore"):
+        for arrived in {c["target"] for c in curves}:
+            group = [c for c in curves if c["target"] == arrived]
+            values += [np.nanmean(np.array([c["values"][n] for c in group], dtype=float), axis=0) for n in group[0]["values"]]
+
+    lo, hi = nice_range(values, step, low, high, clip) if values else (low, high)
+    ticks = tuple(sorted({lo, hi} | ({0.0} if lo < 0 < hi else set())))
+    return {"range": (lo, hi), "ticks": ticks, "digits": digits, "unit": unit}
+
+
+def retro_section(curves: list[dict], targets: list[str], color_of: dict[str, int], args, title: str = "4b 到達前の注視の時間変化",
+                  note: str = "", value_name: str = "注視スコア", scale: dict = GAZE_SCALE, per_event: bool = True) -> str:
+    """到達からさかのぼった値: 全部の到達の平均と、到達した物体ごとの平均(per_event なら1回ごとのグラフも)"""
     points = retro_points(args)
-    s = [f"<h3>4b 到達前の注視の時間変化</h3>"
-         f"<p class='note'>注視スコア = その時刻までの {args.retro_step:g} 秒間に、その物体を見ていた割合(0〜1)。"
+    note = note or (f"注視スコア = その時刻までの {args.retro_step:g} 秒間に、その物体を見ていた割合(0〜1)。")
+    s = [f"<h3>{html.escape(title)}</h3>"
+         f"<p class='note'>{note}"
          f"到達 = 4 の接近({args.leave:g} m より離れていた後に {args.near:g} m 以内に入った時刻)。映っていない区間は点を打たない。</p>"]
 
     if not curves:
@@ -579,7 +627,7 @@ def retro_section(curves: list[dict], targets: list[str], color_of: dict[str, in
     s.append("<div class='card'>" + retro_chart(points, [
         {"name": "到達した物体", "values": mean_arrived, "color": "var(--text)", "emphasized": True, "label": "到達した物体"},
         {"name": "到達しなかった物体", "values": mean_others, "color": "var(--muted)", "dashed": True, "label": "到達しなかった物体"},
-    ], "全部の到達の平均の注視スコア") + "</div>")
+    ], f"全部の到達の平均の{value_name}", scale) + "</div>")
 
     # 到達した物体ごとに、その物体に到達した回の平均と、1回ごとのグラフを並べる
     s.append(legend(targets, color_of))
@@ -602,85 +650,16 @@ def retro_section(curves: list[dict], targets: list[str], color_of: dict[str, in
 
         s.append("<div class='multiples'>")
         s.append(f"<div class='card mean'><div class='card-title'>平均({len(group)} 回)</div>"
-                 + retro_chart(points, series_for(mean_values, name), f"{name} に到達した回の平均の注視スコア") + "</div>")
+                 + retro_chart(points, series_for(mean_values, name), f"{name} に到達した回の平均の{value_name}", scale) + "</div>")
 
-        for c in group:
+        for c in group if per_event else []:
             s.append(f"<div class='card'><div class='card-title'>{c['index']}回目({c['arriveSec']:.1f} 秒に到達)</div>"
-                     + retro_chart(points, series_for(c["values"], name), f"{name} に到達した {c['index']} 回目の注視スコア") + "</div>")
+                     + retro_chart(points, series_for(c["values"], name), f"{name} に到達した {c['index']} 回目の{value_name}", scale) + "</div>")
 
         s.append("</div>")
-    rows = [[f"{r:g}" if r else "到達", num(a, 2), num(o, 2)] for r, a, o in zip(points, mean_arrived, mean_others)]
+    rows = [[f"{r:g}" if r else "到達", num(a, scale["digits"]), num(o, scale["digits"])] for r, a, o in zip(points, mean_arrived, mean_others)]
     s.append(table_html(["到達からの時刻 (秒)", "到達した物体", "到達しなかった物体(平均)"], rows))
     return "".join(s)
-
-
-STYLE = """
-:root { color-scheme: light;
-  --surface: #fcfcfb; --page: #f9f9f7; --text: #0b0b0b; --text-2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); %LIGHT% }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark;
-  --surface: #1a1a19; --page: #0d0d0d; --text: #f0efec; --text-2: #c3c2b7; --muted: #898781;
-  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); %DARK% } }
-:root[data-theme="dark"] { color-scheme: dark;
-  --surface: #1a1a19; --page: #0d0d0d; --text: #f0efec; --text-2: #c3c2b7; --muted: #898781;
-  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); %DARK% }
-body { margin: 0; background: var(--page); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; }
-main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
-h1 { font-size: 1.4rem; margin: 0 0 4px; } h2 { font-size: 1.15rem; margin: 40px 0 8px; border-top: 1px solid var(--grid); padding-top: 24px; }
-h3 { font-size: 1rem; margin: 24px 0 6px; } p.note, .meta { color: var(--text-2); font-size: 0.9rem; margin: 4px 0 10px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 8px 0; position: relative; }
-.table-wrap { overflow-x: auto; } table { border-collapse: collapse; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
-th, td { padding: 4px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-thead th { color: var(--text-2); font-weight: 600; } tbody th { text-align: left; font-weight: 500; }
-.chart { width: 100%; height: auto; display: block; } .chart text { font-size: 12px; }
-.label { fill: var(--text); } .value { fill: var(--text-2); } .tick { fill: var(--muted); }
-.grid { stroke: var(--grid); stroke-width: 1; } .axis { stroke: var(--axis); stroke-width: 1; } .cross { stroke: var(--text-2); stroke-width: 1; }
-h4 { font-size: 0.92rem; margin: 16px 0 4px; color: var(--text-2); }
-.chart.retro { max-width: 520px; }
-.multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 10px; }
-.multiples .card { margin: 0; } .card-title { font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
-.multiples .card.mean { border-color: var(--axis); border-width: 2px; }
-.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.85rem; color: var(--text-2); margin: 4px 0 6px; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-.tooltip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-  padding: 6px 8px; font-size: 0.82rem; box-shadow: 0 2px 8px rgba(0,0,0,0.12); white-space: nowrap; }
-"""
-
-SCRIPT = """
-function timelineHover(id, d) {
-  const svg = document.getElementById(id), tip = document.getElementById(id + '-tip');
-  const cross = svg.querySelector('.cross'), hit = svg.querySelector('.hit');
-  const show = (ev) => {
-    const box = svg.getBoundingClientRect(), sx = (ev.clientX - box.left) / box.width * d.width;
-    const t = d.t0 + (sx - d.left) / d.plotW * (d.t1 - d.t0);
-    let i = 0, lo = 0, hi = d.time.length - 1;
-    while (lo <= hi) { const m = (lo + hi) >> 1; if (d.time[m] <= t) { i = m; lo = m + 1; } else hi = m - 1; }
-    cross.setAttribute('x1', sx); cross.setAttribute('x2', sx); cross.setAttribute('visibility', 'visible');
-    let text = `<b>${d.time[i].toFixed(1)} 秒</b><br>注視: ${d.present[i] ? d.target[i] : '映っていない'}`;
-    for (const k in d.dist) text += `<br>${k}: ${d.dist[k][i] == null ? '—' : d.dist[k][i].toFixed(2) + ' m'}`;
-    tip.innerHTML = text; tip.hidden = false;
-    const card = svg.parentElement.getBoundingClientRect();
-    let left = ev.clientX - card.left + 14; if (left + tip.offsetWidth > card.width) left = ev.clientX - card.left - tip.offsetWidth - 14;
-    tip.style.left = left + 'px'; tip.style.top = (ev.clientY - card.top + 10) + 'px';
-  };
-  hit.addEventListener('mousemove', show);
-  hit.addEventListener('mouseleave', () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); });
-}
-"""
-
-
-def write_csv(path: Path, rows: list[dict]) -> None:
-    with path.open("w", encoding="utf-8-sig", newline="") as f:
-        if not rows:
-            f.write("")
-            return
-
-        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
-        writer.writeheader()
-
-        for row in rows:
-            writer.writerow({k: (f"{v:.4f}" if isinstance(v, float) and np.isfinite(v) else ("" if isinstance(v, float) else v))
-                             for k, v in row.items()})
 
 
 # ------------------------------------------------------------
@@ -698,6 +677,11 @@ def main() -> None:
     parser.add_argument("--min-episode", type=float, default=0.5, help="これ以上続いた注視を回数に数える (秒)")
     parser.add_argument("--retro-window", type=float, default=10.0, help="4b で到達の何秒前から見るか")
     parser.add_argument("--retro-step", type=float, default=2.0, help="4b で何秒ごとに点を打つか(各点はその時刻までのこの秒数の割合)")
+    parser.add_argument("--smooth", type=float, default=0.3, help="7・8 で頭と肩の向きを滑らかにする幅 (秒。中央値で飛び値を消してから平均)")
+    parser.add_argument("--max-gap", type=float, default=0.25, help="7・8 でこれより長い途切れはまたがない (秒)")
+    parser.add_argument("--toward-high", type=float, default=30.0, help="7 で「頭が物体の方を大きく向いている」とする角度 (度)")
+    parser.add_argument("--turn-speed", type=float, default=150.0, help="8 で急な変化とする頭の向きの速さ (度/秒)")
+    parser.add_argument("--turn-min-angle", type=float, default=30.0, help="8 で急な変化とする、向きが変わった角度の下限 (度)")
     home_data_root.add_argument(parser)
     args = parser.parse_args()
 
@@ -741,7 +725,9 @@ def main() -> None:
     light_log = load_light_log(subject_dir / "light_log.json")
     has_lights = light_log is not None and any(t.lower() in {k.lower() for k in light_log[1]} for t in targets)
 
-    all_gaze, all_dist, all_episodes, all_approaches, all_retro = [], [], [], [], []
+    centers = {name: np.array([c["x"], c["y"], c["z"]], dtype=float)
+               for name, c in zip(params.get("targets", []), params.get("targetCenters", []))}
+    all_gaze, all_dist, all_episodes, all_approaches, all_retro, all_motion, all_turns = [], [], [], [], [], [], []
     sections = []
 
     for p in persons:
@@ -803,17 +789,81 @@ def main() -> None:
             s.append("<p class='note'>接近がありませんでした。</p>")
 
         arrivals = sorted(((r["target"], r["arriveSec"]) for r in a_rows), key=lambda item: item[1])
-        curves = retro_curves(p, targets, arrivals, args)
+        curves = retro_curves(p, targets, arrivals, args, gaze_score(p))
         s.append(retro_section(curves, targets, color_of, args))
-        all_retro += [{"person": p.name, "event": c["index"], "arrivedTarget": c["target"], "arriveSec": c["arriveSec"],
-                       "target": name, "arrived": int(name == c["target"]), "relTimeSec": float(r), "score": v}
-                      for c in curves for name in targets for r, v in zip(retro_points(args), c["values"][name])]
+        retro_sets = [("gazeScore", curves)]
 
         if has_lights:
             s.append("<h3>5 ライトの点灯と比べる</h3>")
             s.append(table_html(["対象", "点灯 (秒)", "点灯中に見ていた割合", "点灯中の距離 (m)", "消灯 (秒)", "消灯中に見ていた割合", "消灯中の距離 (m)"],
                                 light_table(p, targets, light_log)))
             s.append("<p class='note'>light_log.json の unityTime を骨格の時刻と同じ時計として、その時刻の直前の記録の点灯状態を使う。</p>")
+
+        # 7・8 頭の動き
+        motion = HeadMotion(p, targets, centers, args)
+        events = quick_turns(p, motion, targets, args)
+        all_turns += events
+        missing = []
+
+        if not motion.has_centers:
+            missing.append("対象物体の中心(export_params.json の targetCenters)")
+        if not p.has_shoulder_columns:
+            missing.append("肩の位置(gaze.csv の shoulderLeft/Right)")
+
+        s.append("<h3>頭の動きの時系列</h3>")
+        if missing:
+            s.append(f"<p class='note'>書き出しに {' と '.join(missing)} がありません。シーン5で書き出し直すと、7 と 8 の物体ごとの値が出ます。</p>")
+        s.append("<p class='note'>上: 見ていた対象。中: 頭が肩より物体の方を向いている量(7)。下: 頭の向きが変わる速さと、急に変わったところ(8。点の色は向いた先の物体、灰色はどの物体の方でもない)。"
+                 f"頭の向きと肩の向きは、{args.smooth:g} 秒幅の中央値で飛び値を消してから同じ幅の平均で滑らかにしてある"
+                 f"(キネクトの頭→鼻の向きは1フレームごとに大きく揺れるため)。向きが変わる速さは {SPEED_SPAN:g} 秒の間の変化から求める。</p>")
+        s.append(legend(targets, color_of))
+        s.append(f"<div class='card'>{motion_timeline(p, motion, events, targets, color_of, 'mt-' + str(len(sections)), args)}</div>")
+
+        s.append("<h3>7 頭と肩の向き(体は正面のまま、頭だけ物体の方へ向けているか)</h3>")
+        if motion.has_shoulders and motion.toward:
+            s.append(table_html(["物体", "その物体を見ているとき (度)", "見ていないとき (度)", f"{args.toward_high:g} 度以上の時間",
+                                 f"到達の {args.before:g} 秒前 (度)", "全体 (度)"], toward_table(p, motion, targets, arrivals, args)))
+            s.append("<p class='note'>値 = |肩の正面から物体への水平の角度| − |頭の向きから物体への水平の角度|(時間で重み付けした平均)。"
+                     "体を物体へ向けず、頭だけを物体の方へ回しているほど大きい。頭がちょうど物体を向くと「肩の正面から物体への角度」と同じになり、逆を向くと −。"
+                     f"肩の正面 = 左右の肩を結ぶ線に垂直な水平の向き。肩に対する頭の向き(右が +)の絶対値の平均は {num(weighted_mean(np.abs(motion.twist), p.dt, motion.valid))} 度。</p>")
+            toward_curves = retro_curves(p, targets, arrivals, args,
+                                         lambda name, w: weighted_mean(motion.toward[name], p.dt, w & motion.valid))
+            s.append(retro_section(toward_curves, targets, color_of, args, "7b 到達前の、頭が物体の方を向いている量",
+                                   f"値 = その時刻までの {args.retro_step:g} 秒間の、7 の値の平均(度)。",
+                                   "頭が物体の方を向いている量", retro_scale(toward_curves, 15, -15, 30, (-180, 180), 0, " 度"), per_event=False))
+            retro_sets.append(("towardDeg", toward_curves))
+        else:
+            s.append("<p class='note'>肩の位置か対象物体の中心が無いので出せません(画像で推定した骨格には肩がありません)。</p>")
+
+        s.append("<h3>8 頭の向きの変化(急に向きを変えたところ)</h3>")
+        minutes = p.dt[motion.valid].sum() / 60
+        s.append(f"<p class='meta'>急な変化 {len(events)} 回(視線があった {minutes:.1f} 分あたり {len(events) / minutes if minutes else 0:.1f} 回)/ "
+                 f"頭の向きが変わる速さの中央値 {num(np.nanmedian(motion.speed) if np.isfinite(motion.speed).any() else np.nan, 0)} 度/秒</p>")
+        if motion.angle:
+            s.append(table_html(["向いた先の物体", "急な変化 (回)", "1秒以内にその物体を見た", f"到達の {args.before:g} 秒前にその物体の方への急な変化があった到達"],
+                                turn_table(p, events, targets, arrivals, args)))
+        s.append(f"<p class='note'>急な変化 = 頭の向きが変わる速さが {args.turn_speed:g} 度/秒を超え、その間に {args.turn_min_angle:g} 度以上向きが変わったところ"
+                 f"(速さは {SPEED_SPAN:g} 秒の間の変化から求める。0.15 秒以内の途切れはつなげる)。向いた先 = 変わる前と後で、視線と物体の中心との角度が最も小さくなった物体"
+                 f"({args.turn_min_angle / 2:g} 度以上近づいたときだけ)。</p>")
+        if motion.angle:
+            turn_curves = retro_curves(p, targets, arrivals, args,
+                                       lambda name, w: weighted_mean(np.clip(motion.turn[name], 0, None), p.dt, w & motion.valid))
+            s.append(retro_section(turn_curves, targets, color_of, args, "8b 到達前の、頭を物体の方へ向ける速さ",
+                                   f"値 = その時刻までの {args.retro_step:g} 秒間の、視線が物体の中心へ近づいていく速さ(度/秒。離れていくときは 0 として平均)。",
+                                   "頭を物体の方へ向ける速さ", retro_scale(turn_curves, 10, 0, 20, (0, 1000), 1, " 度/秒"), per_event=False))
+            retro_sets.append(("turnSpeedDegPerSec", turn_curves))
+
+        all_retro += [{"person": p.name, "metric": metric, "event": c["index"], "arrivedTarget": c["target"], "arriveSec": c["arriveSec"],
+                       "target": name, "arrived": int(name == c["target"]), "relTimeSec": float(r), "value": v}
+                      for metric, cs in retro_sets for c in cs for name in targets for r, v in zip(retro_points(args), c["values"][name])]
+
+        for i in np.flatnonzero(motion.valid):
+            row = {"person": p.name, "timeSec": float(p.time[i]), "target": str(p.target[i]),
+                   "twistDeg": float(motion.twist[i]), "headSpeedDegPerSec": float(motion.speed[i])}
+            for name in targets:
+                for key, values in (("toward", motion.toward), ("angle", motion.angle), ("turn", motion.turn)):
+                    row[f"{key}_{name}"] = float(values[name][i]) if name in values else np.nan
+            all_motion.append(row)
 
         sections.append("".join(s))
 
@@ -846,6 +896,8 @@ def main() -> None:
     write_csv(out_dir / "episodes.csv", all_episodes)
     write_csv(out_dir / "approaches.csv", all_approaches)
     write_csv(out_dir / "retrospective.csv", all_retro)
+    write_csv(out_dir / "head_motion.csv", all_motion)
+    write_csv(out_dir / "quick_turns.csv", all_turns)
 
     print("\n注視の集計(対象物体だけ):")
     for r in all_gaze:
