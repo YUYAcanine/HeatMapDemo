@@ -21,7 +21,7 @@
                   その人だけで学習(個人化)/ 他の人で学習(汎用)/ 両方 で AUC を比べる。
                   学習したモデルを models/*.json に書き出す(toolbox/arrival_model.py の OnlineArrivalPredictor で使える)
 
-書き出すもの(毎回上書き。<データの場所>/ArrivalAnalysis/。--out で別のフォルダ名にできる):
+書き出すもの(毎回上書き。<データの場所>Reports/ArrivalAnalysis/。--out で別のフォルダ名にできる):
   report.html                 … 上の結果(ブラウザで開く)
   arrival_features.csv        … 到達ごと・物体ごとの特徴量
   patterns.csv                … 到達ごと・物体ごとの視線パターン
@@ -61,7 +61,9 @@ from toolbox.arrival_model import (  # noqa: E402  Tools/toolbox/arrival_model.p
     fit_conditional_logit, fit_logistic, logistic_proba, matrix, object_radius, save_model, softmax_scores,
     stream_from_export,
 )
-from toolbox.export_data import Person, find_sources, load_light_log, state_at, subdirs  # noqa: E402
+from toolbox.export_data import (  # noqa: E402
+    Person, box_distance, find_sources, load_env_objects, load_light_log, state_at, subdirs,
+)
 from toolbox.report_html import (  # noqa: E402  Tools/toolbox/report_html.py
     SCRIPT, SERIES_DARK, SERIES_LIGHT, STYLE, legend, num, pct, retro_chart, table_html, write_csv,
 )
@@ -75,7 +77,7 @@ PATTERNS = [("Sustained", "持続", "高い状態が 3 秒以上続いた"),
             ("Late", "直前", "高い状態が 1 回で、窓の後半"),
             ("Low", "低い", "高い状態が無い")]
 # --arrival destination / touch のときに Config に渡す設定
-EXTRA_CONFIG = ("arrival", "dwell", "face", "look", "touch_margin")
+EXTRA_CONFIG = ("arrival", "dwell", "face", "look", "touch_margin", "touch_min", "touch_gap")
 MODEL_COLORS = {"A": "var(--muted)", "B": "var(--series-1)", "C": "var(--series-2)", "D": "var(--series-3)"}
 
 
@@ -126,7 +128,16 @@ def load_streams(root: Path, exports: list[tuple[str, str, str]], cfg: Config, o
         centers = {n: np.array([c["x"], c["y"], c["z"]]) for n, c in zip(targets, params.get("targetCenters", []))}
         sizes = dict(zip(targets, params.get("targetSizes", [])))
 
-        if len(centers) != len(targets) or len(sizes) != len(targets):
+        # シーン0で物体を変えた後、シーン5で書き出し直していない(Env の物体と書き出しの物体が違う)ときは、
+        # Env の物体を使い、距離はここで計算する(シーン5の distance.csv と同じ計算)
+        env = load_env_objects(root / experiment)
+        use_env = env is not None and env[0] and env[0] != targets
+
+        if use_env:
+            print(f"  {experiment}/{subject}: シーン5の書き出しの物体({', '.join(targets) or 'なし'})が Env の物体と違うので、"
+                  f"Env の物体({', '.join(env[0])})を使い、距離を計算し直す")
+            targets, centers, sizes = env
+        elif len(centers) != len(targets) or len(sizes) != len(targets):
             print(f"  {experiment}/{subject}: export_params.json に物体の中心と大きさがありません。シーン5で書き出し直してください。")
             continue
 
@@ -137,6 +148,10 @@ def load_streams(root: Path, exports: list[tuple[str, str, str]], cfg: Config, o
                 continue
 
             person = Person(folder, name)
+
+            if use_env:
+                for n in targets:
+                    person.distance[f"dist_{n}"] = box_distance(person, centers[n], sizes[n])
 
             if not person.has_shoulder_columns:
                 print(f"  {experiment}/{subject}/{name}: 肩の位置がありません。シーン5で書き出し直してください。")
@@ -752,12 +767,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="到達した物体と他の物体を、到達前の視線履歴で区別できるかを調べ、リアルタイムの予測モデルを作る")
     parser.add_argument("--exports", nargs="+", metavar="実験/実験対象者[/骨格]", help="使う書き出し(省略すると一覧から選ぶ)")
     parser.add_argument("--persons", nargs="+", help="この名前の人物だけ使う(例: child)")
-    parser.add_argument("--out", default="ArrivalAnalysis", help="書き出すフォルダの名前(<データの場所>/<ここ>。例: ArrivalAnalysis_sora)")
+    parser.add_argument("--out", default="ArrivalAnalysis", help="書き出すフォルダの名前(<データの場所>Reports/<ここ>。例: ArrivalAnalysis_sora)")
     for name in ("sigma", "window", "gap", "high", "near", "leave", "horizon", "step", "smooth"):
         parser.add_argument(f"--{name}", type=float, default=getattr(defaults, name))
     parser.add_argument("--arrival", choices=ARRIVAL_MODES, default=defaults.arrival,
                         help="到達の決め方: approach 近づいた / destination 終着点(近づいてとどまり、向くか見る)/ touch 手で触れた")
-    for name in ("dwell", "face", "look", "touch_margin"):
+    for name in ("dwell", "face", "look", "touch_margin", "touch_min", "touch_gap"):
         parser.add_argument(f"--{name.replace('_', '-')}", dest=name, type=float, default=getattr(defaults, name))
     home_data_root.add_argument(parser)
     args = parser.parse_args()
@@ -788,7 +803,7 @@ def main() -> None:
         return
 
     persons = [s.key for s in streams]
-    out_dir = root / (args.out if args.out != "ArrivalAnalysis" or cfg.arrival == "approach" else f"ArrivalAnalysis_{cfg.arrival}")
+    out_dir = home_data_root.report_root(root) / (args.out if args.out != "ArrivalAnalysis" or cfg.arrival == "approach" else f"ArrivalAnalysis_{cfg.arrival}")
     (out_dir / "models").mkdir(parents=True, exist_ok=True)
 
     # ④ ⑤

@@ -9,7 +9,7 @@ analyze_arrival.py と同じ特徴量・モデル(toolbox/arrival_model.py)を�
                             はっきりさせるのに必要な到達の数の目安
 モデル: A 空間のみ / B 空間 + 視線 / C 空間 + 視線 + 体の向き / D 視線パターンのみ(analyze_arrival.py と同じ)。
 
-書き出すもの(毎回上書き。<データの場所>/Prediction_<実験対象者>_<人物>/):
+書き出すもの(毎回上書き。<データの場所>Reports/Prediction_<実験の名前>_<実験対象者>_<人物>/):
   report.html / aligned_signals.csv / lead_accuracy.csv / predictions.csv / metrics.csv / hypothesis_tests.csv
 
 使い方:
@@ -402,7 +402,7 @@ def main() -> None:
     stream = streams[0]
     horizon = cfg.horizon
     suffix = "" if cfg.arrival == "approach" else f"_{cfg.arrival}"
-    out_dir = root / f"Prediction_{stream.key.replace('/', '_')}{suffix}"
+    out_dir = home_data_root.report_root(root) / f"Prediction_{stream.experiment}_{stream.key.replace('/', '_')}{suffix}"
     out_dir.mkdir(exist_ok=True)
 
     # 1 到達前の信号

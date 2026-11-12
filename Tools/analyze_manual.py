@@ -4,7 +4,7 @@
 到達は「時刻 物体」で指定する(時刻は骨格データの時刻 分:秒。例: 01:59 TV)。その時刻の前後 --snap 秒で、
 物体まで --snap-radius m 以内に入った最初の時刻を到達時刻にする(指定した時刻のずれをそろえるため。入らなければ指定した時刻のまま)。
 
-出すもの(<データの場所>/Manual_<実験対象者>_<人物>/report.html):
+出すもの(<データの場所>Reports/Manual_<実験の名前>_<実験対象者>_<人物>/report.html):
   1 到達前の注視可能性 … 到達ごとに、到達の 10 秒前から到達までの物体ごとの注視可能性(到達した物体を強調)と、全部の到達の平均。
                          距離・体の向きの時間変化と、ヒートマップも
   2 前もって分かるか   … 到達の 5・3・2・1 秒前に、到達した物体が 注視可能性・距離・体の向き・近づく速さ で1位だったか
@@ -253,7 +253,7 @@ def main() -> None:
 
     targets = stream.targets
     colors = {n: k for k, n in enumerate(targets)}
-    out_dir = root / f"Manual_{key.replace('/', '_')}"
+    out_dir = home_data_root.report_root(root) / f"Manual_{stream.experiment}_{key.replace('/', '_')}"
     out_dir.mkdir(exist_ok=True)
 
     # ---- 1 到達前の注視可能性

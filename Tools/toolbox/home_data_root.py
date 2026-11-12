@@ -9,6 +9,10 @@ Tools/ の各実行ファイルが最初に呼ぶ部品で、直接は実行し�
   それ以外のフォルダは、パスをそのまま入力する.
 
 コマンドラインで --data-root を指定すると選ばずにそれを使う (assets / D:\\HomeExperiment / 任意のフォルダ).
+
+データの場所の直下は Unity の「実験の名前」の一覧になるので、計測データ (<実験の名前>/Env/, Skeleton/) 以外は置かない.
+解析レポートなど複数の実験をまたぐ書き出しは report_root() のフォルダ
+(<データの場所>Reports. 例: Assets/Data/HomeExperimentReports, D:\\HomeExperimentReports) に作る.
 """
 
 from __future__ import annotations
@@ -27,6 +31,16 @@ _CHOICES = [
     ("Assets/Data/HomeExperiment (プロジェクト内)", ASSETS_DATA_ROOT),
     (f"{DRIVE_DATA_ROOT} (ハードドライブ)", DRIVE_DATA_ROOT),
 ]
+
+
+def report_root(data_root: Path) -> Path:
+    """解析レポートを書き出すフォルダ (データの場所の隣の <名前>Reports). 無ければ作る.
+
+    データの場所の直下に作ると Unity の「実験の名前」の一覧に混ざるため、必ずこちらに書き出す.
+    """
+    root = data_root.parent / f"{data_root.name}Reports"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def add_argument(parser: argparse.ArgumentParser) -> None:

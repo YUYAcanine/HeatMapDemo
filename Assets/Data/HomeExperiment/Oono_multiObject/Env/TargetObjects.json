@@ -1,0 +1,286 @@
+{
+    "experimentName": "Oono_multiObject",
+    "savedAt": "2026-11-11 16:31:01",
+    "objects": [
+        {
+            "name": "TV",
+            "group": "TV",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_000_TV.json",
+            "position": {
+                "x": -3.240000009536743,
+                "y": 0.44999998807907107,
+                "z": -0.753000020980835
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Toy",
+            "group": "Toy",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_001_Toy.json",
+            "position": {
+                "x": -0.24799999594688416,
+                "y": 0.699999988079071,
+                "z": 0.00800000037997961
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Tablet",
+            "group": "Tablet",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_002_Tablet.json",
+            "position": {
+                "x": 0.12999999523162843,
+                "y": 0.699999988079071,
+                "z": 0.6200000047683716
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Piano",
+            "group": "Piano",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_003_Piano.json",
+            "position": {
+                "x": -1.3300000429153443,
+                "y": 1.1369999647140504,
+                "z": -1.7999999523162842
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Table",
+            "group": "Table",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_004_Table.json",
+            "position": {
+                "x": -1.659999966621399,
+                "y": 0.33000001311302187,
+                "z": 0.6100000143051148
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Sofa",
+            "group": "Sofa",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_005_Sofa.json",
+            "position": {
+                "x": -0.8500000238418579,
+                "y": 0.3840000033378601,
+                "z": 2.0
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Balloon",
+            "group": "Balloon",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "target_006_Balloon.json",
+            "position": {
+                "x": 0.019999999552965165,
+                "y": 0.699999988079071,
+                "z": -0.3400000035762787
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        }
+    ]
+}

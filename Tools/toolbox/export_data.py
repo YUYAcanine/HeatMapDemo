@@ -72,9 +72,13 @@ class Person:
 
     @property
     def skeleton(self) -> Skeleton | None:
-        """全関節(<人物>_skeleton.csv)。最初に使うときに読む。無い書き出し(古いシーン5)では None"""
-        if self._skeleton is None and self._skeleton_path.exists():
-            self._skeleton = Skeleton(self._skeleton_path)
+        """全関節(<人物>_skeleton.csv)。最初に使うときに読む。
+        無い書き出し(古いシーン5)では、書き出し元の Filtered/grouped_*.json から同じ並びで読む。どちらも無ければ None"""
+        if self._skeleton is None:
+            if self._skeleton_path.exists():
+                self._skeleton = Skeleton(self._skeleton_path)
+            else:
+                self._skeleton = Skeleton.from_grouped_json(self._skeleton_path.parent, self.name, len(self.time))
         return self._skeleton
 
 
@@ -91,6 +95,46 @@ class Skeleton:
         self.data = data.astype(float)
         self.column = {name: i for i, name in enumerate(header)}
         self.joints = [name[:-1] for name in header if name.endswith("C") and f"{name[:-1]}X" in self.column]
+
+    @classmethod
+    def from_grouped_json(cls, export_folder: Path, person_name: str, frame_count: int) -> "Skeleton | None":
+        """skeleton.csv が無い古い書き出し用。<被験者>/Filtered/grouped_<骨格>.json から、gaze.csv と同じ行の並びで読む。
+        書き出し元(export_params.json の skeletonSource)が分からない・フレーム数が合わないときは None"""
+        try:
+            params = json.loads((export_folder / "export_params.json").read_text(encoding="utf-8-sig"))
+            source = params["skeletonSource"]
+        except (OSError, KeyError, ValueError):
+            return None
+
+        path = export_folder.parents[2] / "Filtered" / f"grouped_{source.removeprefix('filtered_')}.json"
+        if not path.exists():
+            return None
+
+        frames = json.loads(path.read_text(encoding="utf-8-sig"))["frames"]
+        if len(frames) != frame_count:
+            return None
+
+        joints: list[str] = []
+        values: dict[str, list[tuple[int, float, float, float, float]]] = {}
+        for i, frame in enumerate(frames):
+            person = next((p for p in frame["persons"] if p.get("label") == person_name), None)
+            for j in person["joints"] if person else []:
+                if j["jointId"] not in values:
+                    joints.append(j["jointId"])
+                    values[j["jointId"]] = []
+                q = j["position"]
+                values[j["jointId"]].append((i, q["x"], q["y"], q["z"], float(j.get("confidence", np.nan))))
+
+        self = cls.__new__(cls)
+        self.joints = joints
+        self.column = {}
+        self.data = np.full((frame_count, 4 * len(joints)), np.nan)
+        for k, name in enumerate(joints):
+            for a, axis in enumerate("XYZC"):
+                self.column[f"{name}{axis}"] = 4 * k + a
+            rows = np.array(values[name])
+            self.data[rows[:, 0].astype(int), 4 * k:4 * k + 4] = rows[:, 1:]
+        return self
 
     def position(self, joint: str) -> np.ndarray:
         """関節の位置(フレーム数 × 3。無いフレームは nan)"""
@@ -143,6 +187,46 @@ def load_light_log(path: Path) -> tuple[np.ndarray, dict[str, np.ndarray]] | Non
     times = np.array([f["unityTime"] for f in frames])
     lights = {k: np.array([bool(f[k]) for f in frames]) for k in frames[0] if k != "unityTime"}
     return times, lights
+
+
+def load_env_objects(experiment_dir: Path) -> tuple[list[str], dict[str, np.ndarray], dict[str, dict]] | None:
+    """<実験>/Env/TargetObjects.json と Meshes/ から、対象物体の名前・頂点を囲む箱(ワールド座標)の中心と大きさ。
+    シーン5の export_params.json の targets / targetCenters / targetSizes と同じもの(シーン0で物体を変えた後、
+    シーン5で書き出し直す前でも使えるように)。無ければ None"""
+    path = experiment_dir / "Env" / "TargetObjects.json"
+
+    if not path.exists():
+        return None
+
+    names, centers, sizes = [], {}, {}
+
+    for obj in json.loads(path.read_text(encoding="utf-8-sig")).get("objects", []):
+        mesh = experiment_dir / "Env" / "Meshes" / obj.get("meshFile", "")
+
+        if not mesh.is_file():
+            continue
+
+        v = np.array([[p["x"], p["y"], p["z"]] for p in json.loads(mesh.read_text(encoding="utf-8-sig"))["vertices"]])
+        v = v * np.array([obj["scale"][k] for k in "xyz"])
+        qx, qy, qz, qw = (obj["rotation"][k] for k in "xyzw")
+        rotation = np.array([[1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
+                             [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
+                             [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)]])
+        v = v @ rotation.T + np.array([obj["position"][k] for k in "xyz"])
+        lo, hi = v.min(axis=0), v.max(axis=0)
+        names.append(obj["name"])
+        centers[obj["name"]] = (lo + hi) / 2
+        sizes[obj["name"]] = dict(zip("xyz", (hi - lo).tolist()))
+
+    return names, centers, sizes
+
+
+def box_distance(person: Person, center: np.ndarray, size: dict) -> np.ndarray:
+    """骨盤(無ければ頭)から物体の箱(床に平行)までの水平の最短距離。箱の中なら 0(シーン5の distance.csv と同じ)"""
+    x, z = person.distance["positionX"], person.distance["positionZ"]
+    dx = np.maximum(np.maximum(center[0] - size["x"] / 2 - x, x - (center[0] + size["x"] / 2)), 0)
+    dz = np.maximum(np.maximum(center[2] - size["z"] / 2 - z, z - (center[2] + size["z"] / 2)), 0)
+    return np.hypot(dx, dz)
 
 
 def state_at(log_times: np.ndarray, states: np.ndarray, times: np.ndarray) -> np.ndarray:

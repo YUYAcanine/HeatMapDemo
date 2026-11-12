@@ -30,6 +30,8 @@ public class HomeSkeletonRecorder : MonoBehaviour
     [NonSerialized] public ColorResolution rawColorResolution = ColorResolution.R1080p;
     // 骨格推定(Body Tracking)を行うか。false のときは Tracker を作らず、MKV(映像)だけを記録する。
     [NonSerialized] public bool recordSkeleton = true;
+    // 撮影フレームレート(骨格・MKV 共通)。HomeSkeletonRecordingController の Camera Fps で全キネクトまとめて決める(Start より前に設定される)。
+    [NonSerialized] public FPS cameraFps = FPS.FPS30;
     // true のときは Start でカメラを動かさず、StartCameras() が呼ばれるまで待つ。
     // 同期ケーブルだけで記録を合わせるとき(HomeMultiMachineRecordingSync の Sync Cable)、Master のキネクトを記録開始まで止めておくのに使う。
     [NonSerialized] public bool deferCameraStart;
@@ -100,7 +102,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
             {
                 ColorResolution = ColorResolution.R720p,
                 DepthMode = DepthMode.NFOV_2x2Binned,
-                CameraFPS = FPS.FPS30,
+                CameraFPS = cameraFps,
                 SynchronizedImagesOnly = true,
                 WiredSyncMode = syncMode
             };
@@ -111,6 +113,15 @@ public class HomeSkeletonRecorder : MonoBehaviour
                 configuration.ColorFormat = ImageFormat.ColorMJPG;
                 configuration.ColorResolution = rawColorResolution;
             }
+
+            // カラー 3072p は 30fps で撮れない(StartCameras が失敗する)ので 15fps にする
+            if (configuration.ColorResolution == ColorResolution.R3072p && configuration.CameraFPS == FPS.FPS30)
+            {
+                Debug.LogWarning($"[HomeSkeletonRecorder] Kinect{KinectId}: カラー 3072p は 30fps に対応していないため、15fps で撮影します。");
+                configuration.CameraFPS = FPS.FPS15;
+            }
+
+            Debug.Log($"[HomeSkeletonRecorder] Kinect{KinectId}: {configuration.CameraFPS} / カラー {configuration.ColorResolution} / 深度 {configuration.DepthMode} で撮影します。");
 
             // 映像のみ記録するとき(recordSkeleton=false)は Tracker を作らない。
             // 複数台の Kinect で Body Tracking の GPU 負荷をかけない分、安定して撮れる。
@@ -250,6 +261,9 @@ public class HomeSkeletonRecorder : MonoBehaviour
             isRecording = true;
         }
 
+        lock (timingLock)
+            captureTimings = new List<CaptureTiming>();
+
         if (recordRawMkv && rawDir != null)
             OpenRawRecording(rawDir, rawInfo ?? new HomeRawIndex());
     }
@@ -270,6 +284,52 @@ public class HomeSkeletonRecorder : MonoBehaviour
     public int RawFrameCount
     {
         get { RawSession session = rawSession; return session != null ? session.writtenCount : 0; }
+    }
+
+    // ------------------------------------------------------------
+    // Capture timing (試し撮り HomeTestRecording 用)
+    // ------------------------------------------------------------
+    // true のとき、MKV の記録中に受け取った全キャプチャについて「GetCapture を呼んだ時刻・戻った時刻」を残す。
+    // 本番の記録では使わない(メモリを使うだけなので false のまま)。
+    [NonSerialized] public bool collectCaptureTimings;
+
+    public struct CaptureTiming
+    {
+        // キネクト本体のタイムスタンプ(深度, 100ns)
+        public long deviceTicks;
+        // GetCapture を呼んだ時刻 / 戻った時刻(ClockSeconds)
+        public double callClock;
+        public double returnClock;
+    }
+
+    private readonly object timingLock = new object();
+    private List<CaptureTiming> captureTimings = new List<CaptureTiming>();
+
+    // キャプチャのスレッドから呼ぶ
+    private void RecordCaptureTiming(long deviceTicks, double callClock, double returnClock)
+    {
+        if (!collectCaptureTimings || rawSession == null)
+            return;
+
+        lock (timingLock)
+            captureTimings.Add(new CaptureTiming { deviceTicks = deviceTicks, callClock = callClock, returnClock = returnClock });
+    }
+
+    // 記録中に受け取ったキャプチャの時刻を取り出す(取り出したら空にする)
+    public List<CaptureTiming> TakeCaptureTimings()
+    {
+        lock (timingLock)
+        {
+            List<CaptureTiming> taken = captureTimings;
+            captureTimings = new List<CaptureTiming>();
+            return taken;
+        }
+    }
+
+    // 書き込みが追いつかずキューからあふれて記録しなかったフレーム数(記録中のみ)
+    public int RawDroppedCount
+    {
+        get { RawSession session = rawSession; return session != null ? session.droppedCount : 0; }
     }
 
     public bool IsRecordingRaw
@@ -577,12 +637,16 @@ public class HomeSkeletonRecorder : MonoBehaviour
 
             try
             {
+                // GetCapture を呼んだ時刻(試し撮りで、フレームの抜けが PC 側かキネクト側かを調べるのに使う)
+                double callClock = ClockSeconds;
+
                 using (Capture capture = device.GetCapture(captureTimeout))
                 {
                     if (capture.Depth == null)
                         continue;
 
                     double receivedClock = ClockSeconds;
+                    RecordCaptureTiming(capture.Depth.DeviceTimestamp.Ticks, callClock, receivedClock);
                     UpdateStreamStart(capture.Depth.DeviceTimestamp.Ticks, receivedClock);
                     Interlocked.Exchange(ref lastCaptureClockBits, BitConverter.DoubleToInt64Bits(receivedClock));
 
@@ -605,7 +669,7 @@ public class HomeSkeletonRecorder : MonoBehaviour
                     else
                     {
                         // 生データの記録中: 骨格推定が追いつかない(キネクトを複数台動かすとGPUが足りない)ときは
-                        // そのフレームの骨格推定だけ飛ばし、キャプチャの取得(= MKV の記録)は 30fps のまま続ける
+                        // そのフレームの骨格推定だけ飛ばし、キャプチャの取得(= MKV の記録)は設定した fps のまま続ける
                         try
                         {
                             tracker.EnqueueCapture(capture, TimeSpan.Zero);

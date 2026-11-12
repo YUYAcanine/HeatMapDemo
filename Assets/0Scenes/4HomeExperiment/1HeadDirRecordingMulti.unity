@@ -869,7 +869,7 @@ MonoBehaviour:
     deviceIndex: 3
     syncMode: 3
   recordRawMkv: 1
-  rawColorResolution: 2
+  rawColorResolution: 1
   recordSkeleton: 0
   toggleKey: 32
   requireEnvLoaded: 1

@@ -221,9 +221,16 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider, IHomeDat
         return null;
     }
 
+    // このプレイで Env を保存できたか / 保存したフレーム(同じキー入力で HomeTestRecording が試し撮りを始めないようにするため)
+    public bool HasSaved { get; private set; }
+    public int LastSavedFrame { get; private set; } = -1;
+    public KeyCode SaveKey => saveKey;
+    // false にすると saveKey で保存しない(保存後は HomeTestRecording が同じキーで試し撮りに使う)。ContextMenu の Save Env は使える
+    public bool SaveKeyEnabled { get; set; } = true;
+
     private void Update()
     {
-        if (Input.GetKeyDown(saveKey))
+        if (SaveKeyEnabled && Input.GetKeyDown(saveKey))
             Save();
     }
 
@@ -300,6 +307,8 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider, IHomeDat
         HomeExperimentPaths.RefreshAssetDatabase();
 
         Debug.Log($"[HomeEnvSetup] 保存完了: キネクト {kinectCount} 台, 点群 {pointCloudCount} 個, 部屋オブジェクト {roomObjectCount} 個, 対象物体 {targetObjectCount} 個 → {envDir}");
+        HasSaved = true;
+        LastSavedFrame = Time.frameCount;
 #else
         Debug.LogError("[HomeEnvSetup] Envの保存はUnityエディタ上でのみ実行できます。");
 #endif

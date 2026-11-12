@@ -48,6 +48,10 @@ public class HomeSkeletonRecordingController : MonoBehaviour, IHomeDataRootProvi
     [Tooltip("骨格推定(Body Tracking)を行い、skeleton.json を保存する。\n" +
              "オフにして Record Raw Mkv だけオンにすると「映像のみ」記録になる。Body Tracking をしない分、キネクトを複数台同時に動かしたときの負荷が下がり安定しやすい。")]
     [SerializeField] private bool recordSkeleton = true;
+    [Tooltip("全キネクトの撮影フレームレート(骨格・MKV 共通)。Azure Kinect は 5 / 15 / 30 fps のみ。\n" +
+             "30fps でフレームが抜ける(PCの負荷が足りない)ときは 15fps にすると、間隔が一定で安定しやすい。\n" +
+             "カラー 3072p は 30fps に対応していないので、そのときは自動で 15fps にする。プレイ開始前に設定する。")]
+    [SerializeField] private Microsoft.Azure.Kinect.Sensor.FPS cameraFps = Microsoft.Azure.Kinect.Sensor.FPS.FPS30;
 
     [Header("Input")]
     [SerializeField] private KeyCode toggleKey = KeyCode.Space;
@@ -97,6 +101,7 @@ public class HomeSkeletonRecordingController : MonoBehaviour, IHomeDataRootProvi
             recorder.recordRawMkv = recordRawMkv;
             recorder.rawColorResolution = rawColorResolution;
             recorder.recordSkeleton = recordSkeleton;
+            recorder.cameraFps = cameraFps;
         }
     }
 

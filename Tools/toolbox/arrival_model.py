@@ -67,7 +67,7 @@ def arrival_definition(cfg: Config) -> str:
     if cfg.arrival == "touch":
         where = "物体の箱の中" if cfg.touch_margin <= 0 else f"物体の箱から {cfg.touch_margin:g} m 以内"
         return (f"触れた = 手・手先・親指のどれかが{where}に {cfg.touch_min:g} 秒以上入った時刻"
-                f"({cfg.touch_gap:g} 秒以下の間をおいた触れ直しは同じ1回。シーン5の skeleton.csv が必要)")
+                f"({cfg.touch_gap:g} 秒以下の間をおいた触れ直しは同じ1回。手の位置はシーン5の skeleton.csv、無ければ書き出し元の grouped_*.json)")
     return f"到達 = {approach}"
 
 
