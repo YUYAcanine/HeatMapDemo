@@ -84,21 +84,30 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     [Header("Markers")]
     [SerializeField] private bool showMarkers = true;
-    [SerializeField] private float markerScale = 0.09f;
+    [SerializeField] private float markerScale = 0.14f;
     [Tooltip("予測到達地点のマーカーをこの倍率で大きくする。")]
     [SerializeField] private float predictedMarkerScale = 1.8f;
     [SerializeField] private Color startMarkerColor = Color.white;
     [SerializeField] private bool showGoalLabels = true;
     [Tooltip("ラベルの文字の大きさ(画面上のピクセル)。遠近に関係なく同じ大きさで描く。")]
-    [SerializeField] private int goalLabelFontSize = 18;
+    [SerializeField] private int goalLabelFontSize = 26;
     [Tooltip("予測到達地点のラベルの文字の大きさ(ピクセル)。")]
-    [SerializeField] private int predictedLabelFontSize = 24;
+    [SerializeField] private int predictedLabelFontSize = 34;
     [SerializeField] private Color labelBackgroundColor = new Color(0f, 0f, 0f, 0.7f);
     [Tooltip("この確率未満のゴールはラベルを薄くする。")]
     [SerializeField, Range(0f, 1f)] private float labelMinProbability = 0.05f;
 
     [Header("Status")]
     [SerializeField] private bool showStatus = true;
+    [Tooltip("到達予測の表に出す物体の数(確率の高い順)。")]
+    [SerializeField, Min(1)] private int statusTopCount = 3;
+    [Tooltip("到達予測の表の文字の大きさ(ピクセル)。")]
+    [SerializeField] private int statusFontSize = 30;
+    [SerializeField] private float statusWidth = 520f;
+    [Tooltip("オンで画面の右上、オフで左上に出す。")]
+    [SerializeField] private bool statusAtRight = true;
+    [Tooltip("人物・手がかりの角度・NavMesh などの詳細も小さく出す(調整用)。")]
+    [SerializeField] private bool showStatusDetail = false;
     [SerializeField] private bool logRouteSearch = false;
 
     private HomeEnvLoader env;
@@ -601,59 +610,109 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             return;
 
         if (statusStyle == null)
-            statusStyle = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.UpperLeft, fontSize = 16, wordWrap = true, richText = true };
-
-        StringBuilder text = new StringBuilder();
-        text.AppendLine($"実験: {env.ExperimentName}   人の位置 → 対象物体 の経路と到達予測");
-
-        if (bodyCues != null)
-            text.AppendLine($"骨格(MQTT, 全関節): {(bodyCues.IsConnected ? "接続中" : "未接続")}");
-
-        if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled)
-            text.AppendLine(fakeFloorNavMesh.IsBuilt
-                ? $"NavMesh(FakeFloor): 補助の床 {fakeFloorNavMesh.FloorCount} 枚から作成 / リンク {fakeFloorNavMesh.LinkCount} 本"
-                : "NavMesh(FakeFloor): 作れていません。Console を確認してください");
-
-        if (navSubscriber != null)
-            text.AppendLine($"NavMesh(MQTT): {(navSubscriber.IsConnected ? "接続中" : "未接続")}" +
-                            (navSubscriber.LastTriangleCount > 0 ? $" / 三角形 {navSubscriber.LastTriangleCount}, リンク {navSubscriber.LastLinkCount}" : " / まだ受信していません"));
-
-        if (bodyCues == null || !bodyCues.HasPerson)
-            text.AppendLine("スタート: 人物を受信していません");
-        else if (!hasStartPoint)
-            text.AppendLine($"スタート: {bodyCues.MatchedLabel} の近くに NavMesh がありません");
-        else
-            text.AppendLine($"スタート: {bodyCues.MatchedLabel}");
-
-        if (hasStartPoint)
         {
-            text.AppendLine(GetCueSummary());
+            statusStyle = new GUIStyle(GUI.skin.box)
+            {
+                alignment = TextAnchor.UpperLeft,
+                fontSize = statusFontSize,
+                wordWrap = true,
+                richText = true,
+                padding = new RectOffset(14, 14, 10, 10)
+            };
+            statusStyle.normal.textColor = Color.white;
+        }
 
-            if (predictedGoal != null)
-                text.AppendLine($"<b>予測到達地点: {predictedGoal.group}  {predictedGoal.probability * 100f:F0}%</b>");
+        statusStyle.fontSize = statusFontSize;
+        int small = Mathf.Max(statusFontSize / 2, 12);
+        StringBuilder text = new StringBuilder();
+        text.AppendLine("<b>到達予測</b>");
 
-            List<Goal> sorted = new List<Goal>(goals);
+        string problem = GetStatusProblem();
+
+        if (problem != null)
+        {
+            text.AppendLine($"<size={small}><color=#FFB0B0>{problem}</color></size>");
+        }
+        else
+        {
+            List<Goal> sorted = new List<Goal>();
+
+            foreach (Goal goal in goals)
+            {
+                if (goal.hasPath)
+                    sorted.Add(goal);
+            }
+
             sorted.Sort((a, b) => b.probability.CompareTo(a.probability));
 
-            foreach (Goal goal in sorted)
+            for (int i = 0; i < Mathf.Min(statusTopCount, sorted.Count); i++)
             {
-                if (!goal.hasPath)
-                {
-                    text.AppendLine($"<color=#888888>　{goal.group}: {(goal.onNavMesh ? "届かない" : "近くに NavMesh がない")}</color>");
-                    continue;
-                }
-
-                int bars = Mathf.RoundToInt(goal.probability * 20f);
-                string bar = new string('|', bars).PadRight(20, '.');
-                string mark = goal == predictedGoal ? "★" : "　";
-                text.AppendLine($"{mark}{goal.group}  {goal.probability * 100f,3:F0}% [{bar}]  {goal.length:F1}m / {goal.length / movementSpeed:F0}秒{GetCueDetail(goal)}");
+                Goal goal = sorted[i];
+                string color = i == 0 ? "#FFE066" : "#FFFFFF";
+                int bars = Mathf.RoundToInt(goal.probability * 10f);
+                string bar = $"<color=#FF7040>{new string('■', bars)}</color><color=#555555>{new string('■', 10 - bars)}</color>";
+                text.AppendLine($"<color={color}>{i + 1}. {goal.group}  <b>{goal.probability * 100f:F0}%</b></color>  <size={small + 4}>{bar}</size>");
             }
+
+            if (sorted.Count == 0)
+                text.AppendLine($"<size={small}><color=#FFB0B0>届く対象物体がありません</color></size>");
+        }
+
+        if (showStatusDetail)
+        {
+            text.AppendLine($"<size={small}><color=#BBBBBB>{GetStatusDetail()}</color></size>");
         }
 
         GUIContent content = new GUIContent(text.ToString().TrimEnd());
-        const float width = 640f;
+        float width = statusWidth;
+        float height = statusStyle.CalcHeight(content, width);
+        float x = statusAtRight ? Screen.width - width - 10f : 10f;
 
-        GUI.Box(new Rect(10, 10, width, statusStyle.CalcHeight(content, width)), content, statusStyle);
+        GUI.Box(new Rect(x, 10, width, height), content, statusStyle);
+    }
+
+    // 予測を出せない理由(出せるときは null)
+    private string GetStatusProblem()
+    {
+        if (bodyCues == null)
+            return "HomeBodyCues がありません";
+
+        if (!bodyCues.IsConnected)
+            return "骨格(MQTT)に接続していません";
+
+        if (!bodyCues.HasPerson)
+            return "人物を受信していません";
+
+        if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled && !fakeFloorNavMesh.IsBuilt)
+            return "NavMesh を作れていません(Console を確認)";
+
+        if (!hasStartPoint)
+            return "人の近くに NavMesh がありません";
+
+        return null;
+    }
+
+    // 詳細(Show Status Detail のときだけ): 人物・手がかり・NavMesh
+    private string GetStatusDetail()
+    {
+        StringBuilder text = new StringBuilder();
+
+        if (bodyCues != null && bodyCues.HasPerson)
+            text.AppendLine($"人物: {bodyCues.MatchedLabel}");
+
+        if (hasStartPoint)
+            text.AppendLine(GetCueSummary());
+
+        if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled && fakeFloorNavMesh.IsBuilt)
+            text.AppendLine($"NavMesh: 補助の床 {fakeFloorNavMesh.FloorCount} 枚 / リンク {fakeFloorNavMesh.LinkCount} 本");
+
+        if (navSubscriber != null)
+            text.AppendLine($"NavMesh(MQTT): {(navSubscriber.IsConnected ? "接続中" : "未接続")}");
+
+        if (predictedGoal != null)
+            text.Append($"{predictedGoal.group}: {predictedGoal.length:F1}m / {predictedGoal.length / movementSpeed:F0}秒{GetCueDetail(predictedGoal)}");
+
+        return text.ToString().TrimEnd();
     }
 
     // ゴールのラベルを画面上に一定の大きさで描く(3Dの文字だと手前ほど大きく、奥ほど小さく読みにくくなるため)。

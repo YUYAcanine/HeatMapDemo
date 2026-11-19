@@ -13,7 +13,7 @@ public class HomeRouteSceneVisual : MonoBehaviour
     [Header("Room")]
     [Tooltip("部屋オブジェクトを半透明にする。")]
     [SerializeField] private bool fadeRoom = true;
-    [SerializeField, Range(0f, 1f)] private float roomAlpha = 0.6f;
+    [SerializeField, Range(0f, 1f)] private float roomAlpha = 0.8f;
     [Tooltip("対象物体(シーン0で置いた球など)を表示しない。経路の終点の小さな球(HomeRouteToTargets)で場所を示す。")]
     [SerializeField] private bool hideTargets = true;
     [Tooltip("Hide Targets がオフのとき、対象物体を半透明にする。オフなら元の見た目のまま。")]
