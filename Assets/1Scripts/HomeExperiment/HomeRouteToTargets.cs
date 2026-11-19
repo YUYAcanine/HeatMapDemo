@@ -9,6 +9,7 @@ using UnityEngine.AI;
 //   - 骨格: SkeletonRealtimeSubscriber が MQTT(pathfinder/person_coordinate, シーン6が送る)で受信する
 //   - スタート: DefineStart(Start オブジェクト)がハイライト中の人物の Pelvis を床に下ろした位置
 //   - NavMesh: NavSub が MQTT(pathfinder/navmesh, シーン7が送る)で受信して再現する
+//              または HomeFakeFloorNavMesh がシーン0の補助の床(Env/FakeFloors.json)だけから作る(シーン7を動かさずに試すとき)
 //   - ゴール: 対象物体の group ごとに1つ。group に属する物体全体のバウンディングボックスの中心から一番近い NavMesh 上の点
 [RequireComponent(typeof(HomeEnvLoader))]
 public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
@@ -62,6 +63,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     private HomeEnvLoader env;
     private SkeletonRealtimeSubscriber skeletonSubscriber;
     private NavSub navSubscriber;
+    private HomeFakeFloorNavMesh fakeFloorNavMesh;
     private readonly List<Goal> goals = new List<Goal>();
     private GameObject startMarker;
     private float lastRouteTime = float.NegativeInfinity;
@@ -111,6 +113,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
         skeletonSubscriber = FindObjectOfType<SkeletonRealtimeSubscriber>();
         navSubscriber = FindObjectOfType<NavSub>();
+        fakeFloorNavMesh = GetComponent<HomeFakeFloorNavMesh>();
 
         if (start == null)
             Debug.LogError("[HomeRouteToTargets] スタート(DefineStart)がありません。");
@@ -388,6 +391,11 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
         if (skeletonSubscriber != null)
             text.AppendLine($"骨格(MQTT): {(skeletonSubscriber.IsConnected ? "接続中" : "未接続")}");
+
+        if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled)
+            text.AppendLine(fakeFloorNavMesh.IsBuilt
+                ? $"NavMesh(FakeFloor): 補助の床 {fakeFloorNavMesh.FloorCount} 枚から作成"
+                : "NavMesh(FakeFloor): 作れていません。Console を確認してください");
 
         if (navSubscriber != null)
             text.AppendLine($"NavMesh(MQTT): {(navSubscriber.IsConnected ? "接続中" : "未接続")}" +
