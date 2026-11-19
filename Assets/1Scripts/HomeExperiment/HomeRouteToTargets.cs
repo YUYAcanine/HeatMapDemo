@@ -80,11 +80,11 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [Tooltip("この確率以上のゴールは「可能性あり」としてオレンジ系の経路で残す。")]
     [SerializeField, Range(0f, 1f)] private float possibleProbability = 0.05f;
     [Tooltip("可能性ありの経路のうち、確率が低い方の色(確率が上がるほど High Probability Color に近づく)")]
-    [SerializeField] private Color possibleColor = new Color(1f, 0.7f, 0.25f, 0.85f);
+    [SerializeField] private Color possibleColor = new Color(1f, 0.95f, 0.35f, 0.8f);
     [Tooltip("可能性ありの経路の最小の太さ")]
     [SerializeField] private float possibleRouteLineWidth = 0.045f;
     [Tooltip("確率が高い経路の色")]
-    [SerializeField] private Color highProbabilityColor = new Color(1f, 0.45f, 0.15f, 0.95f);
+    [SerializeField] private Color highProbabilityColor = new Color(1f, 0.45f, 0f, 1f);
     [Tooltip("予測到達地点(一番確率が高いゴール)の経路の色")]
     [SerializeField] private Color predictedColor = new Color(1f, 0.15f, 0.2f, 1f);
 
@@ -540,11 +540,13 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             float t = Mathf.Clamp01(goal.probability / maxProbability);
             // 一番高いものは赤、可能性があるものはオレンジ系(確率が高いほど濃く太く)、ほぼ無いものは細い水色
             bool possible = goal.probability >= possibleProbability;
+            // 「可能性あり」の下限〜一番高い確率 を 0〜1 に広げて、黄色(低い)→オレンジ(高い)の差がはっきり出るようにする
+            float possibleT = Mathf.Clamp01(Mathf.InverseLerp(possibleProbability, maxProbability, goal.probability));
             Color color = predicted ? predictedColor
-                : possible ? Color.Lerp(possibleColor, highProbabilityColor, t)
+                : possible ? Color.Lerp(possibleColor, highProbabilityColor, possibleT)
                 : lowProbabilityColor;
             float width = predicted ? maxRouteLineWidth
-                : possible ? Mathf.Lerp(possibleRouteLineWidth, maxRouteLineWidth, t)
+                : possible ? Mathf.Lerp(possibleRouteLineWidth, maxRouteLineWidth, possibleT)
                 : minRouteLineWidth;
 
             goal.line.positionCount = goal.linePoints.Length;
