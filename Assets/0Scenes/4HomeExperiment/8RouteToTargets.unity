@@ -301,7 +301,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!65 &754533276
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -495,6 +495,40 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+--- !u!114 &877335581
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 548478051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32e47b2554d34b73a540324c9ebde102, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  dataRootDirectory: D:\HomeExperiment2
+  start: {fileID: 1052685852}
+  startSearchRadius: 1
+  startFallbackSearchRadius: 3
+  targetGroups: []
+  goalSearchRadius: 0.8
+  goalFallbackSearchRadius: 1.5
+  routeUpdateInterval: 0.5
+  routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
+  nearestRouteLineMaterial: {fileID: 2100000, guid: 3190b8688c2fe5048989384b8fa7ed85, type: 2}
+  routeLineWidth: 0.05
+  nearestRouteLineWidth: 0.08
+  routeLineYOffset: 0.05
+  movementSpeed: 0.5
+  showMarkers: 1
+  markerScale: 0.08
+  startMarkerColor: {r: 1, g: 1, b: 1, a: 1}
+  goalMarkerColor: {r: 1, g: 0.85, b: 0.1, a: 1}
+  showGoalLabels: 1
+  goalLabelCharacterSize: 0.05
+  showStatus: 1
+  logRouteSearch: 0
 --- !u!4 &901009463
 Transform:
   m_ObjectHideFlags: 0
@@ -514,6 +548,79 @@ Transform:
   - {fileID: 1723817906}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1052685850
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1052685851}
+  - component: {fileID: 1052685852}
+  m_Layer: 0
+  m_Name: Start
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1052685851
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1052685850}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1052685852
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1052685850}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 327e1f0739f02f9409d1ddd634ca0da1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skeletonSubscriber: {fileID: 1314824687}
+  snapToNearestFloor: 1
+  floorLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  raycastStartHeight: 1.5
+  floorSearchDistance: 5
+  floorSearchRadius: 0.3
+--- !u!114 &1132910743
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 548478051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80820de1bf9d4048b47baf0f7bc512cd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  agentTypeId: 0
+  agentRadius: 0.01
+  agentHeight: 0.05
+  agentClimb: 0.1
+  voxelSize: 0.03
+  minRegionArea: 0
+  boundsMargin: 2
+  showFakeFloors: 0
+  addColliders: 1
 --- !u!4 &1217085267
 Transform:
   m_ObjectHideFlags: 0
@@ -545,6 +652,69 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
+--- !u!1 &1314824685
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1314824686}
+  - component: {fileID: 1314824687}
+  m_Layer: 0
+  m_Name: SkeletonRealtimeSubscriber
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1314824686
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1314824685}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1314824687
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1314824685}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 30d1bb06228e431439386dc6bb694779, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mqttHost: 192.168.236.211
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/person_coordinate
+  connectOnStart: 1
+  logReceivedMessage: 1
+  markerRoot: {fileID: 0}
+  markerScale: 0.1
+  markerLifetime: 2
+  markerColor: {r: 0, g: 1, b: 1, a: 1}
+  labelColor: {r: 1, g: 1, b: 1, a: 1}
+  showLabel: 1
+  labelCharacterSize: 0.08
+  shortestHeadPelvisColor: {r: 1, g: 0, b: 0, a: 1}
+  minValidHeadPelvisDistance: 0.05
+  showHeadToNoseVector: 1
+  headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  headToNoseVectorWidth: 0.015
 --- !u!1 &1422476024
 GameObject:
   m_ObjectHideFlags: 0
@@ -630,13 +800,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1422476024}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.22, y: 1.52, z: -4.56}
+  m_LocalRotation: {x: 0.0038586974, y: 0.9374736, z: -0.34787983, w: 0.010398496}
+  m_LocalPosition: {x: -0.37, y: 3.51, z: 3.64}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 40.718, y: 178.729, z: 0}
 --- !u!4 &1495227229
 Transform:
   m_ObjectHideFlags: 0
@@ -652,6 +822,66 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1587860544
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1587860545}
+  - component: {fileID: 1587860546}
+  m_Layer: 0
+  m_Name: NavSubscriber
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!4 &1587860545
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1587860544}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1587860546
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1587860544}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 300f66ae07e5c664c8276be1d7d226fe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mqttHost: 192.168.236.211
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/navmesh
+  connectOnStart: 1
+  logReceivedMessage: 1
+  agentTypeId: 0
+  agentRadius: 0.01
+  agentHeight: 0.05
+  voxelSize: 0.03
+  minRegionArea: 0
+  boundsMargin: 2
+  showSourceMesh: 1
+  sourceMeshColor: {r: 0.15, g: 0.9, b: 0.25, a: 0.35}
+  linkWidth: 0.18
 --- !u!1 &1723817902
 GameObject:
   m_ObjectHideFlags: 0
@@ -771,6 +1001,37 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   kinectId: D
+--- !u!1 &1805300312
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1805300313}
+  m_Layer: 0
+  m_Name: FakeFloors
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1805300313
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1805300312}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1865616042
 GameObject:
   m_ObjectHideFlags: 0
@@ -906,267 +1167,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!1 &1314824685
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1314824686}
-  - component: {fileID: 1314824687}
-  m_Layer: 0
-  m_Name: SkeletonRealtimeSubscriber
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1314824686
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1314824685}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1314824687
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1314824685}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 30d1bb06228e431439386dc6bb694779, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  mqttHost: 192.168.236.211
-  mqttPort: 1883
-  mqttUsername: mqtt-user
-  mqttPassword: 401402
-  topic: pathfinder/person_coordinate
-  connectOnStart: 1
-  logReceivedMessage: 1
-  markerRoot: {fileID: 0}
-  markerScale: 0.1
-  markerLifetime: 2
-  markerColor: {r: 0, g: 1, b: 1, a: 1}
-  labelColor: {r: 1, g: 1, b: 1, a: 1}
-  showLabel: 1
-  labelCharacterSize: 0.08
-  shortestHeadPelvisColor: {r: 1, g: 0, b: 0, a: 1}
-  minValidHeadPelvisDistance: 0.05
-  showHeadToNoseVector: 1
-  headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  headToNoseVectorWidth: 0.015
---- !u!1 &1587860544
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1587860545}
-  - component: {fileID: 1587860546}
-  m_Layer: 0
-  m_Name: NavSubscriber
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!4 &1587860545
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1587860544}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1587860546
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1587860544}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 300f66ae07e5c664c8276be1d7d226fe, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  mqttHost: 192.168.236.211
-  mqttPort: 1883
-  mqttUsername: mqtt-user
-  mqttPassword: 401402
-  topic: pathfinder/navmesh
-  connectOnStart: 1
-  logReceivedMessage: 1
-  agentTypeId: 0
-  agentRadius: 0.01
-  agentHeight: 0.05
-  voxelSize: 0.03
-  minRegionArea: 0
-  boundsMargin: 2
-  showSourceMesh: 1
-  sourceMeshColor: {r: 0.15, g: 0.9, b: 0.25, a: 0.35}
-  linkWidth: 0.18
---- !u!1 &1052685850
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1052685851}
-  - component: {fileID: 1052685852}
-  m_Layer: 0
-  m_Name: Start
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1052685851
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1052685850}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1052685852
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1052685850}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 327e1f0739f02f9409d1ddd634ca0da1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  skeletonSubscriber: {fileID: 1314824687}
-  snapToNearestFloor: 1
-  floorLayerMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  raycastStartHeight: 1.5
-  floorSearchDistance: 5
-  floorSearchRadius: 0.3
---- !u!114 &877335581
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 548478051}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 32e47b2554d34b73a540324c9ebde102, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  dataRootDirectory: D:\HomeExperiment2
-  start: {fileID: 1052685852}
-  startSearchRadius: 1
-  startFallbackSearchRadius: 3
-  targetGroups: []
-  goalSearchRadius: 0.8
-  goalFallbackSearchRadius: 1.5
-  routeUpdateInterval: 0.5
-  routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
-  nearestRouteLineMaterial: {fileID: 2100000, guid: 3190b8688c2fe5048989384b8fa7ed85, type: 2}
-  routeLineWidth: 0.05
-  nearestRouteLineWidth: 0.08
-  routeLineYOffset: 0.05
-  movementSpeed: 0.5
-  showMarkers: 1
-  markerScale: 0.08
-  startMarkerColor: {r: 1, g: 1, b: 1, a: 1}
-  goalMarkerColor: {r: 1, g: 0.85, b: 0.1, a: 1}
-  showGoalLabels: 1
-  goalLabelCharacterSize: 0.05
-  showStatus: 1
-  logRouteSearch: 0
---- !u!1 &1805300312
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1805300313}
-  m_Layer: 0
-  m_Name: FakeFloors
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1805300313
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1805300312}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1132910743
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 548478051}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 80820de1bf9d4048b47baf0f7bc512cd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  agentTypeId: 0
-  agentRadius: 0.01
-  agentHeight: 0.05
-  agentClimb: 0.1
-  voxelSize: 0.03
-  minRegionArea: 0
-  boundsMargin: 2
-  showFakeFloors: 1
-  addColliders: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

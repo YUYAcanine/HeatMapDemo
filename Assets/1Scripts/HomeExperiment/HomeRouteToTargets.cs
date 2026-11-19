@@ -394,7 +394,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
         if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled)
             text.AppendLine(fakeFloorNavMesh.IsBuilt
-                ? $"NavMesh(FakeFloor): 補助の床 {fakeFloorNavMesh.FloorCount} 枚から作成"
+                ? $"NavMesh(FakeFloor): 補助の床 {fakeFloorNavMesh.FloorCount} 枚から作成 / リンク {fakeFloorNavMesh.LinkCount} 本"
                 : "NavMesh(FakeFloor): 作れていません。Console を確認してください");
 
         if (navSubscriber != null)
