@@ -253,6 +253,8 @@ GameObject:
   - component: {fileID: 559234850}
   - component: {fileID: 877335581}
   - component: {fileID: 1132910743}
+  - component: {fileID: 1209137969}
+  - component: {fileID: 1634412078}
   m_Layer: 0
   m_Name: HomeExperiment
   m_TagString: Untagged
@@ -1167,6 +1169,102 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
+--- !u!1 &1614276450
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1614276451}
+  - component: {fileID: 1614276452}
+  m_Layer: 0
+  m_Name: SkeletonRealtimeSubscriber_FULL
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1614276451
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1614276450}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1614276452
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1614276450}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 17b6c6ace38a414ba48dd6c3b03bdeda, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mqttHost: 192.168.236.211
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/person_coordinate_FULL
+  connectOnStart: 1
+  logReceivedMessage: 0
+--- !u!114 &1209137969
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 548478051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a5fb2f4bbb344253ba36c0d74d89c9e2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fullSubscriber: {fileID: 1614276452}
+  start: {fileID: 1052685852}
+  skeletonSubscriber: {fileID: 1314824687}
+  matchDistance: 0.8
+  staleSeconds: 1
+  directionSmoothingTime: 0.2
+  velocityWindow: 0.6
+  showCues: 1
+  cueLength: 0.6
+  cueWidth: 0.02
+  headColor: {r: 1, g: 0.85, b: 0.2, a: 0.95}
+  bodyColor: {r: 0.3, g: 0.85, b: 1, a: 0.95}
+  moveColor: {r: 0.6, g: 1, b: 0.4, a: 0.95}
+--- !u!114 &1634412078
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 548478051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 304be93ba2b74b27a105ffd932314b8c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fadeRoom: 1
+  roomAlpha: 0.3
+  fadeTargets: 0
+  targetAlpha: 0.8
+  showWalkableArea: 1
+  walkableColor: {r: 0.2, g: 0.95, b: 0.55, a: 0.35}
+  walkableYOffset: 0.01
+  refreshInterval: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1180,3 +1278,4 @@ SceneRoots:
   - {fileID: 1587860545}
   - {fileID: 1052685851}
   - {fileID: 1805300313}
+  - {fileID: 1614276451}

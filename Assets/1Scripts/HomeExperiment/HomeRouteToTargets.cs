@@ -3,14 +3,23 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.AI;
 
-// シーン8(8RouteToTargets)用。人の位置から、シーン0(0HomeSetup)で置いた対象物体(Env/TargetObjects.json)までの経路を
-// NavMesh 上で計算して表示する。1PhilipDemo/MultiIntegrationLogger の RouteSub と同じ考え方で、ゴールを
-// MQTT の物体マーカーではなく、同じGameObjectの HomeEnvLoader が再生成した対象物体にしたもの。
+// シーン8(8RouteToTargets)用。人の位置から、シーン0(0HomeSetup)で置いた対象物体(Env/TargetObjects.json)すべてへの経路を
+// NavMesh 上で計算し、「どこへ向かいそうか」を重みづけして表示する。
+// 1PhilipDemo/MultiIntegrationLogger の RouteSub と同じ考え方で、ゴールを同じGameObjectの HomeEnvLoader が再生成した対象物体にしたもの。
 //   - 骨格: SkeletonRealtimeSubscriber が MQTT(pathfinder/person_coordinate, シーン6が送る)で受信する
 //   - スタート: DefineStart(Start オブジェクト)がハイライト中の人物の Pelvis を床に下ろした位置
 //   - NavMesh: NavSub が MQTT(pathfinder/navmesh, シーン7が送る)で受信して再現する
 //              または HomeFakeFloorNavMesh がシーン0の補助の床(Env/FakeFloors.json)だけから作る(シーン7を動かさずに試すとき)
 //   - ゴール: 対象物体の group ごとに1つ。group に属する物体全体のバウンディングボックスの中心から一番近い NavMesh 上の点
+//
+// 到達地点の予測(重みづけ):
+//   各ゴールのスコア = Head Weight × cos(頭部方向 と 頭→物体 の角度)
+//                    + Body Weight × cos(体の向き と 経路の出だしの方向 の角度)
+//                    + Move Weight × (歩く速さ) × cos(移動方向 と 経路の出だしの方向 の角度)
+//                    - Distance Weight × 経路の長さ(m)
+//   スコアを softmax で確率にし(Temperature が大きいほど差が小さくなる)、時間方向に平滑化する。
+//   頭部方向・体の向き・移動方向は HomeBodyCues が全関節の骨格(person_coordinate_FULL)から求める。無い手がかりは使わない。
+// 表示: すべての経路を出し、確率が高いほど太く・濃い色にする。一番高いゴールを「予測到達地点」として強調する。
 [RequireComponent(typeof(HomeEnvLoader))]
 public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 {
@@ -37,24 +46,54 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [SerializeField] private float goalFallbackSearchRadius = 1.5f;
 
     [Header("Route")]
-    [Tooltip("この秒数ごとに経路を計算し直す。0 で毎フレーム。")]
+    [Tooltip("この秒数ごとに経路を計算し直す。0 で毎フレーム。(予測と表示は毎フレーム更新する)")]
     [SerializeField, Min(0f)] private float routeUpdateInterval = 0.5f;
-    [SerializeField] private Material routeLineMaterial;
-    [Tooltip("一番近い(経路が一番短い)対象物体の経路に使うマテリアル。空なら Route Line Material。")]
-    [SerializeField] private Material nearestRouteLineMaterial;
-    [SerializeField] private float routeLineWidth = 0.05f;
-    [SerializeField] private float nearestRouteLineWidth = 0.08f;
-    [SerializeField] private float routeLineYOffset = 0.05f;
+    [Tooltip("経路の出だしの方向を、スタートからこの距離(m)進んだ点への向きとする。")]
+    [SerializeField] private float routeHeadingDistance = 0.6f;
     [Tooltip("経路の長さから到着までの時間を出すときの移動速度(m/s)。")]
     [SerializeField, Min(0.01f)] private float movementSpeed = 0.5f;
+
+    [Header("Prediction")]
+    [Tooltip("頭部方向がその物体を向いているほど高くする重み。")]
+    [SerializeField, Min(0f)] private float headWeight = 2.0f;
+    [Tooltip("体の向きがその経路の出だしを向いているほど高くする重み。")]
+    [SerializeField, Min(0f)] private float bodyWeight = 1.5f;
+    [Tooltip("歩いている方向がその経路の出だしと合っているほど高くする重み(歩く速さに比例して効く)。")]
+    [SerializeField, Min(0f)] private float moveWeight = 2.5f;
+    [Tooltip("経路が長いほど低くする重み(1mあたり)。")]
+    [SerializeField, Min(0f)] private float distanceWeight = 0.4f;
+    [Tooltip("この速さ(m/s)で歩いているとき、移動方向の重みが最大になる。これより遅い動きは弱めに効く。")]
+    [SerializeField, Min(0.01f)] private float walkingSpeed = 0.6f;
+    [Tooltip("この速さ(m/s)未満は止まっているとみなし、移動方向を使わない。")]
+    [SerializeField, Min(0f)] private float minMovingSpeed = 0.1f;
+    [Tooltip("確率にするときの温度。大きいほど確率の差が小さく(なだらかに)なる。")]
+    [SerializeField, Min(0.05f)] private float temperature = 1.0f;
+    [Tooltip("確率の平滑化の時定数(秒)。大きいほど表示がゆっくり変わる。")]
+    [SerializeField, Min(0f)] private float probabilitySmoothingTime = 0.6f;
+    [Tooltip("空の場合は同じGameObject・シーン内から探す。")]
+    [SerializeField] private HomeBodyCues bodyCues;
+
+    [Header("Route Visual")]
+    [SerializeField] private float minRouteLineWidth = 0.015f;
+    [SerializeField] private float maxRouteLineWidth = 0.09f;
+    [SerializeField] private float routeLineYOffset = 0.05f;
+    [Tooltip("確率が低い経路の色")]
+    [SerializeField] private Color lowProbabilityColor = new Color(0.55f, 0.65f, 0.85f, 0.25f);
+    [Tooltip("確率が高い経路の色")]
+    [SerializeField] private Color highProbabilityColor = new Color(1f, 0.45f, 0.15f, 0.95f);
+    [Tooltip("予測到達地点(一番確率が高いゴール)の経路の色")]
+    [SerializeField] private Color predictedColor = new Color(1f, 0.15f, 0.2f, 1f);
 
     [Header("Markers")]
     [SerializeField] private bool showMarkers = true;
     [SerializeField] private float markerScale = 0.08f;
+    [Tooltip("予測到達地点のマーカーをこの倍率で大きくする。")]
+    [SerializeField] private float predictedMarkerScale = 2.2f;
     [SerializeField] private Color startMarkerColor = Color.white;
-    [SerializeField] private Color goalMarkerColor = new Color(1f, 0.85f, 0.1f);
     [SerializeField] private bool showGoalLabels = true;
     [SerializeField] private float goalLabelCharacterSize = 0.05f;
+    [Tooltip("この確率未満のゴールはラベルを薄くする。")]
+    [SerializeField, Range(0f, 1f)] private float labelMinProbability = 0.05f;
 
     [Header("Status")]
     [SerializeField] private bool showStatus = true;
@@ -66,9 +105,11 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     private HomeFakeFloorNavMesh fakeFloorNavMesh;
     private readonly List<Goal> goals = new List<Goal>();
     private GameObject startMarker;
+    private Vector3 startPoint;
     private float lastRouteTime = float.NegativeInfinity;
     private bool hasStartPoint;
-    private Goal nearestGoal;
+    private Goal predictedGoal;
+    private Material lineMaterial;
     private GUIStyle statusStyle;
 
     public string DataRootDirectory => dataRootDirectory;
@@ -86,6 +127,19 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         }
     }
 
+    // 他のスクリプトから参照する用: group ごとの到達確率(平滑化後, 0〜1)
+    public IEnumerable<KeyValuePair<string, float>> Probabilities
+    {
+        get
+        {
+            foreach (Goal goal in goals)
+                yield return new KeyValuePair<string, float>(goal.group, goal.probability);
+        }
+    }
+
+    // 予測到達地点の group(無ければ null)
+    public string PredictedGroup => predictedGoal?.group;
+
     public int RouteVersion { get; private set; }
 
     private class Goal
@@ -96,9 +150,20 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         public bool onNavMesh;
         public bool hasPath;
         public float length;
+        public Vector3 heading;
         public NavMeshPath path = new NavMeshPath();
+        public Vector3[] linePoints = new Vector3[0];
         public LineRenderer line;
         public GameObject marker;
+        public TextMesh label;
+
+        // 予測
+        public float score;
+        public float targetProbability;
+        public float probability;
+        public float cosHead = float.NaN;
+        public float cosBody = float.NaN;
+        public float cosMove = float.NaN;
     }
 
     private void Awake()
@@ -111,9 +176,14 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         if (start == null)
             start = FindObjectOfType<DefineStart>();
 
+        if (bodyCues == null)
+            bodyCues = FindObjectOfType<HomeBodyCues>();
+
         skeletonSubscriber = FindObjectOfType<SkeletonRealtimeSubscriber>();
         navSubscriber = FindObjectOfType<NavSub>();
         fakeFloorNavMesh = GetComponent<HomeFakeFloorNavMesh>();
+        // 半透明の部屋・歩行可能領域(HomeRouteSceneVisual)より後に描いて、経路を一番上に見せる
+        lineMaterial = new Material(Shader.Find("Sprites/Default")) { renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20 };
 
         if (start == null)
             Debug.LogError("[HomeRouteToTargets] スタート(DefineStart)がありません。");
@@ -167,6 +237,9 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             goal.line = new GameObject($"Route_{group}").AddComponent<LineRenderer>();
             goal.line.transform.SetParent(transform, false);
             goal.line.useWorldSpace = true;
+            goal.line.sharedMaterial = lineMaterial;
+            goal.line.numCornerVertices = 4;
+            goal.line.numCapVertices = 4;
             goal.line.positionCount = 0;
             goal.line.enabled = false;
             goals.Add(goal);
@@ -195,27 +268,34 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     private void Update()
     {
-        if (Time.unscaledTime - lastRouteTime < routeUpdateInterval)
+        if (Time.unscaledTime - lastRouteTime >= routeUpdateInterval)
+        {
+            lastRouteTime = Time.unscaledTime;
+            UpdateRoutes();
+        }
+
+        if (!hasStartPoint)
             return;
 
-        lastRouteTime = Time.unscaledTime;
-        UpdateRoutes();
+        UpdatePrediction();
+        UpdateVisuals();
     }
 
+    // ------------------------------------------------------------
+    // Routes
+    // ------------------------------------------------------------
     public void UpdateRoutes()
     {
         RouteVersion++;
-        nearestGoal = null;
         hasStartPoint = false;
 
-        if (start == null || !start.HasActivePerson || !TryFindStartPoint(start.transform.position, out Vector3 startPoint))
+        if (start == null || !start.HasActivePerson || !TryFindStartPoint(start.transform.position, out startPoint))
         {
             HideAll();
             return;
         }
 
         hasStartPoint = true;
-        UpdateMarker(ref startMarker, "RouteStart", startPoint, startMarkerColor, null);
 
         foreach (Goal goal in goals)
         {
@@ -229,22 +309,18 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             {
                 goal.hasPath = true;
                 goal.length = GetPathLength(goal.path);
+                goal.heading = GetHeading(goal.path.corners, routeHeadingDistance);
 
-                if (nearestGoal == null || goal.length < nearestGoal.length)
-                    nearestGoal = goal;
+                Vector3[] corners = goal.path.corners;
+                goal.linePoints = new Vector3[corners.Length];
+
+                for (int i = 0; i < corners.Length; i++)
+                    goal.linePoints[i] = corners[i] + Vector3.up * routeLineYOffset;
             }
 
             if (logRouteSearch)
                 Debug.Log($"[HomeRouteToTargets] {goal.group}: onNavMesh={goal.onNavMesh}, status={goal.path.status}, length={(goal.hasPath ? goal.length : -1f):F2}, start={startPoint}, goal={goal.navPoint}");
-
-            if (goal.onNavMesh)
-                UpdateMarker(ref goal.marker, $"RouteGoal_{goal.group}", goal.navPoint, goalMarkerColor, goal.group);
-            else if (goal.marker != null)
-                goal.marker.SetActive(false);
         }
-
-        foreach (Goal goal in goals)
-            ApplyLine(goal, goal == nearestGoal);
     }
 
     private bool TryFindStartPoint(Vector3 position, out Vector3 point)
@@ -284,35 +360,161 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         return length;
     }
 
-    private void ApplyLine(Goal goal, bool nearest)
+    // スタートから経路に沿って distance 進んだ点への水平方向(経路が短ければ終点への方向)
+    private static Vector3 GetHeading(Vector3[] corners, float distance)
     {
-        if (!goal.hasPath)
+        Vector3 origin = corners[0];
+        Vector3 target = corners[corners.Length - 1];
+        float remaining = distance;
+
+        for (int i = 1; i < corners.Length; i++)
         {
-            goal.line.positionCount = 0;
-            goal.line.enabled = false;
-            return;
+            float segment = Vector3.Distance(corners[i - 1], corners[i]);
+
+            if (segment >= remaining)
+            {
+                target = Vector3.Lerp(corners[i - 1], corners[i], segment > 1e-5f ? remaining / segment : 0f);
+                break;
+            }
+
+            remaining -= segment;
         }
 
-        Vector3[] corners = goal.path.corners;
-        Vector3[] points = new Vector3[corners.Length];
-
-        for (int i = 0; i < corners.Length; i++)
-            points[i] = corners[i] + Vector3.up * routeLineYOffset;
-
-        Material material = nearest && nearestRouteLineMaterial != null ? nearestRouteLineMaterial : routeLineMaterial;
-
-        if (material != null)
-            goal.line.sharedMaterial = material;
-
-        float width = nearest ? nearestRouteLineWidth : routeLineWidth;
-        goal.line.startWidth = width;
-        goal.line.endWidth = width;
-        goal.line.positionCount = points.Length;
-        goal.line.SetPositions(points);
-        goal.line.enabled = true;
+        Vector3 heading = Horizontal(target - origin);
+        return heading.sqrMagnitude > 1e-6f ? heading.normalized : Vector3.zero;
     }
 
-    private void UpdateMarker(ref GameObject marker, string name, Vector3 position, Color color, string label)
+    private static Vector3 Horizontal(Vector3 v) => new Vector3(v.x, 0f, v.z);
+
+    // ------------------------------------------------------------
+    // Prediction
+    // ------------------------------------------------------------
+    private void UpdatePrediction()
+    {
+        bool hasHead = bodyCues != null && bodyCues.HasPerson && bodyCues.HasHead;
+        bool hasBody = bodyCues != null && bodyCues.HasPerson && bodyCues.HasBody;
+        Vector3 velocity = bodyCues != null && bodyCues.HasPerson ? bodyCues.Velocity : Vector3.zero;
+        float speed = velocity.magnitude;
+        bool moving = speed >= minMovingSpeed;
+        float moveStrength = moving ? Mathf.Clamp01(speed / walkingSpeed) : 0f;
+
+        float maxScore = float.NegativeInfinity;
+
+        foreach (Goal goal in goals)
+        {
+            goal.cosHead = goal.cosBody = goal.cosMove = float.NaN;
+
+            if (!goal.hasPath)
+                continue;
+
+            float score = -distanceWeight * goal.length;
+            bool alreadyThere = goal.heading == Vector3.zero;
+
+            if (hasHead)
+            {
+                Vector3 toObject = Horizontal(goal.center - bodyCues.HeadPosition);
+                goal.cosHead = toObject.sqrMagnitude > 1e-6f ? Vector3.Dot(bodyCues.HeadForward, toObject.normalized) : 1f;
+                score += headWeight * goal.cosHead;
+            }
+
+            if (hasBody)
+            {
+                goal.cosBody = alreadyThere ? 1f : Vector3.Dot(bodyCues.BodyForward, goal.heading);
+                score += bodyWeight * goal.cosBody;
+            }
+
+            if (moving)
+            {
+                goal.cosMove = alreadyThere ? 1f : Vector3.Dot(velocity / speed, goal.heading);
+                score += moveWeight * moveStrength * goal.cosMove;
+            }
+
+            goal.score = score;
+            maxScore = Mathf.Max(maxScore, score);
+        }
+
+        // softmax(大きい値で exp があふれないよう最大値を引く)
+        float sum = 0f;
+
+        foreach (Goal goal in goals)
+        {
+            goal.targetProbability = goal.hasPath ? Mathf.Exp((goal.score - maxScore) / temperature) : 0f;
+            sum += goal.targetProbability;
+        }
+
+        float blend = probabilitySmoothingTime <= 0f ? 1f : 1f - Mathf.Exp(-Time.deltaTime / probabilitySmoothingTime);
+        float smoothedSum = 0f;
+
+        foreach (Goal goal in goals)
+        {
+            if (sum > 0f)
+                goal.targetProbability /= sum;
+
+            goal.probability = Mathf.Lerp(goal.probability, goal.targetProbability, blend);
+            smoothedSum += goal.probability;
+        }
+
+        predictedGoal = null;
+
+        foreach (Goal goal in goals)
+        {
+            if (smoothedSum > 0f)
+                goal.probability /= smoothedSum;
+
+            if (goal.hasPath && (predictedGoal == null || goal.probability > predictedGoal.probability))
+                predictedGoal = goal;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Visual
+    // ------------------------------------------------------------
+    private void UpdateVisuals()
+    {
+        UpdateMarker(ref startMarker, "RouteStart", startPoint, startMarkerColor, markerScale);
+
+        float maxProbability = predictedGoal != null ? Mathf.Max(predictedGoal.probability, 1e-3f) : 1f;
+
+        // 確率の低い順に描いて、高い経路を上に重ねる
+        List<Goal> sorted = new List<Goal>(goals);
+        sorted.Sort((a, b) => a.probability.CompareTo(b.probability));
+
+        for (int rank = 0; rank < sorted.Count; rank++)
+        {
+            Goal goal = sorted[rank];
+
+            if (!goal.hasPath)
+            {
+                goal.line.enabled = false;
+
+                if (goal.marker != null)
+                    goal.marker.SetActive(false);
+
+                continue;
+            }
+
+            bool predicted = goal == predictedGoal;
+            float t = Mathf.Clamp01(goal.probability / maxProbability);
+            Color color = predicted ? predictedColor : Color.Lerp(lowProbabilityColor, highProbabilityColor, t * t);
+            float width = Mathf.Lerp(minRouteLineWidth, maxRouteLineWidth, t);
+
+            goal.line.positionCount = goal.linePoints.Length;
+            goal.line.SetPositions(goal.linePoints);
+            goal.line.startColor = color;
+            goal.line.endColor = color;
+            goal.line.startWidth = width;
+            goal.line.endWidth = width;
+            goal.line.sortingOrder = rank;
+            goal.line.enabled = true;
+
+            float scale = markerScale * (predicted ? predictedMarkerScale : Mathf.Lerp(0.6f, 1.4f, t));
+            Color markerColor = new Color(color.r, color.g, color.b, Mathf.Max(color.a, 0.5f));
+            UpdateMarker(ref goal.marker, $"RouteGoal_{goal.group}", goal.navPoint, markerColor, scale);
+            UpdateLabel(goal, predicted, markerColor);
+        }
+    }
+
+    private void UpdateMarker(ref GameObject marker, string name, Vector3 position, Color color, float scale)
     {
         if (!showMarkers)
         {
@@ -327,34 +529,43 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             marker.name = name;
             marker.transform.SetParent(transform, false);
             Destroy(marker.GetComponent<Collider>());
-            marker.GetComponent<Renderer>().material.color = color;
-
-            if (showGoalLabels && !string.IsNullOrEmpty(label))
-            {
-                GameObject text = new GameObject("Label");
-                text.transform.SetParent(marker.transform, false);
-                TextMesh mesh = text.AddComponent<TextMesh>();
-                mesh.text = label;
-                mesh.anchor = TextAnchor.LowerCenter;
-                mesh.characterSize = goalLabelCharacterSize;
-                mesh.fontSize = 48;
-                mesh.color = color;
-                text.AddComponent<HomeRouteLabelBillboard>();
-            }
+            marker.GetComponent<Renderer>().sharedMaterial = lineMaterial;
         }
+
+        // Sprites/Default は頂点カラーではなく _Color で色を付ける(マテリアルを共有したまま色だけ変える)
+        MaterialPropertyBlock block = new MaterialPropertyBlock();
+        block.SetColor("_Color", color);
+        marker.GetComponent<Renderer>().SetPropertyBlock(block);
 
         marker.transform.position = position;
-        marker.transform.localScale = Vector3.one * Mathf.Max(markerScale, 0.01f);
+        marker.transform.localScale = Vector3.one * Mathf.Max(scale, 0.01f);
+        marker.SetActive(true);
+    }
 
-        // ラベルはマーカーの拡大率に関係なく同じ大きさ・マーカーの少し上に出す
-        if (marker.transform.childCount > 0)
+    private void UpdateLabel(Goal goal, bool predicted, Color color)
+    {
+        if (!showGoalLabels || goal.marker == null)
+            return;
+
+        if (goal.label == null)
         {
-            Transform text = marker.transform.GetChild(0);
-            text.localScale = Vector3.one / Mathf.Max(markerScale, 0.01f);
-            text.localPosition = Vector3.up * 0.6f;
+            GameObject text = new GameObject("Label");
+            text.transform.SetParent(transform, false);
+            goal.label = text.AddComponent<TextMesh>();
+            goal.label.anchor = TextAnchor.LowerCenter;
+            goal.label.alignment = TextAlignment.Center;
+            goal.label.fontSize = 48;
+            text.AddComponent<HomeRouteLabelBillboard>();
         }
 
-        marker.SetActive(true);
+        bool faint = goal.probability < labelMinProbability && !predicted;
+        goal.label.text = predicted
+            ? $"▼ {goal.group} {goal.probability * 100f:F0}%"
+            : $"{goal.group} {goal.probability * 100f:F0}%";
+        goal.label.characterSize = goalLabelCharacterSize * (predicted ? 1.4f : 1f);
+        goal.label.color = faint ? new Color(1f, 1f, 1f, 0.35f) : (predicted ? Color.white : new Color(1f, 1f, 1f, 0.85f));
+        goal.label.transform.position = goal.marker.transform.position + Vector3.up * (goal.marker.transform.localScale.y * 0.6f + 0.02f);
+        goal.label.gameObject.SetActive(true);
     }
 
     private void HideAll()
@@ -362,14 +573,20 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         if (startMarker != null)
             startMarker.SetActive(false);
 
+        predictedGoal = null;
+
         foreach (Goal goal in goals)
         {
             goal.hasPath = false;
+            goal.probability = 0f;
             goal.line.positionCount = 0;
             goal.line.enabled = false;
 
             if (goal.marker != null)
                 goal.marker.SetActive(false);
+
+            if (goal.label != null)
+                goal.label.gameObject.SetActive(false);
         }
     }
 
@@ -384,10 +601,10 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             return;
 
         if (statusStyle == null)
-            statusStyle = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.UpperLeft, fontSize = 16, wordWrap = true };
+            statusStyle = new GUIStyle(GUI.skin.box) { alignment = TextAnchor.UpperLeft, fontSize = 16, wordWrap = true, richText = true };
 
         StringBuilder text = new StringBuilder();
-        text.AppendLine($"実験: {env.ExperimentName}   人の位置 → 対象物体 の経路");
+        text.AppendLine($"実験: {env.ExperimentName}   人の位置 → 対象物体 の経路と到達予測");
 
         if (skeletonSubscriber != null)
             text.AppendLine($"骨格(MQTT): {(skeletonSubscriber.IsConnected ? "接続中" : "未接続")}");
@@ -410,19 +627,62 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
         if (hasStartPoint)
         {
-            foreach (Goal goal in goals)
+            text.AppendLine(GetCueSummary());
+
+            if (predictedGoal != null)
+                text.AppendLine($"<b>予測到達地点: {predictedGoal.group}  {predictedGoal.probability * 100f:F0}%</b>");
+
+            List<Goal> sorted = new List<Goal>(goals);
+            sorted.Sort((a, b) => b.probability.CompareTo(a.probability));
+
+            foreach (Goal goal in sorted)
             {
-                string state = goal.hasPath
-                    ? $"{goal.length:F2} m / {goal.length / Mathf.Max(movementSpeed, 0.01f):F1} 秒"
-                    : goal.onNavMesh ? "届かない" : "近くに NavMesh がない";
-                text.AppendLine($"{(goal == nearestGoal ? "★" : "　")}{goal.group}: {state}");
+                if (!goal.hasPath)
+                {
+                    text.AppendLine($"<color=#888888>　{goal.group}: {(goal.onNavMesh ? "届かない" : "近くに NavMesh がない")}</color>");
+                    continue;
+                }
+
+                int bars = Mathf.RoundToInt(goal.probability * 20f);
+                string bar = new string('|', bars).PadRight(20, '.');
+                string mark = goal == predictedGoal ? "★" : "　";
+                text.AppendLine($"{mark}{goal.group}  {goal.probability * 100f,3:F0}% [{bar}]  {goal.length:F1}m / {goal.length / movementSpeed:F0}秒{GetCueDetail(goal)}");
             }
         }
 
         GUIContent content = new GUIContent(text.ToString().TrimEnd());
-        const float width = 560f;
+        const float width = 640f;
 
         GUI.Box(new Rect(10, 10, width, statusStyle.CalcHeight(content, width)), content, statusStyle);
+    }
+
+    private string GetCueSummary()
+    {
+        if (bodyCues == null)
+            return "手がかり: HomeBodyCues がありません(経路の長さだけで予測)";
+
+        if (!bodyCues.HasPerson)
+            return "手がかり: 全関節の骨格(FULL)を受信していません(経路の長さだけで予測)";
+
+        float speed = bodyCues.Velocity.magnitude;
+        return $"手がかり: 頭部方向 {(bodyCues.HasHead ? "○" : "×")} / 体の向き {(bodyCues.HasBody ? "○" : "×")} / " +
+               $"移動 {speed:F2} m/s{(speed >= minMovingSpeed ? "" : "(停止)")}";
+    }
+
+    private static string GetCueDetail(Goal goal)
+    {
+        StringBuilder detail = new StringBuilder();
+
+        if (!float.IsNaN(goal.cosHead))
+            detail.Append($" 頭{Mathf.Acos(Mathf.Clamp(goal.cosHead, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+
+        if (!float.IsNaN(goal.cosBody))
+            detail.Append($" 体{Mathf.Acos(Mathf.Clamp(goal.cosBody, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+
+        if (!float.IsNaN(goal.cosMove))
+            detail.Append($" 移{Mathf.Acos(Mathf.Clamp(goal.cosMove, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+
+        return detail.Length > 0 ? $"<color=#AAAAAA>{detail}</color>" : "";
     }
 }
 
