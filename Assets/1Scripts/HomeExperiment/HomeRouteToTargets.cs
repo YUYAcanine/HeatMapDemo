@@ -75,8 +75,14 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [SerializeField] private float minRouteLineWidth = 0.025f;
     [SerializeField] private float maxRouteLineWidth = 0.09f;
     [SerializeField] private float routeLineYOffset = 0.05f;
-    [Tooltip("確率が低い経路の色")]
+    [Tooltip("可能性がほとんどない(Possible Probability 未満の)経路の色")]
     [SerializeField] private Color lowProbabilityColor = new Color(0.45f, 0.75f, 1f, 0.75f);
+    [Tooltip("この確率以上のゴールは「可能性あり」としてオレンジ系の経路で残す。")]
+    [SerializeField, Range(0f, 1f)] private float possibleProbability = 0.05f;
+    [Tooltip("可能性ありの経路のうち、確率が低い方の色(確率が上がるほど High Probability Color に近づく)")]
+    [SerializeField] private Color possibleColor = new Color(1f, 0.7f, 0.25f, 0.85f);
+    [Tooltip("可能性ありの経路の最小の太さ")]
+    [SerializeField] private float possibleRouteLineWidth = 0.045f;
     [Tooltip("確率が高い経路の色")]
     [SerializeField] private Color highProbabilityColor = new Color(1f, 0.45f, 0.15f, 0.95f);
     [Tooltip("予測到達地点(一番確率が高いゴール)の経路の色")]
@@ -102,8 +108,8 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [Tooltip("到達予測の表に出す物体の数(確率の高い順)。")]
     [SerializeField, Min(1)] private int statusTopCount = 3;
     [Tooltip("到達予測の表の文字の大きさ(ピクセル)。")]
-    [SerializeField] private int statusFontSize = 30;
-    [SerializeField] private float statusWidth = 520f;
+    [SerializeField] private int statusFontSize = 40;
+    [SerializeField] private float statusWidth = 640f;
     [Tooltip("オンで画面の右上、オフで左上に出す。")]
     [SerializeField] private bool statusAtRight = true;
     [Tooltip("人物・手がかりの角度・NavMesh などの詳細も小さく出す(調整用)。")]
@@ -121,7 +127,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     private Goal predictedGoal;
     private Material lineMaterial;
     private GUIStyle labelStyle;
-    private Texture2D labelBackground;
+    private Texture2D whiteTexture;
     private GUIStyle statusStyle;
 
     public string DataRootDirectory => dataRootDirectory;
@@ -532,8 +538,14 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
             bool predicted = goal == predictedGoal;
             float t = Mathf.Clamp01(goal.probability / maxProbability);
-            Color color = predicted ? predictedColor : Color.Lerp(lowProbabilityColor, highProbabilityColor, t * t);
-            float width = Mathf.Lerp(minRouteLineWidth, maxRouteLineWidth, t);
+            // 一番高いものは赤、可能性があるものはオレンジ系(確率が高いほど濃く太く)、ほぼ無いものは細い水色
+            bool possible = goal.probability >= possibleProbability;
+            Color color = predicted ? predictedColor
+                : possible ? Color.Lerp(possibleColor, highProbabilityColor, t)
+                : lowProbabilityColor;
+            float width = predicted ? maxRouteLineWidth
+                : possible ? Mathf.Lerp(possibleRouteLineWidth, maxRouteLineWidth, t)
+                : minRouteLineWidth;
 
             goal.line.positionCount = goal.linePoints.Length;
             goal.line.SetPositions(goal.linePoints);
@@ -604,122 +616,214 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     private void OnGUI()
     {
+        if (Event.current.type != EventType.Repaint)
+            return;
+
+        EnsureGuiResources();
         DrawGoalLabels();
 
-        if (!showStatus)
-            return;
+        if (showStatus)
+            DrawStatusPanel();
+    }
+
+    private void EnsureGuiResources()
+    {
+        if (whiteTexture == null)
+        {
+            whiteTexture = new Texture2D(1, 1);
+            whiteTexture.SetPixel(0, 0, Color.white);
+            whiteTexture.Apply();
+        }
+
+        if (labelStyle == null)
+        {
+            labelStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold,
+                padding = new RectOffset(8, 8, 3, 3),
+                wordWrap = false
+            };
+            labelStyle.normal.background = whiteTexture;
+        }
 
         if (statusStyle == null)
         {
-            statusStyle = new GUIStyle(GUI.skin.box)
-            {
-                alignment = TextAnchor.UpperLeft,
-                fontSize = statusFontSize,
-                wordWrap = true,
-                richText = true,
-                padding = new RectOffset(14, 14, 10, 10)
-            };
+            statusStyle = new GUIStyle(GUI.skin.label) { wordWrap = false, richText = true, clipping = TextClipping.Clip };
             statusStyle.normal.textColor = Color.white;
         }
+    }
 
-        statusStyle.fontSize = statusFontSize;
-        int small = Mathf.Max(statusFontSize / 2, 12);
-        StringBuilder text = new StringBuilder();
-        text.AppendLine("<b>到達予測</b>");
+    // ------------------------------------------------------------
+    // Status panel (top right): top N destinations with probability bars
+    // ------------------------------------------------------------
+    private void DrawStatusPanel()
+    {
+        float padding = statusFontSize * 0.45f;
+        float width = statusWidth;
+        float x = statusAtRight ? Screen.width - width - 12f : 12f;
+        float y = 12f;
+        int headerSize = Mathf.RoundToInt(statusFontSize * 0.75f);
+        int smallSize = Mathf.Max(Mathf.RoundToInt(statusFontSize * 0.45f), 12);
+        float rowHeight = statusFontSize * 1.35f;
+        float barHeight = Mathf.Max(statusFontSize * 0.22f, 4f);
 
         string problem = GetStatusProblem();
+        List<Goal> top = new List<Goal>();
 
-        if (problem != null)
+        if (problem == null)
         {
-            text.AppendLine($"<size={small}><color=#FFB0B0>{problem}</color></size>");
-        }
-        else
-        {
-            List<Goal> sorted = new List<Goal>();
-
             foreach (Goal goal in goals)
             {
                 if (goal.hasPath)
-                    sorted.Add(goal);
+                    top.Add(goal);
             }
 
-            sorted.Sort((a, b) => b.probability.CompareTo(a.probability));
+            top.Sort((a, b) => b.probability.CompareTo(a.probability));
 
-            for (int i = 0; i < Mathf.Min(statusTopCount, sorted.Count); i++)
-            {
-                Goal goal = sorted[i];
-                string color = i == 0 ? "#FFE066" : "#FFFFFF";
-                int bars = Mathf.RoundToInt(goal.probability * 10f);
-                string bar = $"<color=#FF7040>{new string('■', bars)}</color><color=#555555>{new string('■', 10 - bars)}</color>";
-                text.AppendLine($"<color={color}>{i + 1}. {goal.group}  <b>{goal.probability * 100f:F0}%</b></color>  <size={small + 4}>{bar}</size>");
-            }
+            if (top.Count > statusTopCount)
+                top.RemoveRange(statusTopCount, top.Count - statusTopCount);
 
-            if (sorted.Count == 0)
-                text.AppendLine($"<size={small}><color=#FFB0B0>届く対象物体がありません</color></size>");
+            if (top.Count == 0)
+                problem = "No reachable targets";
         }
 
-        if (showStatusDetail)
+        string detail = showStatusDetail ? GetStatusDetail() : null;
+        int detailLines = string.IsNullOrEmpty(detail) ? 0 : detail.Split('\n').Length;
+
+        float height = padding * 2f + headerSize * 1.5f +
+                       (problem != null ? smallSize * 1.6f : top.Count * (rowHeight + barHeight + 6f)) +
+                       detailLines * smallSize * 1.4f;
+
+        DrawRect(new Rect(x, y, width, height), new Color(0f, 0f, 0f, 0.72f));
+
+        float cursor = y + padding;
+        DrawText(new Rect(x + padding, cursor, width - padding * 2f, headerSize * 1.5f),
+            "<b>Predicted destination</b>", headerSize, new Color(0.85f, 0.85f, 0.85f), TextAnchor.UpperLeft);
+        cursor += headerSize * 1.5f;
+
+        if (problem != null)
         {
-            text.AppendLine($"<size={small}><color=#BBBBBB>{GetStatusDetail()}</color></size>");
+            DrawText(new Rect(x + padding, cursor, width - padding * 2f, smallSize * 1.6f),
+                problem, smallSize, new Color(1f, 0.7f, 0.7f), TextAnchor.UpperLeft);
+            cursor += smallSize * 1.6f;
+        }
+        else
+        {
+            for (int i = 0; i < top.Count; i++)
+            {
+                Goal goal = top[i];
+                Color color = i == 0 ? new Color(1f, 0.88f, 0.4f) : Color.white;
+                Rect row = new Rect(x + padding, cursor, width - padding * 2f, rowHeight);
+
+                DrawText(row, $"{i + 1}.  {goal.group}", statusFontSize, color, TextAnchor.MiddleLeft);
+                DrawText(row, $"<b>{goal.probability * 100f:F0}%</b>", statusFontSize, color, TextAnchor.MiddleRight);
+                cursor += rowHeight;
+
+                Rect bar = new Rect(x + padding, cursor, width - padding * 2f, barHeight);
+                DrawRect(bar, new Color(1f, 1f, 1f, 0.15f));
+                DrawRect(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(goal.probability), bar.height),
+                    i == 0 ? predictedColor : highProbabilityColor);
+                cursor += barHeight + 6f;
+            }
         }
 
-        GUIContent content = new GUIContent(text.ToString().TrimEnd());
-        float width = statusWidth;
-        float height = statusStyle.CalcHeight(content, width);
-        float x = statusAtRight ? Screen.width - width - 10f : 10f;
-
-        GUI.Box(new Rect(x, 10, width, height), content, statusStyle);
+        if (detailLines > 0)
+        {
+            DrawText(new Rect(x + padding, cursor, width - padding * 2f, detailLines * smallSize * 1.4f),
+                detail, smallSize, new Color(0.75f, 0.75f, 0.75f), TextAnchor.UpperLeft);
+        }
     }
 
-    // 予測を出せない理由(出せるときは null)
+    // Reason why no prediction can be shown (null when everything is fine)
     private string GetStatusProblem()
     {
         if (bodyCues == null)
-            return "HomeBodyCues がありません";
+            return "HomeBodyCues is missing";
 
         if (!bodyCues.IsConnected)
-            return "骨格(MQTT)に接続していません";
+            return "Not connected to skeleton (MQTT)";
 
         if (!bodyCues.HasPerson)
-            return "人物を受信していません";
+            return "No person detected";
 
         if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled && !fakeFloorNavMesh.IsBuilt)
-            return "NavMesh を作れていません(Console を確認)";
+            return "NavMesh not built (see Console)";
 
         if (!hasStartPoint)
-            return "人の近くに NavMesh がありません";
+            return "No NavMesh near the person";
 
         return null;
     }
 
-    // 詳細(Show Status Detail のときだけ): 人物・手がかり・NavMesh
+    // Details (only when Show Status Detail is on): person, cues, NavMesh
     private string GetStatusDetail()
     {
         StringBuilder text = new StringBuilder();
 
         if (bodyCues != null && bodyCues.HasPerson)
-            text.AppendLine($"人物: {bodyCues.MatchedLabel}");
+            text.AppendLine($"Person: {bodyCues.MatchedLabel}");
 
         if (hasStartPoint)
             text.AppendLine(GetCueSummary());
 
         if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled && fakeFloorNavMesh.IsBuilt)
-            text.AppendLine($"NavMesh: 補助の床 {fakeFloorNavMesh.FloorCount} 枚 / リンク {fakeFloorNavMesh.LinkCount} 本");
+            text.AppendLine($"NavMesh: {fakeFloorNavMesh.FloorCount} floors / {fakeFloorNavMesh.LinkCount} links");
 
         if (navSubscriber != null)
-            text.AppendLine($"NavMesh(MQTT): {(navSubscriber.IsConnected ? "接続中" : "未接続")}");
+            text.AppendLine($"NavMesh (MQTT): {(navSubscriber.IsConnected ? "connected" : "disconnected")}");
 
         if (predictedGoal != null)
-            text.Append($"{predictedGoal.group}: {predictedGoal.length:F1}m / {predictedGoal.length / movementSpeed:F0}秒{GetCueDetail(predictedGoal)}");
+            text.Append($"{predictedGoal.group}: {predictedGoal.length:F1} m / {predictedGoal.length / movementSpeed:F0} s{GetCueDetail(predictedGoal)}");
 
         return text.ToString().TrimEnd();
     }
 
-    // ゴールのラベルを画面上に一定の大きさで描く(3Dの文字だと手前ほど大きく、奥ほど小さく読みにくくなるため)。
-    // 背景に暗い帯を敷いて、半透明の部屋や明るい背景の上でも読めるようにする。確率の低い順に描いて、高いものを上に重ねる。
+    private string GetCueSummary()
+    {
+        if (bodyCues == null || !bodyCues.HasPerson)
+            return "Cues: none (route length only)";
+
+        float speed = bodyCues.Velocity.magnitude;
+        return $"Cues: head {(bodyCues.HasHead ? "OK" : "-")} / body {(bodyCues.HasBody ? "OK" : "-")} / " +
+               $"move {speed:F2} m/s{(speed >= minMovingSpeed ? "" : " (still)")}";
+    }
+
+    private static string GetCueDetail(Goal goal)
+    {
+        StringBuilder detail = new StringBuilder();
+
+        if (!float.IsNaN(goal.cosHead))
+            detail.Append($"  head {Mathf.Acos(Mathf.Clamp(goal.cosHead, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+
+        if (!float.IsNaN(goal.cosBody))
+            detail.Append($"  body {Mathf.Acos(Mathf.Clamp(goal.cosBody, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+
+        if (!float.IsNaN(goal.cosMove))
+            detail.Append($"  move {Mathf.Acos(Mathf.Clamp(goal.cosMove, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+
+        return detail.ToString();
+    }
+
+    // ------------------------------------------------------------
+    // Goal labels: fixed pixel size, laid out so they never overlap
+    // ------------------------------------------------------------
+    private class LabelLayout
+    {
+        public Goal goal;
+        public GUIContent content;
+        public Rect rect;
+        public Vector2 anchor;
+        public bool predicted;
+        public bool faint;
+        public int fontSize;
+    }
+
+    // Labels are placed in priority order (predicted first, then higher probability). A label that would overlap an
+    // already placed one is moved up/down step by step; a thin leader line then connects it to its sphere.
     private void DrawGoalLabels()
     {
-        if (!showGoalLabels || !hasStartPoint || Event.current.type != EventType.Repaint)
+        if (!showGoalLabels || !hasStartPoint)
             return;
 
         Camera camera = Camera.main;
@@ -727,26 +831,11 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         if (camera == null)
             return;
 
-        if (labelStyle == null)
-        {
-            labelBackground = new Texture2D(1, 1);
-            labelBackground.SetPixel(0, 0, Color.white);
-            labelBackground.Apply();
+        List<Goal> order = new List<Goal>(goals);
+        order.Sort((a, b) => b.probability.CompareTo(a.probability));
+        List<LabelLayout> placed = new List<LabelLayout>();
 
-            labelStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontStyle = FontStyle.Bold,
-                padding = new RectOffset(6, 6, 2, 2),
-                wordWrap = false
-            };
-            labelStyle.normal.background = labelBackground;
-        }
-
-        List<Goal> sorted = new List<Goal>(goals);
-        sorted.Sort((a, b) => a.probability.CompareTo(b.probability));
-
-        foreach (Goal goal in sorted)
+        foreach (Goal goal in order)
         {
             if (!goal.hasPath || goal.marker == null || !goal.marker.activeSelf)
                 continue;
@@ -757,53 +846,97 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             if (screen.z <= 0f)
                 continue;
 
-            bool predicted = goal == predictedGoal;
-            bool faint = goal.probability < labelMinProbability && !predicted;
-            string text = predicted
-                ? $"▼ {goal.group}  {goal.probability * 100f:F0}%"
-                : $"{goal.group}  {goal.probability * 100f:F0}%";
+            LabelLayout layout = new LabelLayout
+            {
+                goal = goal,
+                predicted = goal == predictedGoal,
+                faint = goal.probability < labelMinProbability && goal != predictedGoal,
+                anchor = new Vector2(screen.x, Screen.height - screen.y)
+            };
 
-            labelStyle.fontSize = predicted ? predictedLabelFontSize : goalLabelFontSize;
-            labelStyle.normal.textColor = faint ? new Color(0.8f, 0.8f, 0.8f, 1f) : (predicted ? new Color(1f, 0.9f, 0.4f, 1f) : Color.white);
+            layout.fontSize = layout.predicted ? predictedLabelFontSize : goalLabelFontSize;
+            layout.content = new GUIContent($"{goal.group}  {goal.probability * 100f:F0}%");
+            labelStyle.fontSize = layout.fontSize;
+            Vector2 size = labelStyle.CalcSize(layout.content);
 
-            GUIContent content = new GUIContent(text);
-            Vector2 size = labelStyle.CalcSize(content);
-            // 球のすぐ上に、下端の中央を合わせる(GUI は y が上から下)
-            Rect rect = new Rect(screen.x - size.x * 0.5f, Screen.height - screen.y - size.y - 4f, size.x, size.y);
+            // Default position: just above the sphere, centered
+            Rect rect = new Rect(layout.anchor.x - size.x * 0.5f, layout.anchor.y - size.y - 6f, size.x, size.y);
+            layout.rect = FindFreeRect(rect, placed);
+            placed.Add(layout);
+        }
+
+        // Draw low priority first so the predicted label is on top of leader lines
+        for (int i = placed.Count - 1; i >= 0; i--)
+        {
+            LabelLayout layout = placed[i];
+            Color background = layout.predicted ? new Color(0.45f, 0.05f, 0.05f, 0.88f) : labelBackgroundColor;
+            Color textColor = layout.faint ? new Color(0.8f, 0.8f, 0.8f) : (layout.predicted ? new Color(1f, 0.9f, 0.4f) : Color.white);
+
+            float labelBottom = layout.rect.yMax;
+
+            if (Mathf.Abs(labelBottom - (layout.anchor.y - 6f)) > 2f)
+            {
+                // Leader line from the sphere to the moved label
+                float top = Mathf.Min(layout.anchor.y, layout.rect.center.y);
+                float bottom = Mathf.Max(layout.anchor.y, layout.rect.center.y);
+                DrawRect(new Rect(layout.anchor.x - 1f, top, 2f, bottom - top), new Color(background.r, background.g, background.b, 0.9f));
+            }
+
+            labelStyle.fontSize = layout.fontSize;
+            labelStyle.normal.textColor = textColor;
 
             Color previous = GUI.backgroundColor;
-            GUI.backgroundColor = predicted ? new Color(0.35f, 0.05f, 0.05f, 0.85f) : labelBackgroundColor;
-            GUI.Label(rect, content, labelStyle);
+            GUI.backgroundColor = background;
+            GUI.Label(layout.rect, layout.content, labelStyle);
             GUI.backgroundColor = previous;
         }
     }
 
-    private string GetCueSummary()
+    private static Rect FindFreeRect(Rect rect, List<LabelLayout> placed)
     {
-        if (bodyCues == null)
-            return "手がかり: HomeBodyCues がありません(経路の長さだけで予測)";
+        const float gap = 3f;
+        float step = rect.height + gap;
 
-        if (!bodyCues.HasPerson)
-            return "手がかり: 全関節の骨格(FULL)を受信していません(経路の長さだけで予測)";
+        for (int i = 0; i < 24; i++)
+        {
+            // 0, up 1, down 1, up 2, down 2, ...
+            int k = (i + 1) / 2;
+            float offset = (i % 2 == 1 ? -1f : 1f) * k * step;
+            Rect candidate = new Rect(rect.x, rect.y + offset, rect.width, rect.height);
 
-        float speed = bodyCues.Velocity.magnitude;
-        return $"手がかり: 頭部方向 {(bodyCues.HasHead ? "○" : "×")} / 体の向き {(bodyCues.HasBody ? "○" : "×")} / " +
-               $"移動 {speed:F2} m/s{(speed >= minMovingSpeed ? "" : "(停止)")}";
+            if (!Overlaps(candidate, placed, gap))
+                return candidate;
+        }
+
+        return rect;
     }
 
-    private static string GetCueDetail(Goal goal)
+    private static bool Overlaps(Rect rect, List<LabelLayout> placed, float gap)
     {
-        StringBuilder detail = new StringBuilder();
+        Rect expanded = new Rect(rect.x - gap, rect.y - gap, rect.width + gap * 2f, rect.height + gap * 2f);
 
-        if (!float.IsNaN(goal.cosHead))
-            detail.Append($" 頭{Mathf.Acos(Mathf.Clamp(goal.cosHead, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+        foreach (LabelLayout other in placed)
+        {
+            if (expanded.Overlaps(other.rect))
+                return true;
+        }
 
-        if (!float.IsNaN(goal.cosBody))
-            detail.Append($" 体{Mathf.Acos(Mathf.Clamp(goal.cosBody, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+        return false;
+    }
 
-        if (!float.IsNaN(goal.cosMove))
-            detail.Append($" 移{Mathf.Acos(Mathf.Clamp(goal.cosMove, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
+    private void DrawRect(Rect rect, Color color)
+    {
+        Color previous = GUI.color;
+        GUI.color = color;
+        GUI.DrawTexture(rect, whiteTexture);
+        GUI.color = previous;
+    }
 
-        return detail.Length > 0 ? $"<color=#AAAAAA>{detail}</color>" : "";
+    private void DrawText(Rect rect, string text, int fontSize, Color color, TextAnchor alignment)
+    {
+        statusStyle.fontSize = fontSize;
+        statusStyle.alignment = alignment;
+        statusStyle.normal.textColor = color;
+        GUI.Label(rect, text, statusStyle);
     }
 }

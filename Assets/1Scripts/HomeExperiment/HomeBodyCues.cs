@@ -8,7 +8,8 @@ using UnityEngine;
 //   - スタート位置: その人の Pelvis の真下にある一番近い床(Collider。FakeFloor など)の高さに下ろした位置
 //   - 頭部方向: 両耳の中点 → 鼻(耳が無ければ 頭 → 鼻)。HomeSkeletonBodyVisual(シーン2〜5の頭部方向)と同じ定義
 //   - 体の向き: 左右の肩・左右の腰を結ぶ線に垂直な水平方向(肩と腰の平均)
-//   - 移動: Pelvis の水平方向の速度(直近 Velocity Window 秒)
+//   - 体の向き・移動は直近 Cue Averaging Window 秒(既定 3 秒)の平均を使う
+//     (体の向き = その間の向きの平均 / 移動 = その間に Pelvis が動いた量 ÷ 時間 = 平均の速度)
 public class HomeBodyCues : MonoBehaviour
 {
     [Header("Source")]
@@ -37,11 +38,11 @@ public class HomeBodyCues : MonoBehaviour
     [Tooltip("体の向きの矢印(水色)が背中側を向いてしまうときにオンにする。")]
     [SerializeField] private bool flipBodyForward = false;
 
-    [Header("Smoothing")]
-    [Tooltip("向きの平滑化の時定数(秒)。大きいほどゆっくり追従する。")]
+    [Header("Averaging")]
+    [Tooltip("頭部方向の平滑化の時定数(秒)。大きいほどゆっくり追従する。")]
     [SerializeField] private float directionSmoothingTime = 0.2f;
-    [Tooltip("速度を求める時間幅(秒)。")]
-    [SerializeField] private float velocityWindow = 0.6f;
+    [Tooltip("体の向きと移動(位置の変化)は、直近この秒数の平均を使う。")]
+    [SerializeField, Min(0.1f)] private float cueAveragingWindow = 3f;
 
     [Header("Visual")]
     [SerializeField] private bool showCues = true;
@@ -96,7 +97,18 @@ public class HomeBodyCues : MonoBehaviour
     }
 
     private readonly Dictionary<string, Person> persons = new Dictionary<string, Person>();
-    private readonly Queue<KeyValuePair<float, Vector3>> pelvisHistory = new Queue<KeyValuePair<float, Vector3>>();
+    private struct CueSample
+    {
+        public float time;
+        public Vector3 pelvis;
+        public Vector3 bodyForward;   // 取れなかったときは zero
+    }
+
+    private readonly Queue<CueSample> history = new Queue<CueSample>();
+    private float lastSampleTime = float.NegativeInfinity;
+
+    // 直近 Cue Averaging Window 秒の Pelvis の平均位置
+    public Vector3 AveragePelvis { get; private set; }
     private LineRenderer headLine;
     private LineRenderer bodyLine;
     private LineRenderer moveLine;
@@ -198,16 +210,12 @@ public class HomeBodyCues : MonoBehaviour
             HasHead = true;
         }
 
-        if (TryGetBodyForward(matched, out Vector3 bodyForward))
-        {
-            if (flipBodyForward)
-                bodyForward = -bodyForward;
+        Vector3 bodyForward = Vector3.zero;
 
-            BodyForward = SmoothDirection(BodyForward, bodyForward, blend);
-            HasBody = true;
-        }
+        if (TryGetBodyForward(matched, out bodyForward) && flipBodyForward)
+            bodyForward = -bodyForward;
 
-        UpdateVelocity(matched.receivedTime, Pelvis);
+        UpdateAverages(matched.receivedTime, Pelvis, bodyForward);
     }
 
     // 受信中の人物のうち、頭〜Pelvis の距離が一番短い人。今の人物は switchMargin だけ優先する
@@ -314,32 +322,40 @@ public class HomeBodyCues : MonoBehaviour
         return sum.sqrMagnitude > 1e-8f;
     }
 
-    private void UpdateVelocity(float time, Vector3 pelvis)
+    // 新しい骨格が届いたときだけ記録し、直近 cueAveragingWindow 秒で平均する
+    private void UpdateAverages(float time, Vector3 pelvis, Vector3 bodyForward)
     {
-        if (pelvisHistory.Count == 0 || time > LastHistoryTime())
-            pelvisHistory.Enqueue(new KeyValuePair<float, Vector3>(time, pelvis));
+        if (time > lastSampleTime)
+        {
+            history.Enqueue(new CueSample { time = time, pelvis = pelvis, bodyForward = bodyForward });
+            lastSampleTime = time;
+        }
 
-        while (pelvisHistory.Count > 2 && time - pelvisHistory.Peek().Key > velocityWindow)
-            pelvisHistory.Dequeue();
+        while (history.Count > 1 && time - history.Peek().time > cueAveragingWindow)
+            history.Dequeue();
 
-        KeyValuePair<float, Vector3> oldest = pelvisHistory.Peek();
-        float duration = time - oldest.Key;
-        Velocity = duration > 0.05f ? Horizontal(pelvis - oldest.Value) / duration : Vector3.zero;
-    }
+        Vector3 forwardSum = Vector3.zero;
+        Vector3 pelvisSum = Vector3.zero;
 
-    private float LastHistoryTime()
-    {
-        float last = float.NegativeInfinity;
+        foreach (CueSample sample in history)
+        {
+            forwardSum += sample.bodyForward;
+            pelvisSum += sample.pelvis;
+        }
 
-        foreach (KeyValuePair<float, Vector3> entry in pelvisHistory)
-            last = entry.Key;
+        AveragePelvis = pelvisSum / history.Count;
+        HasBody = forwardSum.sqrMagnitude > 1e-6f;
+        BodyForward = HasBody ? forwardSum.normalized : Vector3.zero;
 
-        return last;
+        CueSample oldest = history.Peek();
+        float duration = time - oldest.time;
+        Velocity = duration > 0.2f ? Horizontal(pelvis - oldest.pelvis) / duration : Vector3.zero;
     }
 
     private void ResetHistory()
     {
-        pelvisHistory.Clear();
+        history.Clear();
+        lastSampleTime = float.NegativeInfinity;
         Velocity = Vector3.zero;
         MatchedLabel = null;
     }
