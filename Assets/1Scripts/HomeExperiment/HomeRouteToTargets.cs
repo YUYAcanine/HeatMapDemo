@@ -13,7 +13,7 @@ using UnityEngine.AI;
 //   - ゴール: 対象物体の group ごとに1つ。group に属する物体全体のバウンディングボックスの中心から一番近い NavMesh 上の点
 //
 // 到達地点の予測(重みづけ):
-//   各ゴールのスコア = Head Weight × cos(頭部方向 と 頭→物体 の角度)
+//   各ゴールのスコア(初期値は 体の向き 3.0 > 移動 2.5 > 頭部方向 0.8 の順に強い) = Head Weight × cos(頭部方向 と 頭→物体 の角度)
 //                    + Body Weight × cos(体の向き と 経路の出だしの方向 の角度)
 //                    + Move Weight × (歩く速さ) × cos(移動方向 と 経路の出だしの方向 の角度)
 //                    - Distance Weight × 経路の長さ(m)
@@ -55,9 +55,9 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     [Header("Prediction")]
     [Tooltip("頭部方向がその物体を向いているほど高くする重み。")]
-    [SerializeField, Min(0f)] private float headWeight = 2.0f;
+    [SerializeField, Min(0f)] private float headWeight = 0.8f;
     [Tooltip("体の向きがその経路の出だしを向いているほど高くする重み。")]
-    [SerializeField, Min(0f)] private float bodyWeight = 1.5f;
+    [SerializeField, Min(0f)] private float bodyWeight = 3.0f;
     [Tooltip("歩いている方向がその経路の出だしと合っているほど高くする重み(歩く速さに比例して効く)。")]
     [SerializeField, Min(0f)] private float moveWeight = 2.5f;
     [Tooltip("経路が長いほど低くする重み(1mあたり)。")]
@@ -67,9 +67,9 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [Tooltip("この速さ(m/s)未満は止まっているとみなし、移動方向を使わない。")]
     [SerializeField, Min(0f)] private float minMovingSpeed = 0.1f;
     [Tooltip("確率にするときの温度。大きいほど確率の差が小さく(なだらかに)なる。")]
-    [SerializeField, Min(0.05f)] private float temperature = 1.0f;
+    [SerializeField, Min(0.05f)] private float temperature = 1.5f;
     [Tooltip("確率の平滑化の時定数(秒)。大きいほど表示がゆっくり変わる。")]
-    [SerializeField, Min(0f)] private float probabilitySmoothingTime = 0.6f;
+    [SerializeField, Min(0f)] private float probabilitySmoothingTime = 1.5f;
     [Tooltip("空の場合は同じGameObject・シーン内から探す。")]
     [SerializeField] private HomeBodyCues bodyCues;
 

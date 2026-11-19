@@ -1258,7 +1258,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fadeRoom: 1
-  roomAlpha: 0.3
+  roomAlpha: 0.6
   fadeTargets: 0
   targetAlpha: 0.8
   showWalkableArea: 1
