@@ -68,6 +68,17 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [SerializeField, Min(0.05f)] private float temperature = 1.5f;
     [Tooltip("確率の平滑化の時定数(秒)。大きいほど表示がゆっくり変わる。")]
     [SerializeField, Min(0f)] private float probabilitySmoothingTime = 1.5f;
+
+    [Header("Prediction - Decay")]
+    [Tooltip("時間がたつにつれて少しずつ確信を下げる(1位の確率が小さく減り、他が少し増える)。体の向きや動きに関係なく常に効く。\n" +
+             "1位の物体が入れ替わったとき・人物が変わったときに元に戻す。")]
+    [SerializeField] private bool decayOverTime = true;
+    [Tooltip("1位の物体が決まってからこの秒数たったら減衰を始める。")]
+    [SerializeField, Min(0f)] private float decayDelay = 2f;
+    [Tooltip("減衰の速さ。1秒ごとに Temperature をこの割合だけ大きくする(0.05 なら10秒で1.5倍)。")]
+    [SerializeField, Min(0f)] private float decayRate = 0.05f;
+    [Tooltip("減衰で Temperature を最大で何倍まで大きくするか(これ以上は確率が平らにならない)。")]
+    [SerializeField, Min(1f)] private float maxDecayTemperatureScale = 2f;
     [Tooltip("スタートの人物と手がかり(全関節の骨格から求める)。空の場合はシーン内から探す。")]
     [SerializeField] private HomeBodyCues bodyCues;
 
@@ -125,6 +136,12 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     private float lastRouteTime = float.NegativeInfinity;
     private bool hasStartPoint;
     private Goal predictedGoal;
+
+    // 減衰用: 今の1位の物体・人物になってからの時間
+    private float decayTime;
+    private string decayGroup;
+    private string decayPerson;
+    private float decayTemperatureScale = 1f;
     private Material lineMaterial;
     private GUIStyle labelStyle;
     private Texture2D whiteTexture;
@@ -441,6 +458,9 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         bool moving = speed >= minMovingSpeed;
         float moveStrength = moving ? Mathf.Clamp01(speed / walkingSpeed) : 0f;
 
+        UpdateDecay();
+        float effectiveTemperature = temperature * decayTemperatureScale;
+
         float maxScore = float.NegativeInfinity;
 
         foreach (Goal goal in goals)
@@ -481,7 +501,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
         foreach (Goal goal in goals)
         {
-            goal.targetProbability = goal.hasPath ? Mathf.Exp((goal.score - maxScore) / temperature) : 0f;
+            goal.targetProbability = goal.hasPath ? Mathf.Exp((goal.score - maxScore) / effectiveTemperature) : 0f;
             sum += goal.targetProbability;
         }
 
@@ -507,6 +527,28 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             if (goal.hasPath && (predictedGoal == null || goal.probability > predictedGoal.probability))
                 predictedGoal = goal;
         }
+    }
+
+    // 時間がたつにつれて Temperature を少しずつ上げて確率をなだらかにする(状態に関係なく常に)。
+    // 1位の物体が入れ替わった・人物が変わったときは元に戻す。predictedGoal は前のフレームの結果を見る。
+    private void UpdateDecay()
+    {
+        string group = predictedGoal?.group;
+        string person = bodyCues != null ? bodyCues.MatchedLabel : null;
+
+        if (!decayOverTime || group != decayGroup || person != decayPerson)
+        {
+            decayTime = 0f;
+            decayGroup = group;
+            decayPerson = person;
+        }
+        else
+        {
+            decayTime += Time.deltaTime;
+        }
+
+        float decaying = Mathf.Max(decayTime - decayDelay, 0f);
+        decayTemperatureScale = Mathf.Min(1f + decayRate * decaying, maxDecayTemperatureScale);
     }
 
     // ------------------------------------------------------------
@@ -787,6 +829,12 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             return "Cues: none (route length only)";
 
         float speed = bodyCues.Velocity.magnitude;
+        string decay = decayTemperatureScale > 1.001f ? $" / decay {decayTime:F0} s (x{decayTemperatureScale:F2})" : "";
+        return decay.Length == 0 ? CueText(speed) : CueText(speed) + decay;
+    }
+
+    private string CueText(float speed)
+    {
         return $"Cues: head {(bodyCues.HasHead ? "OK" : "-")} / body {(bodyCues.HasBody ? "OK" : "-")} / " +
                $"move {speed:F2} m/s{(speed >= minMovingSpeed ? "" : " (still)")}";
     }
