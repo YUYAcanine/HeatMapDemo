@@ -1,0 +1,446 @@
+{
+    "experimentName": "gochagocha",
+    "savedAt": "2026-11-19 20:19:34",
+    "objects": [
+        {
+            "name": "Plane",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_000_Plane.json",
+            "position": {
+                "x": -0.5662000179290772,
+                "y": 0.22200000286102296,
+                "z": 1.1101000308990479
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.16826826333999635,
+                "y": 1.0,
+                "z": 0.4262104332447052
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (10)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_001_Plane (10).json",
+            "position": {
+                "x": -1.8523000478744507,
+                "y": 0.22200000286102296,
+                "z": 2.5352001190185549
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": -0.08894660323858261,
+                "y": 1.0,
+                "z": 0.14120350778102876
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (9)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_002_Plane (9).json",
+            "position": {
+                "x": -1.663599967956543,
+                "y": 0.22200000286102296,
+                "z": -0.3894999921321869
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": -0.05120403319597244,
+                "y": 1.0,
+                "z": 0.12628614902496339
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (8)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_003_Plane (8).json",
+            "position": {
+                "x": 0.8894000053405762,
+                "y": 0.22200000286102296,
+                "z": 2.641200065612793
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": -0.12283293157815933,
+                "y": 1.0,
+                "z": 0.12000546604394913
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (7)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_004_Plane (7).json",
+            "position": {
+                "x": 0.9739000201225281,
+                "y": 0.22200000286102296,
+                "z": -0.30410000681877139
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": -0.1397133320569992,
+                "y": 1.0,
+                "z": 0.1304786205291748
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (5)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_005_Plane (5).json",
+            "position": {
+                "x": -1.3228000402450562,
+                "y": 0.22200000286102296,
+                "z": -1.4757000207901
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.11904270201921463,
+                "y": 1.0,
+                "z": -0.0997602716088295
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (6)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_006_Plane (6).json",
+            "position": {
+                "x": -0.3043000102043152,
+                "y": 0.22200000286102296,
+                "z": -2.648900032043457
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.3227485716342926,
+                "y": 1.0,
+                "z": 0.13488586246967317
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (1)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_007_Plane (1).json",
+            "position": {
+                "x": 0.2939999997615814,
+                "y": 0.8299999833106995,
+                "z": -1.3539999723434449
+            },
+            "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "w": 1.0
+            },
+            "scale": {
+                "x": 0.17329663038253785,
+                "y": 1.0,
+                "z": 0.07163665443658829
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (2)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_008_Plane (2).json",
+            "position": {
+                "x": 0.6589999794960022,
+                "y": 0.640999972820282,
+                "z": 1.2599999904632569
+            },
+            "rotation": {
+                "x": -2.4805510738085917e-16,
+                "y": -0.70390385389328,
+                "z": -8.391186412382013e-8,
+                "w": 0.7102953195571899
+            },
+            "scale": {
+                "x": 0.17329666018486024,
+                "y": 1.0,
+                "z": 0.07163666933774948
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (3)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_009_Plane (3).json",
+            "position": {
+                "x": -1.6033999919891358,
+                "y": 0.6269999742507935,
+                "z": 0.8932999968528748
+            },
+            "rotation": {
+                "x": -2.4805510738085917e-16,
+                "y": -0.70390385389328,
+                "z": -8.391186412382013e-8,
+                "w": 0.7102953195571899
+            },
+            "scale": {
+                "x": 0.11370589584112168,
+                "y": 1.0,
+                "z": 0.047173261642456058
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Plane (4)",
+            "group": "",
+            "sourceType": "Mesh",
+            "assetGuid": "",
+            "assetPath": "",
+            "meshAssetGuid": "",
+            "meshAssetPath": "",
+            "meshLocalId": 0,
+            "meshFile": "floor_010_Plane (4).json",
+            "position": {
+                "x": -1.6633000373840333,
+                "y": 0.7609999775886536,
+                "z": -2.325200080871582
+            },
+            "rotation": {
+                "x": -2.4805510738085917e-16,
+                "y": -0.70390385389328,
+                "z": -8.391186412382013e-8,
+                "w": 0.7102953195571899
+            },
+            "scale": {
+                "x": 0.08260919898748398,
+                "y": 1.0,
+                "z": 0.0562836192548275
+            },
+            "materials": [
+                {
+                    "assetGuid": "",
+                    "assetPath": "",
+                    "localId": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        }
+    ]
+}

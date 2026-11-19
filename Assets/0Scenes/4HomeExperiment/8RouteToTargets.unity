@@ -509,26 +509,52 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 32e47b2554d34b73a540324c9ebde102, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  dataRootDirectory: D:\HomeExperiment2
+  dataRootDirectory: 
   startSearchRadius: 1
   startFallbackSearchRadius: 3
   targetGroups: []
   goalSearchRadius: 0.8
   goalFallbackSearchRadius: 1.5
   routeUpdateInterval: 0.5
-  routeLineMaterial: {fileID: 2100000, guid: bf4cabae94d316b4985c1520eaafa7a1, type: 2}
-  nearestRouteLineMaterial: {fileID: 2100000, guid: 3190b8688c2fe5048989384b8fa7ed85, type: 2}
-  routeLineWidth: 0.05
-  nearestRouteLineWidth: 0.08
-  routeLineYOffset: 0.05
+  routeHeadingDistance: 0.6
   movementSpeed: 0.5
+  headWeight: 0.8
+  bodyWeight: 3
+  moveWeight: 2.5
+  distanceWeight: 0.25
+  walkingSpeed: 0.6
+  minMovingSpeed: 0.1
+  temperature: 1.5
+  probabilitySmoothingTime: 1.5
+  decayOverTime: 1
+  decayDelay: 2
+  decayRate: 0.05
+  maxDecayTemperatureScale: 2
+  bodyCues: {fileID: 0}
+  minRouteLineWidth: 0.025
+  maxRouteLineWidth: 0.09
+  routeLineYOffset: 0.05
+  lowProbabilityColor: {r: 0.45, g: 0.75, b: 1, a: 0.75}
+  possibleProbability: 0.05
+  possibleColor: {r: 1, g: 0.95, b: 0.35, a: 0.8}
+  possibleRouteLineWidth: 0.045
+  highProbabilityColor: {r: 1, g: 0.45, b: 0, a: 1}
+  predictedColor: {r: 1, g: 0.15, b: 0.2, a: 1}
   showMarkers: 1
   markerScale: 0.14
+  predictedMarkerScale: 1.8
   startMarkerColor: {r: 1, g: 1, b: 1, a: 1}
-  goalMarkerColor: {r: 1, g: 0.85, b: 0.1, a: 1}
   showGoalLabels: 1
-  goalLabelCharacterSize: 0.05
+  goalLabelFontSize: 26
+  predictedLabelFontSize: 34
+  labelBackgroundColor: {r: 0, g: 0, b: 0, a: 0.7}
+  labelMinProbability: 0.05
   showStatus: 1
+  statusTopCount: 3
+  statusFontSize: 40
+  statusWidth: 640
+  statusAtRight: 1
+  showStatusDetail: 0
   logRouteSearch: 0
 --- !u!4 &901009463
 Transform:
@@ -570,6 +596,51 @@ MonoBehaviour:
   boundsMargin: 2
   showFakeFloors: 0
   addColliders: 1
+  linkFakeFloors: 1
+  maxLinkHorizontalDistance: 0.3
+  linkSampleSpacing: 0.05
+  linkWidth: 0.18
+  linkCostModifier: 2
+  climbCostPerMeter: 8
+  showLinks: 1
+  linkColor: {r: 0.3, g: 0.8, b: 1, a: 0.9}
+  linkLineWidth: 0.015
+--- !u!114 &1209137969
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 548478051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a5fb2f4bbb344253ba36c0d74d89c9e2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fullSubscriber: {fileID: 1614276452}
+  staleSeconds: 1
+  minValidHeadPelvisDistance: 0.05
+  switchMargin: 0.05
+  snapToFloor: 1
+  floorLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  raycastStartHeight: 1.5
+  floorSearchDistance: 5
+  floorSearchRadius: 0.3
+  flipBodyForward: 0
+  directionSmoothingTime: 0.2
+  cueAveragingWindow: 3
+  showCues: 1
+  cueLength: 0.6
+  cueWidth: 0.02
+  headColor: {r: 1, g: 0.85, b: 0.2, a: 0.95}
+  bodyColor: {r: 0.3, g: 0.85, b: 1, a: 0.95}
+  moveColor: {r: 0.6, g: 1, b: 0.4, a: 0.95}
+  showSkeleton: 1
+  skeletonColor: {r: 1, g: 1, b: 1, a: 0.95}
+  skeletonJointScale: 0.045
+  skeletonLineWidth: 0.02
 --- !u!4 &1217085267
 Transform:
   m_ObjectHideFlags: 0
@@ -768,6 +839,78 @@ MonoBehaviour:
   showSourceMesh: 1
   sourceMeshColor: {r: 0.15, g: 0.9, b: 0.25, a: 0.35}
   linkWidth: 0.18
+--- !u!1 &1614276450
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1614276451}
+  - component: {fileID: 1614276452}
+  m_Layer: 0
+  m_Name: SkeletonRealtimeSubscriber_FULL
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1614276451
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1614276450}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1614276452
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1614276450}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 17b6c6ace38a414ba48dd6c3b03bdeda, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mqttHost: 192.168.236.211
+  mqttPort: 1883
+  mqttUsername: mqtt-user
+  mqttPassword: 401402
+  topic: pathfinder/person_coordinate_FULL
+  connectOnStart: 1
+  logReceivedMessage: 0
+--- !u!114 &1634412078
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 548478051}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 304be93ba2b74b27a105ffd932314b8c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fadeRoom: 1
+  roomAlpha: 0.8
+  hideTargets: 1
+  fadeTargets: 0
+  targetAlpha: 0.8
+  showWalkableArea: 1
+  walkableColor: {r: 0.2, g: 0.95, b: 0.55, a: 0.35}
+  walkableYOffset: 0.01
+  refreshInterval: 2
 --- !u!1 &1723817902
 GameObject:
   m_ObjectHideFlags: 0
@@ -1053,100 +1196,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!1 &1614276450
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1614276451}
-  - component: {fileID: 1614276452}
-  m_Layer: 0
-  m_Name: SkeletonRealtimeSubscriber_FULL
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1614276451
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1614276450}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1614276452
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1614276450}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 17b6c6ace38a414ba48dd6c3b03bdeda, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  mqttHost: 192.168.236.211
-  mqttPort: 1883
-  mqttUsername: mqtt-user
-  mqttPassword: 401402
-  topic: pathfinder/person_coordinate_FULL
-  connectOnStart: 1
-  logReceivedMessage: 0
---- !u!114 &1209137969
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 548478051}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a5fb2f4bbb344253ba36c0d74d89c9e2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  fullSubscriber: {fileID: 1614276452}
-  matchDistance: 0.8
-  staleSeconds: 1
-  directionSmoothingTime: 0.2
-  velocityWindow: 0.6
-  showCues: 1
-  cueLength: 0.6
-  cueWidth: 0.02
-  headColor: {r: 1, g: 0.85, b: 0.2, a: 0.95}
-  bodyColor: {r: 0.3, g: 0.85, b: 1, a: 0.95}
-  moveColor: {r: 0.6, g: 1, b: 0.4, a: 0.95}
---- !u!114 &1634412078
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 548478051}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 304be93ba2b74b27a105ffd932314b8c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  fadeRoom: 1
-  roomAlpha: 0.8
-  fadeTargets: 0
-  targetAlpha: 0.8
-  showWalkableArea: 1
-  walkableColor: {r: 0.2, g: 0.95, b: 0.55, a: 0.35}
-  walkableYOffset: 0.01
-  refreshInterval: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
