@@ -15,7 +15,7 @@ using Microsoft.Azure.Kinect.BodyTracking;
 public class SkeletonRealtimePublisher_FULL : MonoBehaviour
 {
     [Header("Camera Sources")]
-    [Tooltip("空の場合はシーン内の SkeletonRealtimeMulti を自動収集する。")]
+    [Tooltip("空の場合はシーン内の SkeletonRealtimeMulti と HomeSkeletonLive(4HomeExperiment のキネクト)を自動収集する。")]
     [SerializeField] private SkeletonRealtimeMulti[] skeletonSources;
 
     [Header("Fusion")]
@@ -36,6 +36,8 @@ public class SkeletonRealtimePublisher_FULL : MonoBehaviour
     [Tooltip("30FPSで毎フレームログすると重いのでデフォルトはOFF。")]
     [SerializeField] private bool logPublishedMessage = false;
 
+    private readonly List<ISkeletonRealtimeSource> sources = new List<ISkeletonRealtimeSource>();
+
     private TcpClient client;
     private NetworkStream stream;
     private bool connectionAcknowledged;
@@ -53,6 +55,17 @@ public class SkeletonRealtimePublisher_FULL : MonoBehaviour
     {
         if (skeletonSources == null || skeletonSources.Length == 0)
             skeletonSources = FindObjectsOfType<SkeletonRealtimeMulti>();
+
+        sources.Clear();
+        foreach (SkeletonRealtimeMulti source in skeletonSources)
+        {
+            if (source != null)
+                sources.Add(source);
+        }
+
+        // 4HomeExperiment のシーン(6SkeletonPublish)では HomeSkeletonLive がキネクトごとの骨格を持つ
+        foreach (HomeSkeletonLive live in FindObjectsOfType<HomeSkeletonLive>())
+            sources.Add(live);
 
         if (connectOnStart)
             Connect();
@@ -151,7 +164,7 @@ public class SkeletonRealtimePublisher_FULL : MonoBehaviour
     {
         List<Candidate> candidates = new List<Candidate>();
 
-        foreach (SkeletonRealtimeMulti source in skeletonSources)
+        foreach (ISkeletonRealtimeSource source in sources)
         {
             if (source == null)
                 continue;

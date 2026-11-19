@@ -7,7 +7,8 @@ using UnityEngine;
 //   - 各キネクトで撮った点群 → Env/Kinect<ID>_PointCloud.ply (キネクトのローカル座標。Transform.json の位置姿勢を掛けるとワールド座標)
 //   - 表示中の部屋オブジェクト → Env/RoomObjects.json (+ Env/Meshes)
 //   - 部屋オブジェクトのさらに下に置いた物体 → Env/TargetObjects.json (注視などの対象物体。シーン4でスコアを数える)
-//     (部屋オブジェクト・対象物体は saveRoomObjects がオンのときだけ)
+//   - Fake Floor Roots の下に置いた補助の床 → Env/FakeFloors.json (シーン7で NavMesh を作るときの補助床)
+//     (部屋オブジェクト・対象物体・補助の床は saveRoomObjects がオンのときだけ)
 // を Assets/Data/HomeExperiment/<実験の名前>/Env/ に保存する(Data Root Directory を指定するとそのフォルダ。例: D:\HomeExperiment)。
 // キャリブレーション自体(ICP.cs / KinectPointCloudOnce.cs)は従来のまま。
 //
@@ -55,6 +56,11 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider, IHomeDat
     [Tooltip("部屋オブジェクト・対象物体(RoomObjects.json / TargetObjects.json / Meshes)も保存する。\n" +
              "複数マシンでEnvを共有する場合は、部屋を担当する1台だけオンにする(他のマシンで上書きしないため)。")]
     [SerializeField] private bool saveRoomObjects = true;
+    [Tooltip("NavMesh 用の補助の床(FakeFloor)の親。この配下で表示中の Plane / Quad / Cube などを Env/FakeFloors.json に保存し、\n" +
+             "シーン7(7NavMeshBuild)の PlaneFinder が補助床として使う(点群で床がうまく取れない場所を補う)。\n" +
+             "実際の床の位置・向きに合わせて置く。Room Roots の下には置かない(部屋オブジェクトとして保存されてしまう)。\n" +
+             "Save Room Objects がオンのときだけ保存する。")]
+    [SerializeField] private Transform[] fakeFloorRoots;
     [Tooltip("位置姿勢を保存するキネクト。空の場合はシーン内の HomeKinect を自動で集める。非表示のキネクトは保存しない。")]
     [SerializeField] private HomeKinect[] kinects;
 
@@ -304,9 +310,15 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider, IHomeDat
         else
             roomObjectCount = HomeRoomObjectIO.Save(dataRootDirectory, experimentName, roots, out targetObjectCount);
 
+        // 補助の床は部屋オブジェクトの後に保存する(部屋オブジェクトの保存で Env/Meshes を作り直すため)
+        int fakeFloorCount = 0;
+
+        if (saveRoomObjects)
+            fakeFloorCount = HomeRoomObjectIO.SaveFakeFloors(dataRootDirectory, experimentName, GetFakeFloorRoots(roots));
+
         HomeExperimentPaths.RefreshAssetDatabase();
 
-        Debug.Log($"[HomeEnvSetup] 保存完了: キネクト {kinectCount} 台, 点群 {pointCloudCount} 個, 部屋オブジェクト {roomObjectCount} 個, 対象物体 {targetObjectCount} 個 → {envDir}");
+        Debug.Log($"[HomeEnvSetup] 保存完了: キネクト {kinectCount} 台, 点群 {pointCloudCount} 個, 部屋オブジェクト {roomObjectCount} 個, 対象物体 {targetObjectCount} 個, 補助の床 {fakeFloorCount} 枚 → {envDir}");
         HasSaved = true;
         LastSavedFrame = Time.frameCount;
 #else
@@ -353,6 +365,33 @@ public class HomeEnvSetup : MonoBehaviour, IHomeExperimentNameProvider, IHomeDat
             Debug.LogWarning($"[HomeEnvSetup] device {deviceIndex} のシリアル番号を読めませんでした(シリアル番号なしで保存します)。\n{e.Message}");
             return null;
         }
+    }
+
+    // 補助の床の親。部屋オブジェクトの親の下にあるもの(部屋オブジェクトとしても保存されてしまう)は使わない
+    private List<Transform> GetFakeFloorRoots(List<Transform> roomRootList)
+    {
+        List<Transform> result = new List<Transform>();
+
+        if (fakeFloorRoots == null)
+            return result;
+
+        foreach (Transform root in fakeFloorRoots)
+        {
+            if (root == null)
+                continue;
+
+            Transform roomRoot = roomRootList.Find(r => root.IsChildOf(r) || r.IsChildOf(root));
+
+            if (roomRoot != null)
+            {
+                Debug.LogError($"[HomeEnvSetup] 補助の床の親 {root.name} が部屋オブジェクトの親 {roomRoot.name} と入れ子になっているため、補助の床として保存しません。別の親に分けてください。");
+                continue;
+            }
+
+            result.Add(root);
+        }
+
+        return result;
     }
 
     private IEnumerable<HomeKinect> GetKinects(bool includeInactive)

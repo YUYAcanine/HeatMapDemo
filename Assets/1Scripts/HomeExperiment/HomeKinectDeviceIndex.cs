@@ -18,7 +18,7 @@ public class HomeKinectDeviceIndex
 {
     public enum SyncMode
     {
-        // HomeSkeletonRecorder に設定されている値のまま
+        // HomeSkeletonRecorder / HomeSkeletonLive に設定されている値のまま
         KeepComponent,
         Standalone,
         Master,
@@ -63,6 +63,7 @@ public class HomeKinectDeviceIndex
     }
 
     // シーン内の全キネクト(非表示含む)に表の内容を反映する。表に無いキネクトは触らない。
+    // (シーン7の PlaneFinder は HomeKinect に付かないので、HomeNavMeshController が表から別に反映する)
     // beforeChange: エディタ上で Undo に記録するため、値を変える直前に対象を渡す(プレイ中は null)
     public static void ApplyToScene(HomeKinectDeviceIndex[] table, System.Action<Object> beforeChange = null)
     {
@@ -101,6 +102,21 @@ public class HomeKinectDeviceIndex
                     recorder.syncMode = syncMode;
                 }
             }
+
+            // シーン6(6SkeletonPublish)のリアルタイム骨格
+            foreach (HomeSkeletonLive live in kinect.GetComponentsInChildren<HomeSkeletonLive>(true))
+            {
+                WiredSyncMode syncMode = entry.syncMode == SyncMode.KeepComponent
+                    ? live.syncMode
+                    : ToWiredSyncMode(entry.syncMode);
+
+                if (live.deviceIndex != entry.deviceIndex || live.syncMode != syncMode)
+                {
+                    beforeChange?.Invoke(live);
+                    live.deviceIndex = entry.deviceIndex;
+                    live.syncMode = syncMode;
+                }
+            }
         }
     }
 
@@ -118,9 +134,12 @@ public class HomeKinectDeviceIndex
             int deviceIndex;
             KinectPointCloudOnce pointCloud = kinect.GetComponentInChildren<KinectPointCloudOnce>();
             HomeSkeletonRecorder recorder = kinect.GetComponentInChildren<HomeSkeletonRecorder>();
+            HomeSkeletonLive live = kinect.GetComponentInChildren<HomeSkeletonLive>();
 
             if (recorder != null && recorder.enabled)
                 deviceIndex = recorder.deviceIndex;
+            else if (live != null && live.enabled)
+                deviceIndex = live.deviceIndex;
             else if (pointCloud != null && pointCloud.enabled)
                 deviceIndex = pointCloud.deviceIndex;
             else

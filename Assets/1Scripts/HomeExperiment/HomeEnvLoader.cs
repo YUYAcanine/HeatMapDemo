@@ -7,6 +7,7 @@ using UnityEngine;
 //   - 部屋オブジェクト(RoomObjects.json)
 //   - 対象物体(TargetObjects.json)  ※シーン0で部屋オブジェクトの下に物体を置いた場合のみ
 //   - キネクトの位置姿勢(Kinect<ID>_Transform.json)  ※kinectsを設定した場合のみ
+//   - 補助の床(FakeFloors.json)  ※Load Fake Floors をオンにした場合のみ(シーン7)
 // を再現する。同じGameObjectの録画/再生コンポーネントはここから実験の名前を参照する。
 [DefaultExecutionOrder(-100)]
 public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
@@ -19,6 +20,12 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
     [SerializeField] private bool loadRoomObjects = true;
     [Tooltip("再生成した部屋オブジェクトの親。空ならこのGameObjectの下に作る。")]
     [SerializeField] private Transform roomObjectParent;
+
+    [Header("Fake Floors")]
+    [Tooltip("シーン0で置いた補助の床(Env/FakeFloors.json)も再生成する。NavMesh を作るシーン7でだけオンにする。")]
+    [SerializeField] private bool loadFakeFloors = false;
+    [Tooltip("再生成した補助の床の親。空ならこのGameObjectの下に作る。")]
+    [SerializeField] private Transform fakeFloorParent;
 
     [Header("Kinects")]
     [Tooltip("位置姿勢を再現するキネクト。骨格データを再生するだけのシーンでは空でよい。")]
@@ -33,6 +40,9 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
 
     // 再生成した対象物体。それぞれ group を持つ HomeTargetObject が付いている
     public List<GameObject> TargetObjects { get; private set; } = new List<GameObject>();
+
+    // 再生成した補助の床(loadFakeFloors のときだけ)
+    public List<GameObject> FakeFloors { get; private set; } = new List<GameObject>();
 
     private void Awake()
     {
@@ -71,6 +81,16 @@ public class HomeEnvLoader : MonoBehaviour, IHomeExperimentNameProvider
             ok &= created != null;
 
             TargetObjects = HomeRoomObjectIO.LoadTargets(rootDirectory, experimentName, parent);
+        }
+
+        if (loadFakeFloors)
+        {
+            FakeFloors = HomeRoomObjectIO.LoadFakeFloors(rootDirectory, experimentName,
+                fakeFloorParent != null ? fakeFloorParent : transform);
+
+            if (FakeFloors.Count == 0)
+                Debug.LogWarning($"[HomeEnvLoader] 補助の床がありません(シーン0の Fake Floor Roots の下に置いて保存すると使えます): " +
+                                 HomeExperimentPaths.GetFakeFloorsPath(rootDirectory, experimentName));
         }
 
         if (kinects != null)

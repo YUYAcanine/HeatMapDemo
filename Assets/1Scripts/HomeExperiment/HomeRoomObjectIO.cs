@@ -67,6 +67,73 @@ public static class HomeRoomObjectIO
         return context.rooms.objects.Count;
     }
 
+    // NavMesh 用の補助の床(FakeFloor)を Env/FakeFloors.json に保存する。保存した枚数を返す。
+    // roots 配下の表示中で MeshFilter を持つオブジェクトを1枚ずつ保存する(入れ子でも group は作らない。MeshRenderer が無効でもよい)。
+    // メッシュは Env/Meshes/floor_*.json に書き出すので、Meshes を作り直す Save より後に呼ぶ。
+    // roots が空でも空の一覧を書く(Meshes を作り直したので、前回の一覧が残ると読めないメッシュを指すため)。
+    public static int SaveFakeFloors(string rootDirectory, string experimentName, IEnumerable<Transform> roots)
+    {
+        string meshDir = HomeExperimentPaths.GetMeshDirectory(rootDirectory, experimentName);
+        HomeRoomObjectList list = new HomeRoomObjectList
+        {
+            experimentName = experimentName,
+            savedAt = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+        };
+
+        foreach (Transform root in roots)
+        {
+            foreach (MeshFilter meshFilter in root.GetComponentsInChildren<MeshFilter>())
+            {
+                Mesh mesh = meshFilter.sharedMesh;
+
+                if (mesh == null)
+                    continue;
+
+                GameObject go = meshFilter.gameObject;
+                HomeRoomObjectData data = new HomeRoomObjectData
+                {
+                    name = go.name,
+                    sourceType = HomeRoomObjectData.SourceMesh,
+                    position = go.transform.position,
+                    rotation = go.transform.rotation,
+                    scale = go.transform.lossyScale
+                };
+
+                if (TryGetAssetReference(mesh, out string meshGuid, out long meshLocalId, out string meshPath))
+                {
+                    data.meshAssetGuid = meshGuid;
+                    data.meshLocalId = meshLocalId;
+                    data.meshAssetPath = meshPath;
+                }
+                else if (mesh.isReadable)
+                {
+                    // Plane / Quad / Cube などの組み込みメッシュもここで書き出す
+                    data.meshFile = $"floor_{list.objects.Count:D3}_{MakeSafeFileName(go.name)}.json";
+                    Directory.CreateDirectory(meshDir);
+                    File.WriteAllText(Path.Combine(meshDir, data.meshFile), JsonUtility.ToJson(ToMeshData(mesh)));
+                }
+                else
+                {
+                    Debug.LogWarning($"[HomeRoomObjectIO] {go.name}: メッシュがアセットでなく、頂点も読めないため補助の床として保存しません。");
+                    continue;
+                }
+
+                MeshRenderer meshRenderer = go.GetComponent<MeshRenderer>();
+
+                if (meshRenderer != null)
+                {
+                    foreach (Material material in meshRenderer.sharedMaterials)
+                        data.materials.Add(ToMaterialData(material));
+                }
+
+                list.objects.Add(data);
+            }
+        }
+
+        WriteList(HomeExperimentPaths.GetFakeFloorsPath(rootDirectory, experimentName), list, "補助の床(FakeFloor)");
+        return list.objects.Count;
+    }
+
     private static void WriteList(string path, HomeRoomObjectList list, string label)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -308,6 +375,18 @@ public static class HomeRoomObjectIO
             return new List<GameObject>();
 
         return LoadList(rootDirectory, experimentName, path, parent, "対象物体");
+    }
+
+    // Env/FakeFloors.json を読み込み、parent の子として補助の床(FakeFloor)を再生成する。
+    // ファイルが無い(シーン0で補助の床を置いていない)場合は空のリストを返す。
+    public static List<GameObject> LoadFakeFloors(string rootDirectory, string experimentName, Transform parent)
+    {
+        string path = HomeExperimentPaths.GetFakeFloorsPath(rootDirectory, experimentName);
+
+        if (!File.Exists(path))
+            return new List<GameObject>();
+
+        return LoadList(rootDirectory, experimentName, path, parent, "補助の床(FakeFloor)");
     }
 
     private static List<GameObject> LoadList(string rootDirectory, string experimentName, string path, Transform parent, string label)

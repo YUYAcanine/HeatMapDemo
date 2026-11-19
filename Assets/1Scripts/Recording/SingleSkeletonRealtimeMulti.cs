@@ -4,7 +4,7 @@ using UnityEngine;
 using Microsoft.Azure.Kinect.Sensor;
 using Microsoft.Azure.Kinect.BodyTracking;
 
-public class SkeletonRealtimeMulti : MonoBehaviour
+public class SkeletonRealtimeMulti : MonoBehaviour, ISkeletonRealtimeSource
 {
     [Header("Device")]
     public int deviceIndex = 0;

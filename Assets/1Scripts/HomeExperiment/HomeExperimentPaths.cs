@@ -11,6 +11,7 @@ using UnityEngine.EventSystems;
 //       │   ├ KinectA_PointCloud.ply  … シーン0で撮った点群(1台1ファイル, キネクトのローカル座標, メートル)
 //       │   ├ RoomObjects.json        … 部屋オブジェクトの一覧とTransform
 //       │   ├ TargetObjects.json      … 注視などの対象物体(シーン0で部屋オブジェクトの下に置いた物体)の一覧とTransform
+//       │   ├ FakeFloors.json         … NavMesh 用の補助の床(シーン0で Fake Floor Roots の下に置いた平面)の一覧とTransform。シーン7 が使う
 //       │   └ Meshes/                 … アセットを参照できない部屋オブジェクト/対象物体のメッシュ
 //       └ Skeleton/
 //           └ <実験対象者>/
@@ -61,6 +62,7 @@ public static class HomeExperimentPaths
     public const string MeshFolderName = "Meshes";
     public const string RoomObjectsFileName = "RoomObjects.json";
     public const string TargetObjectsFileName = "TargetObjects.json";
+    public const string FakeFloorsFileName = "FakeFloors.json";
     public const string SkeletonFileSuffix = "_skeleton.json";
     public const string FilteredFolderName = "Filtered";
     public const string AnalysisFolderName = "Analysis";
@@ -140,6 +142,9 @@ public static class HomeExperimentPaths
 
     public static string GetTargetObjectsPath(string rootDirectory, string experimentName) =>
         Path.Combine(GetEnvDirectory(rootDirectory, experimentName), TargetObjectsFileName);
+
+    public static string GetFakeFloorsPath(string rootDirectory, string experimentName) =>
+        Path.Combine(GetEnvDirectory(rootDirectory, experimentName), FakeFloorsFileName);
 
     public static string GetKinectTransformPath(string rootDirectory, string experimentName, string kinectId) =>
         Path.Combine(GetEnvDirectory(rootDirectory, experimentName), $"Kinect{kinectId}_Transform.json");
