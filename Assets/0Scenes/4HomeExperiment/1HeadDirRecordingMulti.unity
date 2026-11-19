@@ -164,7 +164,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!65 &431353220
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -295,7 +295,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b99dc353e034e30b6e7d357d5fb4fb8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  experimentName: 1014drive
+  experimentName: gomi
   loadRoomObjects: 1
   roomObjectParent: {fileID: 1217085267}
   kinects:
@@ -323,7 +323,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!65 &754533276
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -435,7 +435,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a45a26a2a704c18ad16788ae823cd55, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  deviceIndex: 1
+  deviceIndex: 0
   syncMode: 2
 --- !u!1 &824463867
 GameObject:
@@ -593,8 +593,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a45a26a2a704c18ad16788ae823cd55, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  deviceIndex: 0
-  syncMode: 0
+  deviceIndex: 1
+  syncMode: 1
 --- !u!1 &1422476024
 GameObject:
   m_ObjectHideFlags: 0
@@ -848,17 +848,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d4d102865fa54dc9ab7b2a30057bf041, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  dataRootDirectory: 
-  subjectName: 1014subjectyuya
+  dataRootDirectory: D:\HomeExperiment2
+  subjectName: test_double2
   recorders: []
   kinectDeviceIndices:
   - kinectId: A
-    use: 1
-    deviceIndex: 0
-    syncMode: 1
-  - kinectId: B
     use: 0
     deviceIndex: 1
+    syncMode: 2
+  - kinectId: B
+    use: 1
+    deviceIndex: 0
     syncMode: 3
   - kinectId: C
     use: 0
@@ -871,6 +871,7 @@ MonoBehaviour:
   recordRawMkv: 1
   rawColorResolution: 1
   recordSkeleton: 0
+  cameraFps: 1
   toggleKey: 32
   requireEnvLoaded: 1
   showStatus: 1

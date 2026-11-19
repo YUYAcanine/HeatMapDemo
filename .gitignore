@@ -40,3 +40,7 @@ Assets/joint_positions.json
 # Python
 __pycache__/
 *.pyc
+.venv/
+
+# 整理 (2fda0f4) 後に残った GazePipeline の仮想環境・学習済みモデル (コードは Tools/Backnumber/GazePipeline)
+Tools/GazePipeline/
