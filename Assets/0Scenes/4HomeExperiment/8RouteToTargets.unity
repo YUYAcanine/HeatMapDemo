@@ -510,7 +510,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   dataRootDirectory: D:\HomeExperiment2
-  start: {fileID: 1052685852}
   startSearchRadius: 1
   startFallbackSearchRadius: 3
   targetGroups: []
@@ -524,7 +523,7 @@ MonoBehaviour:
   routeLineYOffset: 0.05
   movementSpeed: 0.5
   showMarkers: 1
-  markerScale: 0.08
+  markerScale: 0.04
   startMarkerColor: {r: 1, g: 1, b: 1, a: 1}
   goalMarkerColor: {r: 1, g: 0.85, b: 0.1, a: 1}
   showGoalLabels: 1
@@ -550,58 +549,6 @@ Transform:
   - {fileID: 1723817906}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1052685850
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1052685851}
-  - component: {fileID: 1052685852}
-  m_Layer: 0
-  m_Name: Start
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1052685851
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1052685850}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1052685852
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1052685850}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 327e1f0739f02f9409d1ddd634ca0da1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  skeletonSubscriber: {fileID: 1314824687}
-  snapToNearestFloor: 1
-  floorLayerMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  raycastStartHeight: 1.5
-  floorSearchDistance: 5
-  floorSearchRadius: 0.3
 --- !u!114 &1132910743
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -654,69 +601,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!1 &1314824685
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1314824686}
-  - component: {fileID: 1314824687}
-  m_Layer: 0
-  m_Name: SkeletonRealtimeSubscriber
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1314824686
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1314824685}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1314824687
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1314824685}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 30d1bb06228e431439386dc6bb694779, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  mqttHost: 192.168.236.211
-  mqttPort: 1883
-  mqttUsername: mqtt-user
-  mqttPassword: 401402
-  topic: pathfinder/person_coordinate
-  connectOnStart: 1
-  logReceivedMessage: 1
-  markerRoot: {fileID: 0}
-  markerScale: 0.1
-  markerLifetime: 2
-  markerColor: {r: 0, g: 1, b: 1, a: 1}
-  labelColor: {r: 1, g: 1, b: 1, a: 1}
-  showLabel: 1
-  labelCharacterSize: 0.08
-  shortestHeadPelvisColor: {r: 1, g: 0, b: 0, a: 1}
-  minValidHeadPelvisDistance: 0.05
-  showHeadToNoseVector: 1
-  headToNoseVectorColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  headToNoseVectorWidth: 0.015
 --- !u!1 &1422476024
 GameObject:
   m_ObjectHideFlags: 0
@@ -1233,8 +1117,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   fullSubscriber: {fileID: 1614276452}
-  start: {fileID: 1052685852}
-  skeletonSubscriber: {fileID: 1314824687}
   matchDistance: 0.8
   staleSeconds: 1
   directionSmoothingTime: 0.2
@@ -1274,8 +1156,6 @@ SceneRoots:
   - {fileID: 1495227229}
   - {fileID: 1217085267}
   - {fileID: 901009463}
-  - {fileID: 1314824686}
   - {fileID: 1587860545}
-  - {fileID: 1052685851}
   - {fileID: 1805300313}
   - {fileID: 1614276451}

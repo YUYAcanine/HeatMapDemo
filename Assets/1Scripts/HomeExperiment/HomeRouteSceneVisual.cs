@@ -4,6 +4,7 @@ using UnityEngine.Rendering;
 
 // シーン8(8RouteToTargets)の見た目。歩行可能領域と経路を目立たせる。
 //   - 部屋(Env/RoomObjects.json から再生成した家の点群メッシュ)を半透明にする
+//   - 対象物体(Env/TargetObjects.json)は表示しない(経路の終点の球で場所を示す)
 //   - 歩行可能領域(今ある NavMesh 全体)を色付きの面で表示する。NavMesh が作り直されたら表示も作り直す
 // 同じGameObjectの HomeEnvLoader が Awake で部屋を再生成した後(Start)に反映する。
 [RequireComponent(typeof(HomeEnvLoader))]
@@ -13,7 +14,9 @@ public class HomeRouteSceneVisual : MonoBehaviour
     [Tooltip("部屋オブジェクトを半透明にする。")]
     [SerializeField] private bool fadeRoom = true;
     [SerializeField, Range(0f, 1f)] private float roomAlpha = 0.6f;
-    [Tooltip("対象物体(TargetObjects)も半透明にする。オフなら元の見た目のまま(部屋が透けて物体が見やすくなる)。")]
+    [Tooltip("対象物体(シーン0で置いた球など)を表示しない。経路の終点の小さな球(HomeRouteToTargets)で場所を示す。")]
+    [SerializeField] private bool hideTargets = true;
+    [Tooltip("Hide Targets がオフのとき、対象物体を半透明にする。オフなら元の見た目のまま。")]
     [SerializeField] private bool fadeTargets = false;
     [SerializeField, Range(0f, 1f)] private float targetAlpha = 0.8f;
 
@@ -47,7 +50,18 @@ public class HomeRouteSceneVisual : MonoBehaviour
                 Fade(room, roomAlpha);
         }
 
-        if (fadeTargets)
+        if (hideTargets)
+        {
+            foreach (GameObject target in env.TargetObjects)
+            {
+                if (target == null)
+                    continue;
+
+                foreach (Renderer renderer in target.GetComponentsInChildren<Renderer>())
+                    renderer.enabled = false;
+            }
+        }
+        else if (fadeTargets)
         {
             foreach (GameObject target in env.TargetObjects)
                 Fade(target, targetAlpha);

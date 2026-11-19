@@ -6,8 +6,8 @@ using UnityEngine.AI;
 // シーン8(8RouteToTargets)用。人の位置から、シーン0(0HomeSetup)で置いた対象物体(Env/TargetObjects.json)すべてへの経路を
 // NavMesh 上で計算し、「どこへ向かいそうか」を重みづけして表示する。
 // 1PhilipDemo/MultiIntegrationLogger の RouteSub と同じ考え方で、ゴールを同じGameObjectの HomeEnvLoader が再生成した対象物体にしたもの。
-//   - 骨格: SkeletonRealtimeSubscriber が MQTT(pathfinder/person_coordinate, シーン6が送る)で受信する
-//   - スタート: DefineStart(Start オブジェクト)がハイライト中の人物の Pelvis を床に下ろした位置
+//   - 骨格: SkeletonRealtimeSubscriber_FULL が MQTT(pathfinder/person_coordinate_FULL, シーン6が送る)で全関節を受信する
+//   - スタート: HomeBodyCues が選んだ人物(頭〜Pelvis が一番短い人)の Pelvis を床に下ろした位置
 //   - NavMesh: NavSub が MQTT(pathfinder/navmesh, シーン7が送る)で受信して再現する
 //              または HomeFakeFloorNavMesh がシーン0の補助の床(Env/FakeFloors.json)だけから作る(シーン7を動かさずに試すとき)
 //   - ゴール: 対象物体の group ごとに1つ。group に属する物体全体のバウンディングボックスの中心から一番近い NavMesh 上の点
@@ -30,8 +30,6 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [SerializeField] private string dataRootDirectory = "";
 
     [Header("Start")]
-    [Tooltip("経路のスタート(人の位置)。DefineStart を付けたオブジェクトを割り当てる。空の場合はシーン内の DefineStart を探す。")]
-    [SerializeField] private DefineStart start;
     [Tooltip("スタート位置の近くこの半径(m)以内で NavMesh 上の点を探す。")]
     [SerializeField] private float startSearchRadius = 1.0f;
     [Tooltip("Start Search Radius で見つからないときに広げる半径(m)。スタート地点の真下に NavMesh が無いときの救済用。")]
@@ -61,7 +59,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [Tooltip("歩いている方向がその経路の出だしと合っているほど高くする重み(歩く速さに比例して効く)。")]
     [SerializeField, Min(0f)] private float moveWeight = 2.5f;
     [Tooltip("経路が長いほど低くする重み(1mあたり)。")]
-    [SerializeField, Min(0f)] private float distanceWeight = 0.4f;
+    [SerializeField, Min(0f)] private float distanceWeight = 0.25f;
     [Tooltip("この速さ(m/s)で歩いているとき、移動方向の重みが最大になる。これより遅い動きは弱めに効く。")]
     [SerializeField, Min(0.01f)] private float walkingSpeed = 0.6f;
     [Tooltip("この速さ(m/s)未満は止まっているとみなし、移動方向を使わない。")]
@@ -70,15 +68,15 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [SerializeField, Min(0.05f)] private float temperature = 1.5f;
     [Tooltip("確率の平滑化の時定数(秒)。大きいほど表示がゆっくり変わる。")]
     [SerializeField, Min(0f)] private float probabilitySmoothingTime = 1.5f;
-    [Tooltip("空の場合は同じGameObject・シーン内から探す。")]
+    [Tooltip("スタートの人物と手がかり(全関節の骨格から求める)。空の場合はシーン内から探す。")]
     [SerializeField] private HomeBodyCues bodyCues;
 
     [Header("Route Visual")]
-    [SerializeField] private float minRouteLineWidth = 0.015f;
+    [SerializeField] private float minRouteLineWidth = 0.025f;
     [SerializeField] private float maxRouteLineWidth = 0.09f;
     [SerializeField] private float routeLineYOffset = 0.05f;
     [Tooltip("確率が低い経路の色")]
-    [SerializeField] private Color lowProbabilityColor = new Color(0.55f, 0.65f, 0.85f, 0.25f);
+    [SerializeField] private Color lowProbabilityColor = new Color(0.45f, 0.75f, 1f, 0.75f);
     [Tooltip("確率が高い経路の色")]
     [SerializeField] private Color highProbabilityColor = new Color(1f, 0.45f, 0.15f, 0.95f);
     [Tooltip("予測到達地点(一番確率が高いゴール)の経路の色")]
@@ -86,9 +84,9 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     [Header("Markers")]
     [SerializeField] private bool showMarkers = true;
-    [SerializeField] private float markerScale = 0.08f;
+    [SerializeField] private float markerScale = 0.04f;
     [Tooltip("予測到達地点のマーカーをこの倍率で大きくする。")]
-    [SerializeField] private float predictedMarkerScale = 2.2f;
+    [SerializeField] private float predictedMarkerScale = 1.8f;
     [SerializeField] private Color startMarkerColor = Color.white;
     [SerializeField] private bool showGoalLabels = true;
     [SerializeField] private float goalLabelCharacterSize = 0.05f;
@@ -100,7 +98,6 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     [SerializeField] private bool logRouteSearch = false;
 
     private HomeEnvLoader env;
-    private SkeletonRealtimeSubscriber skeletonSubscriber;
     private NavSub navSubscriber;
     private HomeFakeFloorNavMesh fakeFloorNavMesh;
     private readonly List<Goal> goals = new List<Goal>();
@@ -110,6 +107,8 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     private bool hasStartPoint;
     private Goal predictedGoal;
     private Material lineMaterial;
+    private static Font labelFont;
+    private static Material labelMaterial;
     private GUIStyle statusStyle;
 
     public string DataRootDirectory => dataRootDirectory;
@@ -156,6 +155,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         public LineRenderer line;
         public GameObject marker;
         public TextMesh label;
+        public TextMesh labelShadow;
 
         // 予測
         public float score;
@@ -173,20 +173,16 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     private void Start()
     {
-        if (start == null)
-            start = FindObjectOfType<DefineStart>();
-
         if (bodyCues == null)
             bodyCues = FindObjectOfType<HomeBodyCues>();
 
-        skeletonSubscriber = FindObjectOfType<SkeletonRealtimeSubscriber>();
         navSubscriber = FindObjectOfType<NavSub>();
         fakeFloorNavMesh = GetComponent<HomeFakeFloorNavMesh>();
         // 半透明の部屋・歩行可能領域(HomeRouteSceneVisual)より後に描いて、経路を一番上に見せる
         lineMaterial = new Material(Shader.Find("Sprites/Default")) { renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 20 };
 
-        if (start == null)
-            Debug.LogError("[HomeRouteToTargets] スタート(DefineStart)がありません。");
+        if (bodyCues == null)
+            Debug.LogError("[HomeRouteToTargets] スタートの人物を決める HomeBodyCues がありません。");
 
         CollectGoals();
     }
@@ -251,8 +247,38 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             Debug.Log($"[HomeRouteToTargets] 対象物体 {goals.Count} 個: {string.Join(", ", order)}");
     }
 
+    // 対象物体の表示を消していても(HomeRouteSceneVisual の Hide Targets)中心が取れるよう、メッシュの形から求める
     private static Bounds GetWorldBounds(GameObject target)
     {
+        bool hasBounds = false;
+        Bounds meshBounds = new Bounds();
+
+        foreach (MeshFilter meshFilter in target.GetComponentsInChildren<MeshFilter>())
+        {
+            if (meshFilter.sharedMesh == null)
+                continue;
+
+            Bounds local = meshFilter.sharedMesh.bounds;
+            Matrix4x4 matrix = meshFilter.transform.localToWorldMatrix;
+
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = local.center + Vector3.Scale(local.extents,
+                    new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                Vector3 world = matrix.MultiplyPoint3x4(corner);
+
+                if (hasBounds)
+                    meshBounds.Encapsulate(world);
+                else
+                    meshBounds = new Bounds(world, Vector3.zero);
+
+                hasBounds = true;
+            }
+        }
+
+        if (hasBounds)
+            return meshBounds;
+
         Renderer[] renderers = target.GetComponentsInChildren<Renderer>();
 
         if (renderers.Length == 0)
@@ -289,7 +315,7 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         RouteVersion++;
         hasStartPoint = false;
 
-        if (start == null || !start.HasActivePerson || !TryFindStartPoint(start.transform.position, out startPoint))
+        if (bodyCues == null || !bodyCues.HasPerson || !TryFindStartPoint(bodyCues.StartPosition, out startPoint))
         {
             HideAll();
             return;
@@ -551,21 +577,50 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         {
             GameObject text = new GameObject("Label");
             text.transform.SetParent(transform, false);
-            goal.label = text.AddComponent<TextMesh>();
-            goal.label.anchor = TextAnchor.LowerCenter;
-            goal.label.alignment = TextAlignment.Center;
-            goal.label.fontSize = 48;
+            goal.label = CreateText(text, Color.white);
             text.AddComponent<HomeRouteLabelBillboard>();
+
+            // 黒い影を少し右下・奥にずらして重ね、半透明の部屋や明るい背景の上でも読めるようにする
+            GameObject shadow = new GameObject("Shadow");
+            shadow.transform.SetParent(text.transform, false);
+            shadow.transform.localPosition = new Vector3(0.004f, -0.004f, 0.002f);
+            goal.labelShadow = CreateText(shadow, new Color(0f, 0f, 0f, 0.9f));
         }
 
         bool faint = goal.probability < labelMinProbability && !predicted;
-        goal.label.text = predicted
+        string label = predicted
             ? $"▼ {goal.group} {goal.probability * 100f:F0}%"
             : $"{goal.group} {goal.probability * 100f:F0}%";
-        goal.label.characterSize = goalLabelCharacterSize * (predicted ? 1.4f : 1f);
-        goal.label.color = faint ? new Color(1f, 1f, 1f, 0.35f) : (predicted ? Color.white : new Color(1f, 1f, 1f, 0.85f));
+        float size = goalLabelCharacterSize * (predicted ? 1.4f : 1f);
+
+        goal.label.text = label;
+        goal.label.characterSize = size;
+        goal.label.color = faint ? new Color(0.85f, 0.85f, 0.85f, 1f) : (predicted ? new Color(1f, 0.95f, 0.6f, 1f) : Color.white);
+        goal.labelShadow.text = label;
+        goal.labelShadow.characterSize = size;
         goal.label.transform.position = goal.marker.transform.position + Vector3.up * (goal.marker.transform.localScale.y * 0.6f + 0.02f);
         goal.label.gameObject.SetActive(true);
+    }
+
+    private static TextMesh CreateText(GameObject obj, Color color)
+    {
+        TextMesh mesh = obj.AddComponent<TextMesh>();
+        mesh.anchor = TextAnchor.LowerCenter;
+        mesh.alignment = TextAlignment.Center;
+        mesh.fontSize = 64;
+        mesh.color = color;
+
+        // 半透明の部屋・経路より後に描く(部屋の色が重なって文字が薄く見えないように)
+        if (labelFont == null || labelMaterial == null)
+        {
+            labelFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            labelMaterial = new Material(labelFont.material) { renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 50 };
+        }
+
+        mesh.font = labelFont;
+        obj.GetComponent<MeshRenderer>().sharedMaterial = labelMaterial;
+
+        return mesh;
     }
 
     private void HideAll()
@@ -606,8 +661,8 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         StringBuilder text = new StringBuilder();
         text.AppendLine($"実験: {env.ExperimentName}   人の位置 → 対象物体 の経路と到達予測");
 
-        if (skeletonSubscriber != null)
-            text.AppendLine($"骨格(MQTT): {(skeletonSubscriber.IsConnected ? "接続中" : "未接続")}");
+        if (bodyCues != null)
+            text.AppendLine($"骨格(MQTT, 全関節): {(bodyCues.IsConnected ? "接続中" : "未接続")}");
 
         if (fakeFloorNavMesh != null && fakeFloorNavMesh.isActiveAndEnabled)
             text.AppendLine(fakeFloorNavMesh.IsBuilt
@@ -618,12 +673,12 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             text.AppendLine($"NavMesh(MQTT): {(navSubscriber.IsConnected ? "接続中" : "未接続")}" +
                             (navSubscriber.LastTriangleCount > 0 ? $" / 三角形 {navSubscriber.LastTriangleCount}, リンク {navSubscriber.LastLinkCount}" : " / まだ受信していません"));
 
-        if (start == null || !start.HasActivePerson)
+        if (bodyCues == null || !bodyCues.HasPerson)
             text.AppendLine("スタート: 人物を受信していません");
         else if (!hasStartPoint)
-            text.AppendLine($"スタート: {start.ActiveLabel} の近くに NavMesh がありません");
+            text.AppendLine($"スタート: {bodyCues.MatchedLabel} の近くに NavMesh がありません");
         else
-            text.AppendLine($"スタート: {start.ActiveLabel}");
+            text.AppendLine($"スタート: {bodyCues.MatchedLabel}");
 
         if (hasStartPoint)
         {
