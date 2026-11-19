@@ -523,7 +523,7 @@ MonoBehaviour:
   routeLineYOffset: 0.05
   movementSpeed: 0.5
   showMarkers: 1
-  markerScale: 0.04
+  markerScale: 0.09
   startMarkerColor: {r: 1, g: 1, b: 1, a: 1}
   goalMarkerColor: {r: 1, g: 0.85, b: 0.1, a: 1}
   showGoalLabels: 1

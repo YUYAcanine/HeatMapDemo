@@ -84,12 +84,16 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     [Header("Markers")]
     [SerializeField] private bool showMarkers = true;
-    [SerializeField] private float markerScale = 0.04f;
+    [SerializeField] private float markerScale = 0.09f;
     [Tooltip("予測到達地点のマーカーをこの倍率で大きくする。")]
     [SerializeField] private float predictedMarkerScale = 1.8f;
     [SerializeField] private Color startMarkerColor = Color.white;
     [SerializeField] private bool showGoalLabels = true;
-    [SerializeField] private float goalLabelCharacterSize = 0.05f;
+    [Tooltip("ラベルの文字の大きさ(画面上のピクセル)。遠近に関係なく同じ大きさで描く。")]
+    [SerializeField] private int goalLabelFontSize = 18;
+    [Tooltip("予測到達地点のラベルの文字の大きさ(ピクセル)。")]
+    [SerializeField] private int predictedLabelFontSize = 24;
+    [SerializeField] private Color labelBackgroundColor = new Color(0f, 0f, 0f, 0.7f);
     [Tooltip("この確率未満のゴールはラベルを薄くする。")]
     [SerializeField, Range(0f, 1f)] private float labelMinProbability = 0.05f;
 
@@ -107,8 +111,8 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
     private bool hasStartPoint;
     private Goal predictedGoal;
     private Material lineMaterial;
-    private static Font labelFont;
-    private static Material labelMaterial;
+    private GUIStyle labelStyle;
+    private Texture2D labelBackground;
     private GUIStyle statusStyle;
 
     public string DataRootDirectory => dataRootDirectory;
@@ -154,8 +158,6 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         public Vector3[] linePoints = new Vector3[0];
         public LineRenderer line;
         public GameObject marker;
-        public TextMesh label;
-        public TextMesh labelShadow;
 
         // 予測
         public float score;
@@ -536,7 +538,6 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             float scale = markerScale * (predicted ? predictedMarkerScale : Mathf.Lerp(0.6f, 1.4f, t));
             Color markerColor = new Color(color.r, color.g, color.b, Mathf.Max(color.a, 0.5f));
             UpdateMarker(ref goal.marker, $"RouteGoal_{goal.group}", goal.navPoint, markerColor, scale);
-            UpdateLabel(goal, predicted, markerColor);
         }
     }
 
@@ -568,61 +569,6 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         marker.SetActive(true);
     }
 
-    private void UpdateLabel(Goal goal, bool predicted, Color color)
-    {
-        if (!showGoalLabels || goal.marker == null)
-            return;
-
-        if (goal.label == null)
-        {
-            GameObject text = new GameObject("Label");
-            text.transform.SetParent(transform, false);
-            goal.label = CreateText(text, Color.white);
-            text.AddComponent<HomeRouteLabelBillboard>();
-
-            // 黒い影を少し右下・奥にずらして重ね、半透明の部屋や明るい背景の上でも読めるようにする
-            GameObject shadow = new GameObject("Shadow");
-            shadow.transform.SetParent(text.transform, false);
-            shadow.transform.localPosition = new Vector3(0.004f, -0.004f, 0.002f);
-            goal.labelShadow = CreateText(shadow, new Color(0f, 0f, 0f, 0.9f));
-        }
-
-        bool faint = goal.probability < labelMinProbability && !predicted;
-        string label = predicted
-            ? $"▼ {goal.group} {goal.probability * 100f:F0}%"
-            : $"{goal.group} {goal.probability * 100f:F0}%";
-        float size = goalLabelCharacterSize * (predicted ? 1.4f : 1f);
-
-        goal.label.text = label;
-        goal.label.characterSize = size;
-        goal.label.color = faint ? new Color(0.85f, 0.85f, 0.85f, 1f) : (predicted ? new Color(1f, 0.95f, 0.6f, 1f) : Color.white);
-        goal.labelShadow.text = label;
-        goal.labelShadow.characterSize = size;
-        goal.label.transform.position = goal.marker.transform.position + Vector3.up * (goal.marker.transform.localScale.y * 0.6f + 0.02f);
-        goal.label.gameObject.SetActive(true);
-    }
-
-    private static TextMesh CreateText(GameObject obj, Color color)
-    {
-        TextMesh mesh = obj.AddComponent<TextMesh>();
-        mesh.anchor = TextAnchor.LowerCenter;
-        mesh.alignment = TextAlignment.Center;
-        mesh.fontSize = 64;
-        mesh.color = color;
-
-        // 半透明の部屋・経路より後に描く(部屋の色が重なって文字が薄く見えないように)
-        if (labelFont == null || labelMaterial == null)
-        {
-            labelFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            labelMaterial = new Material(labelFont.material) { renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent + 50 };
-        }
-
-        mesh.font = labelFont;
-        obj.GetComponent<MeshRenderer>().sharedMaterial = labelMaterial;
-
-        return mesh;
-    }
-
     private void HideAll()
     {
         if (startMarker != null)
@@ -639,9 +585,6 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
             if (goal.marker != null)
                 goal.marker.SetActive(false);
-
-            if (goal.label != null)
-                goal.label.gameObject.SetActive(false);
         }
     }
 
@@ -652,6 +595,8 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
 
     private void OnGUI()
     {
+        DrawGoalLabels();
+
         if (!showStatus)
             return;
 
@@ -711,6 +656,69 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
         GUI.Box(new Rect(10, 10, width, statusStyle.CalcHeight(content, width)), content, statusStyle);
     }
 
+    // ゴールのラベルを画面上に一定の大きさで描く(3Dの文字だと手前ほど大きく、奥ほど小さく読みにくくなるため)。
+    // 背景に暗い帯を敷いて、半透明の部屋や明るい背景の上でも読めるようにする。確率の低い順に描いて、高いものを上に重ねる。
+    private void DrawGoalLabels()
+    {
+        if (!showGoalLabels || !hasStartPoint || Event.current.type != EventType.Repaint)
+            return;
+
+        Camera camera = Camera.main;
+
+        if (camera == null)
+            return;
+
+        if (labelStyle == null)
+        {
+            labelBackground = new Texture2D(1, 1);
+            labelBackground.SetPixel(0, 0, Color.white);
+            labelBackground.Apply();
+
+            labelStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontStyle = FontStyle.Bold,
+                padding = new RectOffset(6, 6, 2, 2),
+                wordWrap = false
+            };
+            labelStyle.normal.background = labelBackground;
+        }
+
+        List<Goal> sorted = new List<Goal>(goals);
+        sorted.Sort((a, b) => a.probability.CompareTo(b.probability));
+
+        foreach (Goal goal in sorted)
+        {
+            if (!goal.hasPath || goal.marker == null || !goal.marker.activeSelf)
+                continue;
+
+            Vector3 world = goal.marker.transform.position + Vector3.up * (goal.marker.transform.localScale.y * 0.5f);
+            Vector3 screen = camera.WorldToScreenPoint(world);
+
+            if (screen.z <= 0f)
+                continue;
+
+            bool predicted = goal == predictedGoal;
+            bool faint = goal.probability < labelMinProbability && !predicted;
+            string text = predicted
+                ? $"▼ {goal.group}  {goal.probability * 100f:F0}%"
+                : $"{goal.group}  {goal.probability * 100f:F0}%";
+
+            labelStyle.fontSize = predicted ? predictedLabelFontSize : goalLabelFontSize;
+            labelStyle.normal.textColor = faint ? new Color(0.8f, 0.8f, 0.8f, 1f) : (predicted ? new Color(1f, 0.9f, 0.4f, 1f) : Color.white);
+
+            GUIContent content = new GUIContent(text);
+            Vector2 size = labelStyle.CalcSize(content);
+            // 球のすぐ上に、下端の中央を合わせる(GUI は y が上から下)
+            Rect rect = new Rect(screen.x - size.x * 0.5f, Screen.height - screen.y - size.y - 4f, size.x, size.y);
+
+            Color previous = GUI.backgroundColor;
+            GUI.backgroundColor = predicted ? new Color(0.35f, 0.05f, 0.05f, 0.85f) : labelBackgroundColor;
+            GUI.Label(rect, content, labelStyle);
+            GUI.backgroundColor = previous;
+        }
+    }
+
     private string GetCueSummary()
     {
         if (bodyCues == null)
@@ -738,17 +746,5 @@ public class HomeRouteToTargets : MonoBehaviour, IHomeDataRootProvider
             detail.Append($" 移{Mathf.Acos(Mathf.Clamp(goal.cosMove, -1f, 1f)) * Mathf.Rad2Deg:F0}°");
 
         return detail.Length > 0 ? $"<color=#AAAAAA>{detail}</color>" : "";
-    }
-}
-
-// ゴールのラベルを常にカメラの方へ向ける
-public class HomeRouteLabelBillboard : MonoBehaviour
-{
-    private void LateUpdate()
-    {
-        Camera camera = Camera.main;
-
-        if (camera != null)
-            transform.rotation = Quaternion.LookRotation(transform.position - camera.transform.position, camera.transform.up);
     }
 }
